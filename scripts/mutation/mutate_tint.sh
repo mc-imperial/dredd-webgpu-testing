@@ -1,10 +1,8 @@
 #!/bin/sh
 
-NAME=ast_printer.cc
-FILE=src/tint/lang/spirv/writer/ast_printer/${NAME}
-
-MUTATED='/data/dev/dawn_mutated'
-TRACKING='/data/dev/dawn_mutant_tracking'
+FILE=$1
+MUTATED=$2
+TRACKING=$3
 
 DREDD='/data/dev/dredd/third_party/clang+llvm/bin/dredd'
 
