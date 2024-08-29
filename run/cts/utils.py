@@ -1,12 +1,54 @@
-from pathlib import Path
+import os
 import subprocess
 import re
 from enum import Enum
+from pathlib import Path
+
 
 class TestStatus(Enum):
     PASS = 1
     FAIL = 2
     SKIP = 3
+
+def get_mutant_coverage(dredd_covered_mutants_path : Path,
+        dawn_coverage : Path,
+        cts_repo : Path,
+        query : str,
+        vk_icd : str = '') -> (list[int], list[int]):
+
+    covered = []
+    uncovered = []
+
+    # Run the test with mutant tracking enabled
+    print("Running CTS with mutant tracking compiler...")
+    
+    tracking_environment = os.environ.copy()
+    tracking_environment["DREDD_MUTANT_TRACKING_FILE"] = str(dredd_covered_mutants_path)
+    tracking_environment["VK_ICD_FILENAMES"] = f'{vk_icd}'
+    tracking_compile_cmd = [f'{dawn_coverage}/tools/run',
+            'run-cts', 
+            '--verbose',
+            f'--bin={dawn_coverage}/out/Debug',
+            f'--cts={cts_repo}',
+            query] 
+
+    # Get list of covered mutants from tracking file
+    mutant_tracking_result = subprocess.run(tracking_compile_cmd, env=tracking_environment) 
+    
+    if not dredd_covered_mutants_path.exists():
+        print("No mutant tracking file created.")
+        print(f"Std out:\n {mutant_tracking_result.stdout.decode('utf-8')}\n")
+        print(f"Std err:\n {mutant_tracking_result.stderr.decode('utf-8')}\n")        
+    
+    else:
+        print("Mutant tracking compilation complete")
+        covered: List[int] = list(set([int(line.strip()) for line in
+                                                    open(dredd_covered_mutants_path, 'r').readlines()]))
+        covered.sort()
+
+    return (covered, uncovered)
+    
+
 
 def get_completed_queries(log : Path) -> list[str]:
     
