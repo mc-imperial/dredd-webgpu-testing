@@ -45,7 +45,7 @@ Use Dredd to:
 - Inject mutants into ${DAWN_MUTATED}
 - Inject mutant coverage instrumentation into ${DAWN_MUTANT_COVERAGE}
 
-Re-build each version of Dawn. You may encounter an error if the -Werror flag is set in the Dawn builds, which treats all warnings as errors. This is because the mutated code will cause many warnings. To fix this, find all locations in the Cmake files where the -Werror flag is set and remove it. 
+Re-build each version of Dawn. You may encounter an error if the -Werror flag is set in the Dawn builds, which treats all warnings as errors. This is because the mutated code will cause many warnings. To fix this, find all locations in the Cmake files where the -Werror flag is set and remove it. Usually this includes `${ROOT}/CMakeLists.txt` and `${ROOT}/src/tint/CMakeLists.txt`
 
 Re-build each version of WGSLsmith linked to the corresponding Dawn.
 
