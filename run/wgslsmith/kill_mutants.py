@@ -7,11 +7,10 @@ import random
 import tempfile
 import time
 
-from dredd_test_runners.common.constants import DEFAULT_COMPILATION_TIMEOUT, DEFAULT_RUNTIME_TIMEOUT
-from dredd_test_runners.common.hash_file import hash_file
-from dredd_test_runners.common.mutation_tree import MutationTree
-from dredd_test_runners.common.run_process_with_timeout import ProcessResult, run_process_with_timeout
-from dredd_test_runners.common.run_test_with_mutants import run_wgslsmith_test_with_mutants, KillStatus
+from common.constants import DEFAULT_COMPILATION_TIMEOUT, DEFAULT_RUNTIME_TIMEOUT
+from common.mutation_tree import MutationTree
+from common.run_process_with_timeout import ProcessResult, run_process_with_timeout
+from common.run_test_with_mutants import run_wgslsmith_test_with_mutants, KillStatus
 
 from pathlib import Path
 from typing import List, Set
@@ -28,7 +27,7 @@ def still_testing(start_time_for_overall_testing: float,
     return True
 
 
-def main():
+def main(raw_args=None):
     start_time_for_overall_testing: float = time.time()
     time_of_last_kill: float = start_time_for_overall_testing
 
@@ -42,10 +41,10 @@ def main():
                              "instrument the source code to track mutant coverage; this will be compared against the "
                              "regular mutation info file to ensure that tracked mutants match applied mutants.",
                         type=Path)
-    parser.add_argument("mutated_compiler_executable",
+    parser.add_argument("mutated_wgslsmith_executable",
                         help="Path to the executable for the Dredd-mutated compiler.",
                         type=Path)
-    parser.add_argument("mutant_tracking_compiler_executable",
+    parser.add_argument("mutant_tracking_wgslsmith_executable",
                         help="Path to the executable for the compiler instrumented to track mutants.",
                         type=Path)
     parser.add_argument("wgslsmith_root", help="Path to a checkout of WGSLsmith", #TODO: check build exe location
@@ -85,7 +84,7 @@ def main():
                         default="dawn:vk:7425",
                         help="Specify driver code")
 
-    args = parser.parse_args()
+    args = parser.parse_args(raw_args)
 
     assert args.mutation_info_file != args.mutation_info_file_for_mutant_coverage_tracking
 
@@ -103,7 +102,6 @@ def main():
     assert mutation_tree.num_nodes == mutation_tree_for_coverage_tracking.num_nodes
     assert mutation_tree.num_mutations == mutation_tree_for_coverage_tracking.num_mutations
     print("Check complete!")
-
     
     if args.seed is not None:
         random.seed(args.seed)
@@ -299,7 +297,7 @@ def main():
                 env["VK_ICD_FILENAMES"] = f'{args.vk_icd}'
 
                 (mutant_result, mutant_result_stdout) = run_wgslsmith_test_with_mutants(mutants=[mutant],
-                                                      compiler_path=str(args.mutated_compiler_executable),
+                                                      compiler_path=str(args.mutated_wgslsmith_executable),
                                                       compiler_args=compiler_args,
                                                       compile_time=args.compile_timeout,
                                                       run_time=run_time,
