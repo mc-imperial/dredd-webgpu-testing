@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import List
 
 from common.run_process_with_timeout import ProcessResult, run_process_with_timeout
-from run.webgpu.utils import get_failures, get_single_tests_from_stdout
+from run.cts.utils import get_failures, get_single_tests_from_stdout
 
 class CTSKillStatus(Enum):
     SURVIVED = 1
