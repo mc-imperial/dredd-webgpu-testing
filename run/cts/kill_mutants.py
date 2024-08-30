@@ -32,7 +32,7 @@ def still_testing(start_time_for_overall_testing: float,
     return True
 
 
-def main():
+def main(raw_args = None):
     start_time_for_overall_testing: float = time.time()
     time_of_last_kill: float = start_time_for_overall_testing
 
@@ -105,7 +105,7 @@ def main():
                         default=None,
                         type=str,
                         help="File path for json containing reliably passing CTS tests")
-    args = parser.parse_args()
+    args = parser.parse_args(raw_args)
 
     assert args.mutation_info_file != args.mutation_info_file_for_mutant_coverage_tracking
 
