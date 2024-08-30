@@ -1,16 +1,19 @@
 import os
 import subprocess
 import re
+import json
 from enum import Enum
 from pathlib import Path
 
+from common.mutation_tree import MutationTree
 
 class TestStatus(Enum):
     PASS = 1
     FAIL = 2
     SKIP = 3
 
-def get_mutant_coverage(dredd_covered_mutants_path : Path,
+def get_mutant_coverage(mutation_info_path,
+        dredd_covered_mutants_path : Path,
         dawn_coverage : Path,
         cts_repo : Path,
         query : str,
@@ -46,8 +49,24 @@ def get_mutant_coverage(dredd_covered_mutants_path : Path,
                                                     open(dredd_covered_mutants_path, 'r').readlines()]))
         covered.sort()
 
+    all_mutants = get_all_mutants(mutation_info_path)
+
+
+    uncovered = list(set(all_mutants) - set(covered))
+
+    assert len(all_mutants) == (len(covered) + len(uncovered))
+
     return (covered, uncovered)
     
+def get_all_mutants(mutation_info_file : Path) -> list[int]:
+    
+    with open(mutation_info_file, 'r') as json_input:
+        mutation_tree = MutationTree(json.load(json_input))
+
+    all_mutants = list(range(0,mutation_tree.num_mutations))
+
+    return all_mutants
+
 
 
 def get_completed_queries(log : Path) -> list[str]:
