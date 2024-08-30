@@ -26,6 +26,8 @@ def still_testing(start_time_for_overall_testing: float,
         return False
     return True
 
+def comma_list(arg):
+    return arg.split(',')
 
 def main(raw_args=None):
     start_time_for_overall_testing: float = time.time()
@@ -83,6 +85,10 @@ def main(raw_args=None):
     parser.add_argument("--dawn_vk",
                         default="dawn:vk:7425",
                         help="Specify driver code")
+    parser.add_argument("--mutants_to_kill",
+                        default=None,
+                        type=comma_list,
+                        help="Optional list of mutant IDs to target")
 
     args = parser.parse_args(raw_args)
 
@@ -117,7 +123,11 @@ def main(raw_args=None):
         wgslsmith_input : Path = Path(temp_dir_for_generated_code, '__inputs.json')
 
         killed_mutants: Set[int] = set()
-        unkilled_mutants: Set[int] = set(range(0, mutation_tree.num_mutations))
+
+        if args.mutants_to_kill is not None:
+            unkilled_mutants: Set[int] = set(args.mutants_to_kill)
+        else:
+            unkilled_mutants: Set[int] = set(range(0, mutation_tree.num_mutations))
 
         # Make a work directory in which information about the mutant killing process will be stored. If this already
         # exists that's OK - there may be other processes working on mutant killing, or we may be continuing a job that
@@ -227,7 +237,7 @@ def main(raw_args=None):
             tracking_environment["DREDD_MUTANT_TRACKING_FILE"] = str(dredd_covered_mutants_path)
             tracking_environment["VK_ICD_FILENAMES"] = f'{args.vk_icd}'
 
-            tracking_compile_cmd = [args.mutant_tracking_compiler_executable]\
+            tracking_compile_cmd = [args.mutant_tracking_wgslsmith_executable]\
                 + compiler_args
             mutant_tracking_result : ProcessResult = run_process_with_timeout(cmd=tracking_compile_cmd, timeout_seconds=args.compile_timeout, env=tracking_environment) 
 
@@ -267,8 +277,17 @@ def main(raw_args=None):
             covered_by_this_test: List[int] = list(set([int(line.strip()) for line in
                                                         open(dredd_covered_mutants_path, 'r').readlines()]))
             covered_by_this_test.sort()
-            candidate_mutants_for_this_test: List[int] = ([m for m in covered_by_this_test if m not in killed_mutants])
-            print(f'Test seed {wgslsmith_seed}')
+            
+            if args.mutants_to_kill is not None:
+                 candidate_mutants_for_this_test: List[int] = ([m for m in covered_by_this_test 
+                                                                if m not in killed_mutants
+                                                                and m in unkilled_mutants])
+            else:
+                candidate_mutants_for_this_test: List[int] = ([m for m in covered_by_this_test if m not in killed_mutants])
+            
+            print(f'Mutants covered by this test: {covered_by_this_test}')
+            print(f'Mutants uncovered by cts: {unkilled_mutants}')
+            print(f'Candidate mutants for this test: {candidate_mutants_for_this_test}')
             print("Number of mutants to try: " + str(len(candidate_mutants_for_this_test)))
             
             already_killed_by_other_tests: List[int] = ([m for m in covered_by_this_test if m in killed_mutants])
