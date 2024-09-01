@@ -4,12 +4,11 @@ import sys
 import os
 import json
 import argparse
+import tempfile
 
-sys.path.append('../..')
-
-from dredd_test_runners.common.constants import DEFAULT_COMPILATION_TIMEOUT, DEFAULT_RUNTIME_TIMEOUT
-from dredd_test_runners.common.run_process_with_timeout import ProcessResult, run_process_with_timeout
-from dredd_test_runners.wgslsmith_runner.webgpu_cts_utils import kill_gpu_processes, get_single_tests_from_stdout, get_single_tests_from_file
+from common.constants import DEFAULT_COMPILATION_TIMEOUT, DEFAULT_RUNTIME_TIMEOUT
+from common.run_process_with_timeout import ProcessResult, run_process_with_timeout
+from run.cts.utils import kill_gpu_processes, get_single_tests_from_stdout, get_single_tests_from_file
 
 from pathlib import Path
 
@@ -17,7 +16,7 @@ class Plat(Enum):
     LINUX=1
     MACOS=2
 
-def main():
+def main(raw_args=None):
 
     parser = argparse.ArgumentParser()
 
@@ -30,9 +29,6 @@ def main():
     parser.add_argument("output_path",
                         help="Absolute file path to output location where results should be stored.",
                         type=Path),
-    parser.add_argument("--query_file",
-                        help="Absolute file path to list of individual CTS queries.",
-                        type=Path)
     parser.add_argument("--query_base",
                         default="webgpu:*",
                         type=str,
@@ -41,6 +37,8 @@ def main():
                         default=False,
                         action=argparse.BooleanOptionalAction,
                         help="Update CTS individual tests instead of getting from existing list. Default is false.")
+    parser.add_argument("--query_file",
+                        help="Filepath to .json file with a list of existing individual queries.")
     parser.add_argument("--n_runs",
                         default=3,
                         help="Number of times to run the CTS to check stability. Default is 3.",
@@ -49,20 +47,17 @@ def main():
                         default= False,
                         action=argparse.BooleanOptionalAction,
                         help="Parse existing stdout without re-running tests.")
-    parser.add_argument("--driver",
-                        choices=['nvidia','lavapipe'],
-                        default='nvidia',
-                        help="Select GPU driver.")
-    parser.add_argument("--mesa_install",
-                        default='')
-    args = parser.parse_args()
+    parser.add_argument("--vk_icd",
+                        default=None)
 
-    '''
-    if not args.query_file.exists() and not args.update_queries:
-        print('Query file does not exist! You must update queries if your query file does not yet exist!')
-        exit(1)                    
-    '''
-   
+    args = parser.parse_args(raw_args)
+
+    #TODO: move arg checking into separate function
+    if args.query_file is None:
+        assert args.update_queries is not None
+    else:
+        assert args.update_queries is None
+  
     manual_check_file : Path = Path(args.output_path, 'manual_checks.txt')
     individual_queries_file :Path = Path(args.output_path, 'individual_queries.json')
     reliable_tests_file : Path = Path(args.output_path, 'reliable_tests.json')
@@ -88,19 +83,18 @@ def main():
                 query]
 
             env = os.environ.copy()
-            if args.driver=='lavapipe':
-                env['VK_ICD_FILENAMES']=f'{args.mesa_install}/share/vulkan/icd.d/lvp_icd.x86_64.json' 
+            if args.vk_icd is not None:
+                env['VK_ICD_FILENAMES']=args.vk_icd
            
             print(f'Get individual tests from query:\n{query}')
             result: ProcessResult = run_process_with_timeout(
                     cmd=cmd, timeout_seconds=None, env=env)
-    
-            if args.query_file.exists():
-                os.remove(args.query_file)
 
-            with open(args.query_file, 'w') as f:
-                f.write(result.stderr.decode('utf-8'))
-                f.write(result.stdout.decode('utf-8'))
+            stderr = result.stderr.decode('utf-8')
+            stdout = result.stdout.decode('utf-8')
+            
+            std_dump = stdout.split('\n')
+            std_dump.extend(stderr.split('\n'))
 
             # Kill gpu processes - sometimes this is not done automatically
             # when running tests individually, which messes up
@@ -109,7 +103,7 @@ def main():
                 kill_gpu_processes('node')
             
             # Parse stdout to get a list of individual tests and their statuses
-            queries = list(get_single_tests_from_file(args.query_file).keys())
+            queries = list(get_single_tests_from_stdout(std_dump).keys())
             individual_cts_queries.extend(queries) 
             print(f'Number of individual tests: {len(queries)}')
             print(f'Running total of individual tests: {len(individual_cts_queries)}')
@@ -124,7 +118,6 @@ def main():
                     f.write(result.stdout.decode('utf-8'))
                     f.write('END\n')
 
-
         # Exit if there are no individual queries to run
         if len(individual_cts_queries) == 0:
             print('No individual queries to run!')
@@ -136,12 +129,9 @@ def main():
     
     # If we are not updating queries, then read from input or file
     else:
-        individual_cts_queries = [args.query_base]
-    '''
-    else:
         with open(args.query_file, 'r') as f:
             individual_cts_queries = json.load(f)
-    '''
+
     results = []
     single_tests = []
 
@@ -159,8 +149,8 @@ def main():
                 os.remove(summary_file)
 
             env = os.environ.copy()
-            if args.driver=='lavapipe':
-                env['VK_ICD_FILENAMES']=f'{args.mesa_install}/share/vulkan/icd.d/lvp_icd.x86_64.json'  
+            if args.vk_icd is not None:
+                env['VK_ICD_FILENAMES']=args.vk_icd  
 
             for query in individual_cts_queries:        
                 cmd = [f'{args.dawn_path}/tools/run',
@@ -170,7 +160,7 @@ def main():
                     f'--cts={args.cts_path}',
                     query]
             
-                print(f'Run {i} query: {query}')
+                print(f'Run query round {i}: {query}')
                 result: ProcessResult = run_process_with_timeout(
                         cmd=cmd, timeout_seconds=None, env=env)
 
@@ -231,6 +221,8 @@ def main():
         print(f'{len(results[i])} tests pass in run {i}')
 
     print(f'Found {len(reliable_tests)} reliable tests out of a possible {len(single_tests[0])}')
+
+    return reliable_tests 
 
 
 if __name__=="__main__":
