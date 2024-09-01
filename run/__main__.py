@@ -1,5 +1,6 @@
 import os
 import subprocess
+import multiprocessing
 from pathlib import Path
 
 from cts.utils import get_mutant_coverage
@@ -36,8 +37,10 @@ def main():
     # Control params
     kill_uncovered_mutants_first : bool = False # param to select whether we use wgslsmith to kill uncovered mutants first
     mutate : bool = False # param to select whether we re-mutate (if True) or just skip to testing if mutations are already in place (if False)
+    cts_killing_completed : bool = True
     #query = 'webgpu:shader,*'
     query = 'webgpu:shader,execution,flow_control,loop:*' # CTS query to use
+    n_processes = 8 # param for number of processes to run in parallel for mutant killing
 
     if mutate:
 
@@ -93,7 +96,7 @@ def main():
         
         mutants_to_kill = uncovered
 
-        wgslsmith_args.append(['--mutants_to_kill',
+        wgslsmith_args.extend(['--mutants_to_kill',
             ','.join([str(m) for m in mutants_to_kill])])
 
         wgslsmith.kill_mutants.main(wgslsmith_args)
@@ -120,12 +123,24 @@ def main():
                 vk_icd,
         ]
         
-        print('Killing mutants with the CTS...')
-        cts.kill_mutants.main(cts_args)
-
+        if not cts_killing_completed:
+            print('Killing mutants with the CTS...')
+            cts.kill_mutants.main(cts_args)
+        
         print('Killing surviving mutants with WGSLsmith...')
-        wgslsmith.kill_mutants.main(wgslsmith_args)
+        if n_processes == 1:
+            wgslsmith.kill_mutants.main(wgslsmith_args)
 
+        elif n_processes > 1:
+            processes = []
+            for i in range(n_processes):
+                p = multiprocessing.Process(target=wgslsmith.kill_mutants.main, args=((wgslsmith_args,)))
+                processes.append(p)
+                p.start()
+
+            for p in processes:
+                p.join()
+        
 
 def make_dawn_clean(mutated : Path, coverage : Path) -> bool :
 
