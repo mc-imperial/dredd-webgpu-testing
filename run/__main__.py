@@ -66,7 +66,6 @@ def main():
             f'{str(wgslsmith_coverage)}/target/release/wgslsmith',
             f'{str(wgslsmith_mutated)}/target/release',
             str(output_dir),
-            '--cts_only',
             '--compile_timeout',
             str(timeout),
             '--run_timeout',
@@ -121,8 +120,10 @@ def main():
                 vk_icd,
         ]
         
+        print('Killing mutants with the CTS...')
         cts.kill_mutants.main(cts_args)
 
+        print('Killing surviving mutants with WGSLsmith...')
         wgslsmith.kill_mutants.main(wgslsmith_args)
 
 
