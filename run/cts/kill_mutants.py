@@ -10,12 +10,13 @@ import tempfile
 import time
 import datetime
 
-from dredd_test_runners.common.constants import DEFAULT_COMPILATION_TIMEOUT, DEFAULT_RUNTIME_TIMEOUT
-from dredd_test_runners.common.hash_file import hash_file
-from dredd_test_runners.common.mutation_tree import MutationTree
-from dredd_test_runners.common.run_process_with_timeout import ProcessResult, run_process_with_timeout
-from dredd_test_runners.common.run_test_with_mutants import run_webgpu_cts_test_with_mutants, KillStatus, CTSKillStatus
-from dredd_test_runners.wgslsmith_runner.webgpu_cts_utils import kill_gpu_processes, get_tests, get_passes, get_failures, get_unrun_tests, get_single_tests_from_stdout, get_completed_queries
+from common.constants import DEFAULT_COMPILATION_TIMEOUT, DEFAULT_RUNTIME_TIMEOUT
+from common.mutation_tree import MutationTree
+from common.run_process_with_timeout import ProcessResult, run_process_with_timeout
+from common.run_test_with_mutants import run_webgpu_cts_test_with_mutants, KillStatus, CTSKillStatus
+from run.cts.utils import kill_gpu_processes, get_tests, get_passes, get_failures, get_unrun_tests, get_single_tests_from_stdout, get_completed_queries
+
+import run.cts.flaky_test_finder.find_non_flaky_cts_tests as find_non_flaky_cts_tests
 
 from pathlib import Path
 from typing import List, Set
@@ -131,9 +132,20 @@ def main(raw_args = None):
     assert mutation_tree.num_mutations == mutation_tree_for_coverage_tracking.num_mutations
     print("Check complete!")
 
-    
     if args.seed is not None:
         random.seed(args.seed)
+
+    # Set up log in append mode so we can continue runs that were cancelled
+    logger = logging.getLogger(__name__)
+    log_name = Path(args.mutant_kill_path, 'info.log')
+    logging.basicConfig(filename=log_name, 
+            format='%(asctime)s - %(message)s',
+            datefmt=('%Y-%m-%d %H:%M:%S'),
+            encoding='utf-8', 
+            filemode='a',
+            level=logging.INFO)
+
+    logging.info('Start')
 
     with tempfile.TemporaryDirectory() as temp_dir_for_generated_code:
         #with Path('/data/dev/dredd-compiler-testing/dredd_test_runners/wgslsmith_runner/temp') as temp_dir_for_generated_code:
@@ -148,16 +160,6 @@ def main(raw_args = None):
         Path(args.mutant_kill_path).mkdir(exist_ok=True)
         Path(args.mutant_kill_path,"killed_mutants").mkdir(exist_ok=True)
         Path(args.mutant_kill_path,"tracking").mkdir(exist_ok=True)
-        
-                 
-        logger = logging.getLogger(__name__)
-        logging.basicConfig(filename=Path(args.mutant_kill_path, 'info.log'), 
-                format='%(asctime)s - %(message)s',
-                datefmt=('%Y-%m-%d %H:%M:%S'),
-                encoding='utf-8', 
-                level=logging.INFO)
-
-        logging.info('Start')
 
         test_queries = []
 
@@ -191,19 +193,30 @@ def main(raw_args = None):
                 with open(args.reliable_tests,'r') as f:
                     reliably_passing_tests : list = json.load(f)
 
+            else:
+                reliable_test_args = [str(args.mutated_path),
+                    str(args.cts_repo),
+                    str(args.mutant_kill_path),
+                    '--query_base',
+                    args.query,
+                    '--update_queries',
+                    '--vk_icd',
+                    args.vk_icd]
+                reliably_passing_tests = find_non_flaky_cts_tests.main(reliable_test_args)
+
         elif args.query_source == "file":
             
             with open(args.query_file, 'r') as f:
                 test_queries = json.load(f)
 
-        #TODO: turn into argument
-        existing_log = Path('/data/work/tint_mutation_testing/output/spirv_ast_printer/info.log')
-        completed_queries = get_completed_queries(existing_log)
+        completed_queries = get_completed_queries(log_name)
 
         print(f'{len(completed_queries)} queries have been completed already')
 
         # Loop over tests to determine which mutants are killed by the tests
         for query in test_queries:
+
+            print(f'Query: {query}')
 
             # Check if query has already been run
             if query in completed_queries:
