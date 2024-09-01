@@ -4,11 +4,14 @@ from pathlib import Path
 
 from cts.utils import get_mutant_coverage
 import wgslsmith.kill_mutants
+import cts.kill_mutants
 
 def main():
 
+    #TODO: convert to argparse
+
     base_dir = Path('/data/dev/dredd-webgpu-testing')
-    output_dir = Path('/data/work/webgpu/testing')
+    output_dir = Path('/data/work/webgpu/testing/out')
 
     mutation_script_path = Path(base_dir, 'scripts/mutation/mutate_tint.sh')
     vk_icd="/data/dev/mesa/build/install/share/vulkan/icd.d/lvp_icd.x86_64.json" 
@@ -30,49 +33,40 @@ def main():
 
     covered_mutants_path = Path(output_dir, '__dredd_covered_mutants')
 
-    kill_uncovered_mutants_first : bool = True # param to select whether we use wgslsmith to kill uncovered mutants first
+    # Control params
+    kill_uncovered_mutants_first : bool = False # param to select whether we use wgslsmith to kill uncovered mutants first
+    mutate : bool = False # param to select whether we re-mutate (if True) or just skip to testing if mutations are already in place (if False)
+    #query = 'webgpu:shader,*'
+    query = 'webgpu:shader,execution,flow_control,loop:*' # CTS query to use
 
-    
-    # Ensure that no mutants exist already in the files
-    if not make_dawn_clean(dawn_mutated, dawn_coverage):
-        print('Error!')
-        return
+    if mutate:
 
-    mutate(mutation_script_path, 
-        file_to_mutate,
-        dawn_mutated,
-        dawn_coverage)
-    
-    build_wgslsmith(wgslsmith_mutated, dawn_mutated)
-    build_wgslsmith(wgslsmith_coverage, dawn_coverage)
+        print('Mutating...')
+        
+        # Ensure that no mutants exist already in the files
+        if not make_dawn_clean(dawn_mutated, dawn_coverage):
+            print('Error!')
+            return
 
-    
+        mutate_dawn(mutation_script_path, 
+            file_to_mutate,
+            dawn_mutated,
+            dawn_coverage)
+        
+        build_wgslsmith(wgslsmith_mutated, dawn_mutated)
+        build_wgslsmith(wgslsmith_coverage, dawn_coverage)
 
-    # Check CTS mutant coverage for given query
-    query = 'webgpu:shader,execution,flow_control,loop:*'
+        print('Finished mutating and building')
 
-    (covered, uncovered) = get_mutant_coverage(mutation_info_file,
-        covered_mutants_path,
-        dawn_coverage,
-        cts_repo,
-        query,
-        vk_icd)
+    # Kill mutants
 
-    print(f'Covered mutants: \n{covered}')
-    print(f'Uncovered mutants: \n{uncovered}')
-    
-
-    # Option 1: Kill uncovered mutants
-    if kill_uncovered_mutants_first:
-        print('Killing uncovered mutants first...')
-
-        #TODO: tidy up arguments
-        args =[str(mutation_info_file),
+    wgslsmith_args =[str(mutation_info_file),
             str(mutation_info_file_for_coverage),
             f'{str(wgslsmith_mutated)}/target/release/wgslsmith',
             f'{str(wgslsmith_coverage)}/target/release/wgslsmith',
             f'{str(wgslsmith_mutated)}/target/release',
             str(output_dir),
+            '--cts_only',
             '--compile_timeout',
             str(timeout),
             '--run_timeout',
@@ -80,13 +74,56 @@ def main():
             '--vk_icd',
             vk_icd,
             '--dawn_vk',
-            dawn_vk
+            dawn_vk,
         ]
+    
+    # Option 1: Kill uncovered mutants
+    if kill_uncovered_mutants_first:
+        print('Killing uncovered mutants first...')
+
+        # Check CTS mutant coverage for given query
+        (covered, uncovered) = get_mutant_coverage(mutation_info_file,
+            covered_mutants_path,
+            dawn_coverage,
+            cts_repo,
+            query,
+            vk_icd)
+
+        print(f'Covered mutants: \n{covered}')
+        print(f'Uncovered mutants: \n{uncovered}')
+        
+        mutants_to_kill = uncovered
+
+        wgslsmith_args.append(['--mutants_to_kill',
+            ','.join([str(m) for m in mutants_to_kill])])
+
+        wgslsmith.kill_mutants.main(wgslsmith_args)
 
     # Option 2: Kill covered and surviving mutants
     else:
-        print('Not yet implemented!')
-        pass
+        #TODO: tidy up args
+        cts_args=[str(dawn_mutated),
+                str(dawn_coverage),
+                str(mutation_info_file),
+                str(mutation_info_file_for_coverage),
+                str(output_dir),
+                'cts_repo',
+                '--cts_repo',
+                str(cts_repo),
+                '--query',
+                query,
+                '--cts_only',
+                '--run_timeout',
+                '600',
+                '--compile_timeout',
+                '600',
+                '--vk_icd',
+                vk_icd,
+        ]
+        
+        cts.kill_mutants.main(cts_args)
+
+        wgslsmith.kill_mutants.main(wgslsmith_args)
 
 
 def make_dawn_clean(mutated : Path, coverage : Path) -> bool :
@@ -134,7 +171,7 @@ def mutants_exist(src : Path) -> bool :
 
     return False if (int(dredd_count.stdout)==0) else True
     
-def mutate(mutation_script : Path, 
+def mutate_dawn(mutation_script : Path, 
             file_to_mutate : Path,
             dawn_mutated : Path,
             dawn_coverage : Path) -> int :
@@ -163,7 +200,6 @@ def build_wgslsmith(wgslsmith : Path, dawn : Path):
         str(dawn)]
 
     result = subprocess.run(cmd, cwd=wgslsmith)
-    exit()
     return result.returncode
 
 
