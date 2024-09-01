@@ -285,9 +285,6 @@ def main(raw_args=None):
             else:
                 candidate_mutants_for_this_test: List[int] = ([m for m in covered_by_this_test if m not in killed_mutants])
             
-            print(f'Mutants covered by this test: {covered_by_this_test}')
-            print(f'Mutants uncovered by cts: {unkilled_mutants}')
-            print(f'Candidate mutants for this test: {candidate_mutants_for_this_test}')
             print("Number of mutants to try: " + str(len(candidate_mutants_for_this_test)))
             
             already_killed_by_other_tests: List[int] = ([m for m in covered_by_this_test if m in killed_mutants])
