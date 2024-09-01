@@ -40,6 +40,15 @@ pip install -e .
 
 # Run 
 
+TL;DR 
+
+Running options can be configured within `run/__main__.py`
+```
+cd ${DREDD_WEBGPU_TESTING}
+source venv/bin/activate
+python run
+```
+
 ## Mutate Dawn
 Use Dredd to:
 - Inject mutants into ${DAWN_MUTATED}
