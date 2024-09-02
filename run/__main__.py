@@ -12,7 +12,7 @@ def main():
     #TODO: convert to argparse
 
     base_dir = Path('/data/dev/dredd-webgpu-testing')
-    output_dir = Path('/data/work/webgpu/testing/out')
+    output_dir = Path('/data/work/webgpu/testing/out_validator/')
 
     mutation_script_path = Path(base_dir, 'scripts/mutation/mutate_tint.sh')
     vk_icd="/data/dev/mesa/build/install/share/vulkan/icd.d/lvp_icd.x86_64.json" 
@@ -37,9 +37,9 @@ def main():
     # Control params
     kill_uncovered_mutants_first : bool = False # param to select whether we use wgslsmith to kill uncovered mutants first
     mutate : bool = False # param to select whether we re-mutate (if True) or just skip to testing if mutations are already in place (if False)
-    cts_killing_completed : bool = True
+    cts_killing_completed : bool = False
     #query = 'webgpu:shader,*'
-    query = 'webgpu:shader,execution,flow_control,loop:*' # CTS query to use
+    query = 'webgpu:shader,execution,flow_control,*' # CTS query to use
     n_processes = 8 # param for number of processes to run in parallel for mutant killing
 
     if mutate:
@@ -125,8 +125,20 @@ def main():
         
         if not cts_killing_completed:
             print('Killing mutants with the CTS...')
+
+        if n_processes == 1:
             cts.kill_mutants.main(cts_args)
         
+        elif n_processes > 1:
+            cts_processes = []
+            for i in range(n_processes):
+                p = multiprocessing.Process(target=cts.kill_mutants.main, args=((cts_args,)))
+                cts_processes.append(p)
+                p.start()
+
+            for p in cts_processes:
+                p.join()
+                    
         print('Killing surviving mutants with WGSLsmith...')
         if n_processes == 1:
             wgslsmith.kill_mutants.main(wgslsmith_args)
@@ -234,11 +246,6 @@ def restore(git_path : Path, files : list[str]) -> bool:
             return False
 
     return True
-
-
-def get_uncovered_mutants() -> tuple[int,int]:
-    return (0, 0)
-
 
 if __name__=="__main__":
     main()
