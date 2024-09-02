@@ -137,7 +137,7 @@ def main(raw_args = None):
 
     # Set up log in append mode so we can continue runs that were cancelled
     logger = logging.getLogger(__name__)
-    log_name = Path(args.mutant_kill_path, 'info.log')
+    log_name = Path(args.mutant_kill_path, f'info_{os.get_pid()}.log')
     logging.basicConfig(filename=log_name, 
             format='%(asctime)s - %(message)s',
             datefmt=('%Y-%m-%d %H:%M:%S'),
@@ -160,6 +160,7 @@ def main(raw_args = None):
         Path(args.mutant_kill_path).mkdir(exist_ok=True)
         Path(args.mutant_kill_path,"killed_mutants").mkdir(exist_ok=True)
         Path(args.mutant_kill_path,"tracking").mkdir(exist_ok=True)
+        Path(args.mutant_kill_path,"tests").mkdir(exist_ok=True)
 
         test_queries = []
 
@@ -216,13 +217,25 @@ def main(raw_args = None):
         # Loop over tests to determine which mutants are killed by the tests
         for query in test_queries:
 
-            print(f'Query: {query}')
+            print(f'PID: {os.getpid()} Query: {query}')
+            with open(f'/data/work/webgpu/log_{os.getpid()}.txt','a') as f:
+                f.write(f'Starting query {query} from pid {os.getpid()}')
 
-            # Check if query has already been run
+            # Check if query has already been run (where we have read in queries from list)
             if query in completed_queries:
                 print(f"Query '{query}' already completed")
                 continue
 
+            # Try to create a directory for the test; if it already exists then skip this
+            # test as that means the results for this test have already been computed or
+            # are being computed in parallel by another process
+            query_output_directory = Path(args.mutant_kill_path,'tests',query.replace('\*','').replace(':','-'))
+
+            try:
+                query_output_directory.mkdir()
+            except FileExistsError:
+                print(f"Skipping query {query} as a directory for it already exists")
+ 
             test_id = hash(query)
 
             test_name = 'unit' if 'unittests:' in query else 'cts'
@@ -348,7 +361,8 @@ def main(raw_args = None):
                     'run-cts', 
                     '--verbose',
                     f'--bin={args.mutated_path}/out/Debug',
-                    '--cts=/data/dev/webgpu_cts',
+                    '--cts',
+                    str(args.cts_repo),
                     query]    
 
                 (mutant_result, failing_tests) = run_webgpu_cts_test_with_mutants(mutants=[mutant],
@@ -358,7 +372,7 @@ def main(raw_args = None):
                         reliable_tests = reliably_passing_tests,
                         env=env)
                 
-                kill_gpu_processes('node')
+                #kill_gpu_processes('node')
 
                 print(f'Mutant result: {mutant_result}')
 
@@ -389,7 +403,7 @@ def main(raw_args = None):
             killed_by_this_test.sort()
             covered_but_not_killed_by_this_test.sort()
             already_killed_by_other_tests.sort()
-            with open(args.mutant_kill_path / f'kill_summary_{test_name}_{test_id}.json', "w") as outfile:
+            with open(Path(query_output_directory,'kill_summary.json'), "w") as outfile:
                 json.dump({"query": query,
                            "covered_mutants": covered_by_this_test,
                            "killed_mutants": killed_by_this_test,
