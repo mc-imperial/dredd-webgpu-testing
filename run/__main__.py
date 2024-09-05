@@ -1,6 +1,7 @@
 import os
 import subprocess
 import multiprocessing
+import json
 from pathlib import Path
 
 from cts.utils import get_mutant_coverage
@@ -12,9 +13,11 @@ def main():
     #TODO: convert to argparse
 
     base_dir = Path('/data/dev/dredd-webgpu-testing')
-    output_dir = Path('/data/work/webgpu/testing/out_validator/')
+    output_dir = Path('/data/work/webgpu/testing/out_spirv')
 
-    mutation_script_path = Path(base_dir, 'scripts/mutation/mutate_tint.sh')
+    #mutation_script_path = Path(base_dir, 'scripts/mutation/mutate_tint.sh')
+    mutation_script_path = Path(base_dir, 'scripts/mutation/mutate_tint_multiple_files.sh')
+
     vk_icd="/data/dev/mesa/build/install/share/vulkan/icd.d/lvp_icd.x86_64.json" 
     dawn_vk="dawn:vk:0"
     timeout=60
@@ -24,23 +27,38 @@ def main():
     dawn_mutated = Path('/data/dev/dawn_mutated')
     dawn_coverage = Path('/data/dev/dawn_mutant_tracking')
 
+    compile_commands_mutated = Path(dawn_mutated,'out/Debug/compile_commands.json')
+    compile_commands_coverage = Path(dawn_coverage,'out/Debug/compile_commands.json')
+
     wgslsmith_mutated = Path('/data/dev/wgslsmith_mutated_dawn')
     wgslsmith_coverage = Path('/data/dev/wgslsmith_mutant_coverage_dawn')
 
-    file_to_mutate = Path('src/tint/lang/spirv/writer/ast_printer/ast_printer.cc')
-
+    #mutation_target = Path('src/tint/lang/core/ir/validator.cc')
+    mutation_target = Path('src/tint/lang/spirv/reader') # mutate all files in the spirv lang folder
+    
     mutation_info_file = Path(dawn_mutated, 'dawn_mutated.json')
     mutation_info_file_for_coverage = Path(dawn_coverage, 'dawn_tracking.json')
 
     covered_mutants_path = Path(output_dir, '__dredd_covered_mutants')
 
     # Control params
-    kill_uncovered_mutants_first : bool = False # param to select whether we use wgslsmith to kill uncovered mutants first
-    mutate : bool = False # param to select whether we re-mutate (if True) or just skip to testing if mutations are already in place (if False)
+    scrape_mutation_files : bool = True # param to scrape compile_commands.json
+    kill_uncovered_mutants_first : bool = True # param to select whether we use wgslsmith to kill uncovered mutants first
+    mutate : bool = True # param to select whether we re-mutate (if True) or just skip to testing if mutations are already in place (if False)
+    rebuild_wgslsmith : bool = False # param to select whether we rebuild wglsmith. this is set to True if mutate is true
     cts_killing_completed : bool = False
-    #query = 'webgpu:shader,*'
-    query = 'webgpu:shader,execution,flow_control,*' # CTS query to use
+    query = 'webgpu:*'
+    #query = 'webgpu:shader,execution,flow_control,*' # CTS query to use
     n_processes = 8 # param for number of processes to run in parallel for mutant killing
+
+    if scrape_mutation_files:
+
+        mutation_files = get_files_for_mutation(compile_commands_mutated, mutation_target)
+        coverage_files = get_files_for_mutation(compile_commands_coverage, mutation_target)
+
+    print(mutation_files)
+    print(coverage_files)
+    exit()
 
     if mutate:
 
@@ -52,16 +70,21 @@ def main():
             return
 
         mutate_dawn(mutation_script_path, 
-            file_to_mutate,
+            mutation_target,
             dawn_mutated,
             dawn_coverage)
+
+        print('Finished mutating!')
         
+    exit()
+    if mutate or rebuild_wgslsmith:
+        
+        print('Building WGSLsmith...')
+
         build_wgslsmith(wgslsmith_mutated, dawn_mutated)
         build_wgslsmith(wgslsmith_coverage, dawn_coverage)
 
-        print('Finished mutating and building')
-
-    # Kill mutants
+        print('Re-building WGSLsmith!')
 
     wgslsmith_args =[str(mutation_info_file),
             str(mutation_info_file_for_coverage),
@@ -81,6 +104,7 @@ def main():
     
     # Option 1: Kill uncovered mutants
     if kill_uncovered_mutants_first:
+        
         print('Killing uncovered mutants first...')
 
         # Check CTS mutant coverage for given query
@@ -99,6 +123,18 @@ def main():
         wgslsmith_args.extend(['--mutants_to_kill',
             ','.join([str(m) for m in mutants_to_kill])])
 
+        
+
+        # Check WGSLsmith coverage of uncovered mutants
+        wgslsmith_coverage_chek_args = wgslsmith_args + ['--coverage_check']
+
+        output = wgslsmith.kill_mutants.main(wgslsmith_coverage_chek_args)
+        
+        print(output)
+
+        exit()
+
+        # Kill mutants with WGSLsmith
         wgslsmith.kill_mutants.main(wgslsmith_args)
 
     # Option 2: Kill covered and surviving mutants
@@ -246,6 +282,21 @@ def restore(git_path : Path, files : list[str]) -> bool:
             return False
 
     return True
+
+def get_files_for_mutation(compile_commands : Path, mutation_target) -> list[str]:
+
+    # read in compile commands database
+    with open(compile_commands) as f:
+        data = json.load(f)
+    
+    files = [x["file"] for x in data]
+    files = [x for x in files if '.cc' in x 
+                            and '_test' not in x
+                            and '_fuzz' not in x
+                            and '_bench' not in x
+                            and str(mutation_target) in x]
+
+    return files
 
 if __name__=="__main__":
     main()
