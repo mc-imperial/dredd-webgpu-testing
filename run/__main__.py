@@ -30,11 +30,14 @@ def main():
     compile_commands_mutated = Path(dawn_mutated,'out/Debug/compile_commands.json')
     compile_commands_coverage = Path(dawn_coverage,'out/Debug/compile_commands.json')
 
+    mutation_files_output = Path(output_dir,'mutation_files.txt')
+    coverage_files_output = Path(output_dir,'coverage_files.txt')
+
     wgslsmith_mutated = Path('/data/dev/wgslsmith_mutated_dawn')
     wgslsmith_coverage = Path('/data/dev/wgslsmith_mutant_coverage_dawn')
 
     #mutation_target = Path('src/tint/lang/core/ir/validator.cc')
-    mutation_target = Path('src/tint/lang/spirv/reader') # mutate all files in the spirv lang folder
+    mutation_target = Path('src/tint/lang/spirv') # mutate all files in the spirv lang folder
     
     mutation_info_file = Path(dawn_mutated, 'dawn_mutated.json')
     mutation_info_file_for_coverage = Path(dawn_coverage, 'dawn_tracking.json')
@@ -44,23 +47,29 @@ def main():
     # Control params
     scrape_mutation_files : bool = True # param to scrape compile_commands.json
     kill_uncovered_mutants_first : bool = True # param to select whether we use wgslsmith to kill uncovered mutants first
-    mutate : bool = True # param to select whether we re-mutate (if True) or just skip to testing if mutations are already in place (if False)
+    mutate : bool = False # param to select whether we re-mutate (if True) or just skip to testing if mutations are already in place (if False)
     rebuild_wgslsmith : bool = False # param to select whether we rebuild wglsmith. this is set to True if mutate is true
     cts_killing_completed : bool = False
+    delete_covered_mutants_path : bool = False # param to select whether we refresh the covered mutants path
     query = 'webgpu:*'
     #query = 'webgpu:shader,execution,flow_control,*' # CTS query to use
     n_processes = 8 # param for number of processes to run in parallel for mutant killing
 
-    if scrape_mutation_files:
-
-        mutation_files = get_files_for_mutation(compile_commands_mutated, mutation_target)
-        coverage_files = get_files_for_mutation(compile_commands_coverage, mutation_target)
-
-    print(mutation_files)
-    print(coverage_files)
-    exit()
-
     if mutate:
+
+        # Delete dredd covered mutants path since mutations will be updated
+        os.remove(__dredd_covered_mutants)
+
+        if scrape_mutation_files:
+
+            mutation_files = get_files_for_mutation(compile_commands_mutated, mutation_target)
+            coverage_files = get_files_for_mutation(compile_commands_coverage, mutation_target)
+
+            with open(mutation_files_output,'w') as f:
+                f.write(' '.join(mutation_files))
+
+            with open(coverage_files_output,'w') as f:
+                f.write(' '.join(coverage_files))
 
         print('Mutating...')
         
@@ -70,21 +79,19 @@ def main():
             return
 
         mutate_dawn(mutation_script_path, 
-            mutation_target,
             dawn_mutated,
-            dawn_coverage)
+            dawn_coverage,
+            mutation_files_output,
+            coverage_files_output)
 
         print('Finished mutating!')
         
-    exit()
     if mutate or rebuild_wgslsmith:
         
         print('Building WGSLsmith...')
 
         build_wgslsmith(wgslsmith_mutated, dawn_mutated)
         build_wgslsmith(wgslsmith_coverage, dawn_coverage)
-
-        print('Re-building WGSLsmith!')
 
     wgslsmith_args =[str(mutation_info_file),
             str(mutation_info_file_for_coverage),
@@ -107,6 +114,9 @@ def main():
         
         print('Killing uncovered mutants first...')
 
+        if delete_covered_mutants_path:
+            os.remove(__dredd_covered_mutants)
+        
         # Check CTS mutant coverage for given query
         (covered, uncovered) = get_mutant_coverage(mutation_info_file,
             covered_mutants_path,
@@ -115,16 +125,16 @@ def main():
             query,
             vk_icd)
 
-        print(f'Covered mutants: \n{covered}')
-        print(f'Uncovered mutants: \n{uncovered}')
+        print(f'Covered mutants: \n{len(covered)}')
+        print(f'Uncovered mutants: \n{len(uncovered)}')
+
+        exit()
         
         mutants_to_kill = uncovered
 
         wgslsmith_args.extend(['--mutants_to_kill',
             ','.join([str(m) for m in mutants_to_kill])])
-
         
-
         # Check WGSLsmith coverage of uncovered mutants
         wgslsmith_coverage_chek_args = wgslsmith_args + ['--coverage_check']
 
@@ -132,13 +142,16 @@ def main():
         
         print(output)
 
-        exit()
+        with('/data/work/webgpu/temp_output.json','w') as f:
+            json.dump(output, f, indent=4)
 
         # Kill mutants with WGSLsmith
         wgslsmith.kill_mutants.main(wgslsmith_args)
 
     # Option 2: Kill covered and surviving mutants
     else:
+
+        print('Killing CTS covered mutants...')
         #TODO: tidy up args
         cts_args=[str(dawn_mutated),
                 str(dawn_coverage),
@@ -162,19 +175,20 @@ def main():
         if not cts_killing_completed:
             print('Killing mutants with the CTS...')
 
-        if n_processes == 1:
-            cts.kill_mutants.main(cts_args)
-        
-        elif n_processes > 1:
-            cts_processes = []
-            for i in range(n_processes):
-                p = multiprocessing.Process(target=cts.kill_mutants.main, args=((cts_args,)))
-                cts_processes.append(p)
-                p.start()
+            if n_processes == 1:
+                cts.kill_mutants.main(cts_args)
+            
+            elif n_processes > 1:
+                cts_processes = []
+                for i in range(n_processes):
+                    p = multiprocessing.Process(target=cts.kill_mutants.main, args=((cts_args,)))
+                    cts_processes.append(p)
+                    p.start()
 
-            for p in cts_processes:
-                p.join()
-                    
+                for p in cts_processes:
+                    p.join()
+
+        exit()            
         print('Killing surviving mutants with WGSLsmith...')
         if n_processes == 1:
             wgslsmith.kill_mutants.main(wgslsmith_args)
@@ -236,9 +250,10 @@ def mutants_exist(src : Path) -> bool :
     return False if (int(dredd_count.stdout)==0) else True
     
 def mutate_dawn(mutation_script : Path, 
-            file_to_mutate : Path,
             dawn_mutated : Path,
-            dawn_coverage : Path) -> int :
+            dawn_coverage : Path,
+            files_to_mutate : Path,
+            files_to_track : Path) -> int :
 
     '''
     Script contains the following steps:
@@ -249,9 +264,10 @@ def mutate_dawn(mutation_script : Path,
     '''
 
     cmd = [str(mutation_script),
-        str(file_to_mutate),
         str(dawn_mutated),
-        str(dawn_coverage)]
+        str(dawn_coverage),
+        str(files_to_mutate),
+        str(files_to_track)]
 
     result = subprocess.run(cmd)
 
