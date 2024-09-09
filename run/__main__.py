@@ -43,17 +43,18 @@ def main():
     mutation_info_file_for_coverage = Path(dawn_coverage, 'dawn_tracking.json')
 
     covered_mutants_path = Path(output_dir, '__dredd_covered_mutants')
+    reliable_tests = Path('/data/work/webgpu/lavapipe_reliably_passing_tests.json')
+    query = 'webgpu:*'
+    #query = 'webgpu:shader,execution,flow_control,*' # CTS query to use
 
     # Control params
     scrape_mutation_files : bool = True # param to scrape compile_commands.json
-    kill_uncovered_mutants_first : bool = True # param to select whether we use wgslsmith to kill uncovered mutants first
+    kill_uncovered_mutants_first : bool = False # param to select whether we use wgslsmith to kill uncovered mutants first
     mutate : bool = False # param to select whether we re-mutate (if True) or just skip to testing if mutations are already in place (if False)
     rebuild_wgslsmith : bool = False # param to select whether we rebuild wglsmith. this is set to True if mutate is true
     cts_killing_completed : bool = False
     delete_covered_mutants_path : bool = False # param to select whether we refresh the covered mutants path
-    query = 'webgpu:*'
-    #query = 'webgpu:shader,execution,flow_control,*' # CTS query to use
-    n_processes = 8 # param for number of processes to run in parallel for mutant killing
+    n_processes = 1 # param for number of processes to run in parallel for mutant killing
 
     if mutate:
 
@@ -127,8 +128,6 @@ def main():
 
         print(f'Covered mutants: \n{len(covered)}')
         print(f'Uncovered mutants: \n{len(uncovered)}')
-
-        exit()
         
         mutants_to_kill = uncovered
 
@@ -158,7 +157,7 @@ def main():
                 str(mutation_info_file),
                 str(mutation_info_file_for_coverage),
                 str(output_dir),
-                'cts_repo',
+                'arg', # Use high-level arg.query as query
                 '--cts_repo',
                 str(cts_repo),
                 '--query',
@@ -170,6 +169,8 @@ def main():
                 '600',
                 '--vk_icd',
                 vk_icd,
+                '--reliable_tests',
+                str(reliable_tests)
         ]
         
         if not cts_killing_completed:
