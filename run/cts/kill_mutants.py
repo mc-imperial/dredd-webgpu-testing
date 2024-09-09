@@ -14,7 +14,7 @@ from common.constants import DEFAULT_COMPILATION_TIMEOUT, DEFAULT_RUNTIME_TIMEOU
 from common.mutation_tree import MutationTree
 from common.run_process_with_timeout import ProcessResult, run_process_with_timeout
 from common.run_test_with_mutants import run_webgpu_cts_test_with_mutants, KillStatus, CTSKillStatus
-from run.cts.utils import kill_gpu_processes, get_tests, get_passes, get_failures, get_unrun_tests, get_single_tests_from_stdout, get_completed_queries
+from run.cts.utils import get_queries_from_cts, get_reliable_tests, kill_gpu_processes, get_tests, get_passes, get_failures, get_unrun_tests, get_single_tests_from_stdout, get_completed_queries
 
 import run.cts.flaky_test_finder.find_non_flaky_cts_tests as find_non_flaky_cts_tests
 
@@ -55,8 +55,10 @@ def main(raw_args = None):
                         help="Directory in which to record mutant kill info and mutant killing tests.",
                         type=Path)
     parser.add_argument("query_source",
-                        choices = ['file','cts_repo'],
-                        help="Source for CTS queries. Can be 'file' or 'cts_repo'")
+                        choices = ['file','cts_repo','arg'],
+                        help="Source for CTS queries. Can be 'file' to get from file, or 'cts_repo' to  \
+                            retrieve from repo, or 'arg' to directly use the query passed in args.query \
+                            without finding more granular sub-queries")
     parser.add_argument("--query_file",
                         default=None,
                         help="CTS query file")
@@ -162,57 +164,36 @@ def main(raw_args = None):
         Path(args.mutant_kill_path,"tracking").mkdir(exist_ok=True)
         Path(args.mutant_kill_path,"tests").mkdir(exist_ok=True)
 
-        test_queries = []
-
+        # Get list of test queries
         if args.query_source == "cts_repo":
-
-            # Get WebGPU CTS test queries as list
-            base_query_string = args.query
-
-            cts_queries = get_tests(cts_base, base_query_string)
-
-            print(cts_queries)
-
-            # Get WebGPU unit test queries as list
-            unittests_path = Path(cts_base,'unittests')
-            unittest_query_string = 'unittests:*'
-
-            #unittest_queries = get_tests(cts_base, unittest_query_string)
-
-            if args.unittests_only:
-                test_queries = unittest_queries
-            elif args.cts_only:
-                test_queries = cts_queries
-            else:
-                test_queries = unittest_queries + cts_queries
-
-            # Identify reliable tests within the queries
-            # These are individual level tests that consistently pass for
-            # unmutated Dawn. Record these individual queries to use for results
-            # checking tests that fail when a mutation is enabled.
-            if args.reliable_tests:
-                with open(args.reliable_tests,'r') as f:
-                    reliably_passing_tests : list = json.load(f)
-
-            else:
-                reliable_test_args = [str(args.mutated_path),
-                    str(args.cts_repo),
-                    str(args.mutant_kill_path),
-                    '--query_base',
-                    args.query,
-                    '--update_queries',
-                    '--vk_icd',
-                    args.vk_icd]
-                reliably_passing_tests = find_non_flaky_cts_tests.main(reliable_test_args)
+            test_queries = get_queries_from_cts(query,
+                cts_base,
+                args.unittests_only,
+                args.cts_only,
+                args.reliable_tests,
+                args.mutated_path,
+                args.cts_repo,
+                args.mutant_kill_path,
+                args.vk_icd)
 
         elif args.query_source == "file":
-            
             with open(args.query_file, 'r') as f:
                 test_queries = json.load(f)
 
-        completed_queries = get_completed_queries(log_name)
+        elif args.query_source == "arg":
+            test_queries = [args.query]
 
-        print(f'{len(completed_queries)} queries have been completed already')
+        # Get reliably passing tests
+        reliable_tests = get_reliable_tests(args.query,
+            args.mutated_path,
+            args.cts_repo,
+            args.mutant_kill_path,
+            args.vk_icd,
+            args.reliable_tests)
+
+        print(f'there are {len(reliable_tests)} reliable tests and the query to run is {test_queries}')
+
+        exit()
 
         # Loop over tests to determine which mutants are killed by the tests
         for query in test_queries:

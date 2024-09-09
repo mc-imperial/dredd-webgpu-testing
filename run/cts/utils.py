@@ -6,11 +6,67 @@ from enum import Enum
 from pathlib import Path
 
 from common.mutation_tree import MutationTree
+from run.cts.flaky_test_finder import find_non_flaky_cts_tests
 
 class TestStatus(Enum):
     PASS = 1
     FAIL = 2
     SKIP = 3
+
+
+def get_queries_from_cts(query : str,
+            cts_base : Path,
+            unittests_only : bool,
+            cts_only : bool):
+
+    # Get WebGPU CTS test queries as list
+    base_query_string = query
+
+    cts_queries = get_tests(cts_base, base_query_string)
+
+    # Get WebGPU unit test queries as list
+    unittests_path = Path(cts_base,'unittests')
+    unittest_query_string = 'unittests:*'
+
+    #unittest_queries = get_tests(cts_base, unittest_query_string)
+
+    if unittests_only:
+        test_queries = unittest_queries
+    elif cts_only:
+        test_queries = cts_queries
+    else:
+        test_queries = unittest_queries + cts_queries
+
+    return test_queries
+
+def get_reliable_tests(query : str,
+            mutated_path : Path,
+            cts_repo : Path,
+            mutant_killing_path : Path,
+            vk_icd : str,
+            reliable_tests : Path = None):
+    # Identify reliable tests within the queries
+    # These are individual level tests that consistently pass for
+    # unmutated Dawn. Record these individual queries to use for results
+    # checking tests that fail when a mutation is enabled.
+    if reliable_tests:
+        with open(reliable_tests,'r') as f:
+            reliably_passing_tests : list = json.load(f)
+
+    else:
+        reliable_test_args = [str(mutated_path),
+            str(cts_repo),
+            str(mutant_kill_path),
+            '--query_base',
+            query,
+            '--update_queries',
+            '--vk_icd',
+            vk_icd]
+
+        reliably_passing_tests = find_non_flaky_cts_tests.main(reliable_test_args)
+
+    return reliably_passing_tests
+
 
 def get_mutant_coverage(mutation_info_path,
         dredd_covered_mutants_path : Path,
