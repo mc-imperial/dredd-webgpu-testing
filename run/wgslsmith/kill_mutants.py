@@ -89,6 +89,9 @@ def main(raw_args=None):
                         default=None,
                         type=comma_list,
                         help="Optional list of mutant IDs to target")
+    parser.add_argument("--coverage_check",
+                        action=argparse.BooleanOptionalAction,
+                        help="Runs 50 WGSLsmith programs with mutant tracking enabled to check whether any mutants are covered.")
 
     args = parser.parse_args(raw_args)
 
@@ -137,6 +140,9 @@ def main(raw_args=None):
         Path(args.mutant_kill_path, "killed_mutants").mkdir(exist_ok=True)
         Path(args.mutant_kill_path, "tracking").mkdir(exist_ok=True)
 
+        if args.coverage_check:
+            wgslsmith_covered = {}
+
         while still_testing(total_test_time=args.total_test_time,
                             maximum_time_since_last_kill=args.maximum_time_since_last_kill,
                             start_time_for_overall_testing=start_time_for_overall_testing,
@@ -149,6 +155,11 @@ def main(raw_args=None):
                 os.remove(generated_program_exe_compiled_with_no_mutants)
             if generated_program_exe_compiled_with_mutant_tracking.exists():
                 os.remove(generated_program_exe_compiled_with_mutant_tracking)
+
+            if args.coverage_check:
+                print(f'len of dict is {len(wgslsmith_covered)}')
+                if len(wgslsmith_covered) > 10:
+                    return wgslsmith_covered
            
             # Generate a WGSLsmith program
             wgslsmith_seed = random.randint(0, 2 ** 32 - 1)
@@ -285,11 +296,18 @@ def main(raw_args=None):
             else:
                 candidate_mutants_for_this_test: List[int] = ([m for m in covered_by_this_test if m not in killed_mutants])
             
+            print(f'n mutants covered by the wgslsmith test: {len(covered_by_this_test)}')
+            print(f'n mutants covered by wgslsmith that are not covered by cts: {len(candidate_mutants_for_this_test)}')
             print("Number of mutants to try: " + str(len(candidate_mutants_for_this_test)))
             
             already_killed_by_other_tests: List[int] = ([m for m in covered_by_this_test if m in killed_mutants])
             killed_by_this_test: List[int] = []
             covered_but_not_killed_by_this_test: List[int] = []
+
+            if args.coverage_check:
+                print(f'adding to dict candidate mutants: {candidate_mutants_for_this_test}')
+                wgslsmith_covered[wgslsmith_test_name] = candidate_mutants_for_this_test
+                continue
              
             for mutant in candidate_mutants_for_this_test:
 
