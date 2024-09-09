@@ -2,6 +2,7 @@
 # Temporary and backup files
 *~
 *.bak
+records.md
 
 # PyCharm
 .idea
