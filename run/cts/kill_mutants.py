@@ -137,7 +137,7 @@ def main(raw_args = None):
 
     # Set up log in append mode so we can continue runs that were cancelled
     logger = logging.getLogger(__name__)
-    log_name = Path(args.mutant_kill_path, f'info_{os.get_pid()}.log')
+    log_name = Path(args.mutant_kill_path, f'info_{os.getpid()}.log')
     logging.basicConfig(filename=log_name, 
             format='%(asctime)s - %(message)s',
             datefmt=('%Y-%m-%d %H:%M:%S'),
@@ -235,6 +235,7 @@ def main(raw_args = None):
                 query_output_directory.mkdir()
             except FileExistsError:
                 print(f"Skipping query {query} as a directory for it already exists")
+                continue
  
             test_id = hash(query)
 

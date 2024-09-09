@@ -22,6 +22,50 @@ def get_mutant_coverage(mutation_info_path,
     covered = []
     uncovered = []
 
+    # Run cts if we do not already have a mutant tracking file
+    if not dredd_covered_mutants_path.exists():
+    
+        mutant_tracking_result = run_cts(mutation_info_path,
+                dredd_covered_mutants_path,
+                dawn_coverage,
+                cts_repo,
+                query,
+                vk_icd)
+    
+        if not dredd_covered_mutants_path.exists():
+            print("No mutant tracking file created.")
+    
+        else:
+            print("Mutant tracking compilation complete")
+    
+    else:
+        print("Getting covered mutants from existing dredd_covered_mutants path!")
+        
+    covered: List[int] = list(set([int(line.strip()) for line in
+                                open(dredd_covered_mutants_path, 'r').readlines()]))
+    covered.sort()
+
+    all_mutants = get_all_mutants(mutation_info_path)
+
+    print(len(all_mutants))
+    print(f'len all mutants set: {len(set(all_mutants))}')
+
+    uncovered = list(set(all_mutants) - set(covered))
+
+    print(f'covered: {len(set(covered))}')
+    print(f'uncovered: {len(set(uncovered))}')
+
+    assert len(all_mutants) == (len(covered) + len(uncovered))
+
+    return (covered, uncovered)
+
+def run_cts(mutation_info_path,
+        dredd_covered_mutants_path : Path,
+        dawn_coverage : Path,
+        cts_repo : Path,
+        query : str,
+        vk_icd : str = ''):
+   
     # Run the test with mutant tracking enabled
     print("Running CTS with mutant tracking compiler...")
     
@@ -36,34 +80,16 @@ def get_mutant_coverage(mutation_info_path,
             query] 
 
     # Get list of covered mutants from tracking file
-    mutant_tracking_result = subprocess.run(tracking_compile_cmd, env=tracking_environment) 
+    mutant_tracking_result = subprocess.run(tracking_compile_cmd, env=tracking_environment)
     
-    if not dredd_covered_mutants_path.exists():
-        print("No mutant tracking file created.")
-        print(f"Std out:\n {mutant_tracking_result.stdout.decode('utf-8')}\n")
-        print(f"Std err:\n {mutant_tracking_result.stderr.decode('utf-8')}\n")        
-    
-    else:
-        print("Mutant tracking compilation complete")
-        covered: List[int] = list(set([int(line.strip()) for line in
-                                                    open(dredd_covered_mutants_path, 'r').readlines()]))
-        covered.sort()
-
-    all_mutants = get_all_mutants(mutation_info_path)
-
-
-    uncovered = list(set(all_mutants) - set(covered))
-
-    assert len(all_mutants) == (len(covered) + len(uncovered))
-
-    return (covered, uncovered)
+    return mutant_tracking_result
     
 def get_all_mutants(mutation_info_file : Path) -> list[int]:
     
     with open(mutation_info_file, 'r') as json_input:
-        mutation_tree = MutationTree(json.load(json_input))
+       mutation_tree = MutationTree(json.load(json_input))
 
-    all_mutants = list(range(0,mutation_tree.num_mutations))
+    all_mutants = list(range(0,mutation_tree.num_mutations + 1))
 
     return all_mutants
 
