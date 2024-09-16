@@ -43,7 +43,7 @@ def main():
     mutation_info_file_for_coverage = Path(dawn_coverage, 'dawn_tracking.json')
 
     covered_mutants_path = Path(output_dir, '__dredd_covered_mutants')
-    reliable_tests = Path('/data/work/webgpu/lavapipe_reliably_passing_tests.json')
+    reliable_tests = Path(output_dir, 'reliable_tests.json')
     query = 'webgpu:*'
     #query = 'webgpu:shader,execution,flow_control,*' # CTS query to use
 
@@ -55,6 +55,7 @@ def main():
     cts_killing_completed : bool = False
     delete_covered_mutants_path : bool = False # param to select whether we refresh the covered mutants path
     n_processes = 1 # param for number of processes to run in parallel for mutant killing
+    sampling = True # param to choose to select a sample of mutants to kill
 
     if mutate:
 
@@ -151,6 +152,25 @@ def main():
     else:
 
         print('Killing CTS covered mutants...')
+
+        print('Finding covered mutants...')
+        if delete_covered_mutants_path:
+            os.remove(__dredd_covered_mutants)
+        
+        # Check CTS mutant coverage for given query
+        (covered, uncovered) = get_mutant_coverage(mutation_info_file,
+            covered_mutants_path,
+            dawn_coverage,
+            cts_repo,
+            query,
+            vk_icd)
+
+        print(f'Covered mutants: \n{len(covered)}')
+        print(f'Uncovered mutants: \n{len(uncovered)}')
+
+        if sampling:
+            mutant_sample = [str(x) for x in covered[2400:2450]]
+
         #TODO: tidy up args
         cts_args=[str(dawn_mutated),
                 str(dawn_coverage),
@@ -170,8 +190,12 @@ def main():
                 '--vk_icd',
                 vk_icd,
                 '--reliable_tests',
-                str(reliable_tests)
+                str(reliable_tests),
         ]
+
+        if sampling:
+            cts_args.append('--mutant_sample')
+            cts_args.extend(mutant_sample)
         
         if not cts_killing_completed:
             print('Killing mutants with the CTS...')

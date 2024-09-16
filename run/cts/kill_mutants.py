@@ -5,6 +5,7 @@ import logging
 
 import json
 import os
+import signal
 import random
 import tempfile
 import time
@@ -108,7 +109,13 @@ def main(raw_args = None):
                         default=None,
                         type=str,
                         help="File path for json containing reliably passing CTS tests")
+    parser.add_argument("--mutant_sample",
+                        nargs="*",  # 0 or more values expected => creates a list
+                        type=int,
+                        default=None # default if nothing is provided
+                        )
     args = parser.parse_args(raw_args)
+
 
     assert args.mutation_info_file != args.mutation_info_file_for_mutant_coverage_tracking
 
@@ -155,6 +162,7 @@ def main(raw_args = None):
 
         killed_mutants: Set[int] = set()
         unkilled_mutants: Set[int] = set(range(0, mutation_tree.num_mutations))
+        covered_but_not_killed_by_this_test: List[int] = []
 
         # Make a work directory in which information about the mutant killing process will be stored. If this already
         # exists that's OK - there may be other processes working on mutant killing, or we may be continuing a job that
@@ -191,8 +199,113 @@ def main(raw_args = None):
             args.vk_icd,
             args.reliable_tests)
 
-        print(f'there are {len(reliable_tests)} reliable tests and the query to run is {test_queries}')
+        print(f'There are {len(reliable_tests)} reliable tests and the query to run is {test_queries}')
+        
+        if args.mutant_sample:
 
+            print(f'Running mutant sample of {len(args.mutant_sample)} mutants')
+
+            # Mutants for killing are given by a sample input list
+            # We know that these mutants are covered by the CTS
+            unkilled_mutants = set(args.mutant_sample)
+            killed_mutants : Set(int) = set()
+            already_killed_by_other_tests : list(int) = []
+            killed_by_this_test : list(int) = []
+
+            for mutant in args.mutant_sample:
+                
+                # Check whether mutant has already been killed by another process
+                mutant_path = Path(args.mutant_kill_path,f'killed_mutants/{str(mutant)}')
+                if mutant_path.exists():
+                    print("Skipping mutant " + str(mutant) + " as it is noted as already killed.")
+                    print(f'Unkilled mutants: {unkilled_mutants}')
+                    unkilled_mutants.remove(mutant)
+                    killed_mutants.add(mutant)
+                    already_killed_by_other_tests.append(mutant)
+                    continue
+                
+                print("Trying mutant " + str(mutant))
+                
+                env = os.environ.copy()
+                env["VK_ICD_FILENAMES"] = f'{args.vk_icd}'
+                env["DREDD_ENABLED_MUTATION"] = str(mutant)
+
+                mutated_cmd = [f'{args.mutated_path}/tools/run',
+                    'run-cts', 
+                    '--verbose',
+                    f'--bin={args.mutated_path}/out/Debug',
+                    '--cts',
+                    str(args.cts_repo),
+                    f"'{args.query}'"]  
+
+                shell_cmd = ' '.join(mutated_cmd)  
+                print(shell_cmd)
+
+                with subprocess.Popen(shell_cmd, 
+                    stdout=subprocess.PIPE, 
+                    universal_newlines=True, 
+                    shell=True,
+                    preexec_fn=os.setsid,
+                    env=env) as p:
+                    
+                    # Parse stdout live and kill the process if the 
+                    # mutant is killed by a reliable test that fails
+                    mutant_result = CTSKillStatus.SURVIVED
+
+                    for line in p.stdout:
+                        print(line)
+                        if f' - fail' in line:
+                            test = line[:line.index(' ')] 
+                            if test in reliable_tests:
+                                os.killpg(os.getpgid(p.pid), signal.SIGTERM)
+                                mutant_result = CTSKillStatus.KILL_TEST_FAIL
+                                failing_tests = test
+                
+                kill_gpu_processes('node')
+
+                print(f'Mutant result: {mutant_result}')
+
+                if mutant_result == CTSKillStatus.SURVIVED or mutant_result == CTSKillStatus.TEST_TIMEOUT:
+                    print(f'Mutant ID {mutant} survived!')
+                    covered_but_not_killed_by_this_test.append(mutant)
+                    continue
+
+                unkilled_mutants.remove(mutant)
+                killed_mutants.add(mutant)
+                killed_by_this_test.append(mutant)
+                print(f"Kill! Mutants killed so far: {len(killed_mutants)}")
+                try:
+                    mutant_path.mkdir()
+                    print("Writing kill info to file.")
+                    with open(mutant_path / "kill_info.json", "w") as outfile:
+                        json.dump({"killing_query": args.query,
+                                   "killing_tests" : failing_tests,
+                                   "kill_type": str(mutant_result)}, outfile)
+                except FileExistsError:
+                    print(f"Mutant {mutant} was independently discovered to be killed.")
+                    continue
+
+
+            all_considered_mutants = killed_by_this_test \
+                + covered_but_not_killed_by_this_test \
+                + already_killed_by_other_tests
+            all_considered_mutants.sort()
+            
+            killed_by_this_test.sort()
+            covered_but_not_killed_by_this_test.sort()
+            already_killed_by_other_tests.sort()
+            
+            query_output_directory = Path(args.mutant_kill_path,'tests',query.replace('\*','').replace(':','-'))
+            query_output_directory.mkdir()
+            
+            with open(Path(query_output_directory,'kill_summary.json'), "w") as outfile:
+                json.dump({"query": query,
+                           "mutant_sample": mutant_sample,
+                           "killed_mutants": killed_by_this_test,
+                           "skipped_mutants": already_killed_by_other_tests,
+                           "survived_mutants": covered_but_not_killed_by_this_test}, outfile)
+            
+        print('EXITING!!!')
         exit()
 
         # Loop over tests to determine which mutants are killed by the tests
