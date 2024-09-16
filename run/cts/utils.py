@@ -49,21 +49,24 @@ def get_reliable_tests(query : str,
     # These are individual level tests that consistently pass for
     # unmutated Dawn. Record these individual queries to use for results
     # checking tests that fail when a mutation is enabled.
-    if reliable_tests:
+    if Path(reliable_tests).exists():
         with open(reliable_tests,'r') as f:
             reliably_passing_tests : list = json.load(f)
 
     else:
         reliable_test_args = [str(mutated_path),
             str(cts_repo),
-            str(mutant_kill_path),
+            str(mutant_killing_path),
             '--query_base',
             query,
-            '--update_queries',
             '--vk_icd',
             vk_icd]
 
         reliably_passing_tests = find_non_flaky_cts_tests.main(reliable_test_args)
+
+        if reliable_tests:
+            with open(reliable_tests,'w') as f:
+                json.dump(reliably_passing_tests,f,indent=4)
 
     return reliably_passing_tests
 
@@ -96,9 +99,25 @@ def get_mutant_coverage(mutation_info_path,
     
     else:
         print("Getting covered mutants from existing dredd_covered_mutants path!")
-        
-    covered: List[int] = list(set([int(line.strip()) for line in
-                                open(dredd_covered_mutants_path, 'r').readlines()]))
+
+    with open(dredd_covered_mutants_path, 'r') as file:
+        data = file.readlines()
+
+    # TODO: check why some lines have multiple mutants
+    list_lines = [line for line in data if ' ' in line]
+    flat_lines = [line.split(' ') for line in list_lines]
+    flatter_lines = [
+        mutant
+        for mutants in flat_lines
+        for mutant in mutants
+    ]
+
+    data = [line for line in data if ' ' not in line]
+    data.extend(flatter_lines)
+    data.remove('')
+
+    covered : List[int] = list(set([int(mutant.strip()) for mutant in data]))
+
     covered.sort()
 
     all_mutants = get_all_mutants(mutation_info_path)
