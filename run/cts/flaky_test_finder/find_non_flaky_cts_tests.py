@@ -128,9 +128,13 @@ def main(raw_args=None):
             json.dump(individual_cts_queries, f, indent=2)
     
     # If we are not updating queries, then read from input or file
-    else:
+    elif args.query_file:
         with open(args.query_file, 'r') as f:
             individual_cts_queries = json.load(f)
+
+    # Use single query 
+    else:
+        individual_cts_queries = [args.query_base]
 
     results = []
     single_tests = []
