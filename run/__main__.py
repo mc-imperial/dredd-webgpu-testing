@@ -3,6 +3,8 @@ import subprocess
 import multiprocessing
 import json
 from pathlib import Path
+from random import sample
+import time
 
 from cts.utils import get_mutant_coverage
 import wgslsmith.kill_mutants
@@ -152,6 +154,9 @@ def main():
     else:
 
         print('Killing CTS covered mutants...')
+        start = time.time()
+        with open(Path(output_dir, 'timing.txt'),'w') as f:
+            f.write(f'Run started at: {start}')
 
         print('Finding covered mutants...')
         if delete_covered_mutants_path:
@@ -169,7 +174,9 @@ def main():
         print(f'Uncovered mutants: \n{len(uncovered)}')
 
         if sampling:
-            mutant_sample = [str(x) for x in covered[2400:2450]]
+            #mutant_sample = [str(x) for x in covered[2400:2450]]
+            mutant_sample = [str(x) for x in sample(covered,200)]
+            #mutant_sample = ['28845']
 
         #TODO: tidy up args
         cts_args=[str(dawn_mutated),
@@ -212,6 +219,11 @@ def main():
 
                 for p in cts_processes:
                     p.join()
+
+        end = time.time()
+        with open(Path(output_dir, 'timing.txt'),'w') as f:
+            f.write(f'Run ended at: {end}')
+            f.write(f'Run time is {(end - start)/(60*60)} hours')
 
         exit()            
         print('Killing surviving mutants with WGSLsmith...')
