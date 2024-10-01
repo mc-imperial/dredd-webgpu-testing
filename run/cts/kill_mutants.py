@@ -268,8 +268,8 @@ def main(raw_args = None):
                 if mutant_result == CTSKillStatus.SURVIVED or mutant_result == CTSKillStatus.TEST_TIMEOUT:
                     print(f'Mutant ID {mutant} survived!')
                     covered_but_not_killed_by_this_test.append(mutant)
-                    with open(f"{str(args.mutant_kill_path)}/surviving_mutants.json", 'a') as outfile:
-                        json.dump(f'{mutant}\n', outfile)
+                    with open(f"{str(args.mutant_kill_path)}/surviving_mutants.txt", 'a') as outfile:
+                        outfile.write(f'{mutant}\n')
                     continue
 
                 unkilled_mutants.remove(mutant)
