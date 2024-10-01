@@ -94,6 +94,7 @@ def main(raw_args=None):
                         help="Runs 50 WGSLsmith programs with mutant tracking enabled to check whether any mutants are covered.")
 
     args = parser.parse_args(raw_args)
+    n_coverage_check_tests = 50
 
     assert args.mutation_info_file != args.mutation_info_file_for_mutant_coverage_tracking
 
@@ -158,7 +159,7 @@ def main(raw_args=None):
 
             if args.coverage_check:
                 print(f'len of dict is {len(wgslsmith_covered)}')
-                if len(wgslsmith_covered) > 10:
+                if len(wgslsmith_covered) > n_coverage_check_tests:
                     return wgslsmith_covered
            
             # Generate a WGSLsmith program
@@ -297,7 +298,7 @@ def main(raw_args=None):
                 candidate_mutants_for_this_test: List[int] = ([m for m in covered_by_this_test if m not in killed_mutants])
             
             print(f'n mutants covered by the wgslsmith test: {len(covered_by_this_test)}')
-            print(f'n mutants covered by wgslsmith that are not covered by cts: {len(candidate_mutants_for_this_test)}')
+            print(f'n mutants covered by wgslsmith that are not killed by cts: {len(candidate_mutants_for_this_test)}')
             print("Number of mutants to try: " + str(len(candidate_mutants_for_this_test)))
             
             already_killed_by_other_tests: List[int] = ([m for m in covered_by_this_test if m in killed_mutants])
