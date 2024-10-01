@@ -10,126 +10,79 @@ from cts.utils import get_mutant_coverage
 import wgslsmith.kill_mutants
 import cts.kill_mutants
 
+import config
+
 def main():
 
-    #TODO: convert to argparse
-
-    base_dir = Path('/data/dev/dredd-webgpu-testing')
-    output_dir = Path('/data/work/webgpu/testing/out_spirv')
-
-    #mutation_script_path = Path(base_dir, 'scripts/mutation/mutate_tint.sh')
-    mutation_script_path = Path(base_dir, 'scripts/mutation/mutate_tint_multiple_files.sh')
-
-    vk_icd="/data/dev/mesa/build/install/share/vulkan/icd.d/lvp_icd.x86_64.json" 
-    dawn_vk="dawn:vk:0"
-    timeout=60
-
-    cts_repo = Path('/data/dev/webgpu_cts')
-
-    dawn_mutated = Path('/data/dev/dawn_mutated')
-    dawn_coverage = Path('/data/dev/dawn_mutant_tracking')
-
-    compile_commands_mutated = Path(dawn_mutated,'out/Debug/compile_commands.json')
-    compile_commands_coverage = Path(dawn_coverage,'out/Debug/compile_commands.json')
-
-    mutation_files_output = Path(output_dir,'mutation_files.txt')
-    coverage_files_output = Path(output_dir,'coverage_files.txt')
-
-    wgslsmith_mutated = Path('/data/dev/wgslsmith_mutated_dawn')
-    wgslsmith_coverage = Path('/data/dev/wgslsmith_mutant_coverage_dawn')
-
-    #mutation_target = Path('src/tint/lang/core/ir/validator.cc')
-    mutation_target = Path('src/tint/lang/spirv') # mutate all files in the spirv lang folder
-    
-    mutation_info_file = Path(dawn_mutated, 'dawn_mutated.json')
-    mutation_info_file_for_coverage = Path(dawn_coverage, 'dawn_tracking.json')
-
-    covered_mutants_path = Path(output_dir, '__dredd_covered_mutants')
-    reliable_tests = Path(output_dir, 'reliable_tests.json')
-    query = 'webgpu:*'
-    #query = 'webgpu:shader,execution,flow_control,*' # CTS query to use
-
-    # Control params
-    scrape_mutation_files : bool = True # param to scrape compile_commands.json
-    kill_uncovered_mutants_first : bool = False # param to select whether we use wgslsmith to kill uncovered mutants first
-    mutate : bool = False # param to select whether we re-mutate (if True) or just skip to testing if mutations are already in place (if False)
-    rebuild_wgslsmith : bool = False # param to select whether we rebuild wglsmith. this is set to True if mutate is true
-    cts_killing_completed : bool = True # param to select whether cts mutant killing has already been completed
-    delete_covered_mutants_path : bool = False # param to select whether we refresh the covered mutants path
-    n_processes = 1 # param for number of processes to run in parallel for mutant killing
-    sampling = True # param to choose to select a sample of mutants to kill
-    get_mutants_covered_by_wgslsmith = True # param to get a list of mutants covered by 50 wgslsmith tests, so we target mutants with the cts
-    # that are likely to be killable by wgslsmith (to avoid finding a bunch of surviving mutants that aren't even covered by wgslsmith)
-
-    if mutate:
+    if config.mutate:
 
         # Delete dredd covered mutants path since mutations will be updated
-        os.remove(__dredd_covered_mutants)
+        os.remove(config.__dredd_covered_mutants)
 
         if scrape_mutation_files:
 
-            mutation_files = get_files_for_mutation(compile_commands_mutated, mutation_target)
-            coverage_files = get_files_for_mutation(compile_commands_coverage, mutation_target)
+            mutation_files = get_files_for_mutation(config.compile_commands_mutated, config.mutation_target)
+            coverage_files = get_files_for_mutation(config.compile_commands_coverage, config.mutation_target)
 
-            with open(mutation_files_output,'w') as f:
-                f.write(' '.join(mutation_files))
+            with open(config.mutation_files_output,'w') as f:
+                f.write(' '.join(config.mutation_files))
 
-            with open(coverage_files_output,'w') as f:
-                f.write(' '.join(coverage_files))
+            with open(config.coverage_files_output,'w') as f:
+                f.write(' '.join(config.coverage_files))
 
         print('Mutating...')
         
         # Ensure that no mutants exist already in the files
-        if not make_dawn_clean(dawn_mutated, dawn_coverage):
+        if not make_dawn_clean(config.dawn_mutated, config.dawn_coverage):
             print('Error!')
             return
 
-        mutate_dawn(mutation_script_path, 
-            dawn_mutated,
-            dawn_coverage,
-            mutation_files_output,
-            coverage_files_output)
+        mutate_dawn(config.mutation_script_path, 
+            config.dawn_mutated,
+            config.dawn_coverage,
+            config.mutation_files_output,
+            config.coverage_files_output)
 
         print('Finished mutating!')
         
-    if mutate or rebuild_wgslsmith:
+    if config.mutate or config.rebuild_wgslsmith:
         
         print('Building WGSLsmith...')
 
-        build_wgslsmith(wgslsmith_mutated, dawn_mutated)
-        build_wgslsmith(wgslsmith_coverage, dawn_coverage)
+        build_wgslsmith(config.wgslsmith_mutated, config.dawn_mutated)
+        build_wgslsmith(config.wgslsmith_coverage, config.dawn_coverage)
 
-    wgslsmith_args =[str(mutation_info_file),
-            str(mutation_info_file_for_coverage),
-            f'{str(wgslsmith_mutated)}/target/release/wgslsmith',
-            f'{str(wgslsmith_coverage)}/target/release/wgslsmith',
-            f'{str(wgslsmith_mutated)}/target/release',
-            str(output_dir),
+    wgslsmith_args =[str(config.mutation_info_file),
+            str(config.mutation_info_file_for_coverage),
+            f'{str(config.wgslsmith_mutated)}/target/release/wgslsmith',
+            f'{str(config.wgslsmith_coverage)}/target/release/wgslsmith',
+            f'{str(config.wgslsmith_mutated)}/target/release',
+            str(config.output_dir),
             '--compile_timeout',
-            str(timeout),
+            str(config.timeout),
             '--run_timeout',
-            str(timeout),
+            str(config.timeout),
             '--vk_icd',
-            vk_icd,
+            config.vk_icd,
             '--dawn_vk',
-            dawn_vk,
+            config.dawn_vk,
         ]
     
     # Option 1: Kill uncovered mutants
-    if kill_uncovered_mutants_first:
+    if config.kill_uncovered_mutants_first:
         
         print('Killing uncovered mutants first...')
 
-        if delete_covered_mutants_path:
-            os.remove(__dredd_covered_mutants)
+        if config.delete_covered_mutants_path:
+            os.remove(config.__dredd_covered_mutants)
         
         # Check CTS mutant coverage for given query
-        (covered, uncovered) = get_mutant_coverage(mutation_info_file,
-            covered_mutants_path,
-            dawn_coverage,
-            cts_repo,
-            query,
-            vk_icd)
+        (covered, uncovered) = get_mutant_coverage(config.mutation_info_file,
+            config.covered_mutants_path,
+            config.dawn_coverage,
+            config.cts_repo,
+            config.query,
+            config.vk_icd)
 
         print(f'Covered mutants: \n{len(covered)}')
         print(f'Uncovered mutants: \n{len(uncovered)}')
@@ -154,9 +107,9 @@ def main():
 
     # Option 2: Kill covered and surviving mutants
     else:
-        if not cts_killing_completed:
+        if not config.cts_killing_completed:
 
-            if get_mutants_covered_by_wgslsmith:
+            if config.get_mutants_covered_by_wgslsmith:
                 print('Getting mutants covered by a sample of wgslsmith tests...')
                 wgslsmith_coverage_check_args = wgslsmith_args + ['--coverage_check']
                 covered_wgslsmith_dict = wgslsmith.kill_mutants.main(wgslsmith_coverage_check_args)
@@ -170,66 +123,66 @@ def main():
 
             print('Killing CTS covered mutants...')
             start = time.time()
-            with open(Path(output_dir, 'timing.txt'),'w') as f:
+            with open(Path(config.output_dir, 'timing.txt'),'w') as f:
                 f.write(f'Run started at: {start}')
 
             print('Finding covered mutants...')
-            if delete_covered_mutants_path:
-                os.remove(__dredd_covered_mutants)
+            if config.delete_covered_mutants_path:
+                os.remove(config.__dredd_covered_mutants)
             
             # Check CTS mutant coverage for given query
-            (covered_cts, uncovered_cts) = get_mutant_coverage(mutation_info_file,
-                covered_mutants_path,
-                dawn_coverage,
-                cts_repo,
-                query,
-                vk_icd)
+            (covered_cts, uncovered_cts) = get_mutant_coverage(config.mutation_info_file,
+                config.covered_mutants_path,
+                config.dawn_coverage,
+                config.cts_repo,
+                config.query,
+                config.vk_icd)
 
             print(f'Covered mutants: \n{len(covered_cts)}')
             print(f'Uncovered mutants: \n{len(uncovered_cts)}')
 
-            if sampling:
-                if get_mutants_covered_by_wgslsmith:
+            if config.sampling:
+                if config.get_mutants_covered_by_wgslsmith:
                     covered_intersection = list(set(covered_cts).intersection(set(covered_wgslsmith)))
                     mutant_sample = [str(x) for x in sample(covered_intersection,10)]
                 else:
                     mutant_sample = [str(x) for x in sample(covered,200)]
 
             #TODO: tidy up args
-            cts_args=[str(dawn_mutated),
-                    str(dawn_coverage),
-                    str(mutation_info_file),
-                    str(mutation_info_file_for_coverage),
-                    str(output_dir),
+            cts_args=[str(config.dawn_mutated),
+                    str(config.dawn_coverage),
+                    str(config.mutation_info_file),
+                    str(config.mutation_info_file_for_coverage),
+                    str(config.output_dir),
                     'arg', # Use high-level arg.query as query
                     '--cts_repo',
-                    str(cts_repo),
+                    str(config.cts_repo),
                     '--query',
-                    query,
+                    config.query,
                     '--cts_only',
                     '--run_timeout',
                     '600',
                     '--compile_timeout',
                     '600',
                     '--vk_icd',
-                    vk_icd,
+                    config.vk_icd,
                     '--reliable_tests',
-                    str(reliable_tests),
+                    str(config.reliable_tests),
             ]
 
-            if sampling:
+            if config.sampling:
                 cts_args.append('--mutant_sample')
                 cts_args.extend(mutant_sample)
             
-            if not cts_killing_completed:
+            if not config.cts_killing_completed:
                 print('Killing mutants with the CTS...')
 
-                if n_processes == 1:
+                if config.n_processes == 1:
                     cts.kill_mutants.main(cts_args)
                 
-                elif n_processes > 1:
+                elif config.n_processes > 1:
                     cts_processes = []
-                    for i in range(n_processes):
+                    for i in range(config.n_processes):
                         p = multiprocessing.Process(target=cts.kill_mutants.main, args=((cts_args,)))
                         cts_processes.append(p)
                         p.start()
@@ -238,23 +191,23 @@ def main():
                         p.join()
 
             end = time.time()
-            with open(Path(output_dir, 'timing.txt'),'w') as f:
+            with open(Path(config.output_dir, 'timing.txt'),'w') as f:
                 f.write(f'Run ended at: {end}')
                 f.write(f'Run time is {(end - start)/(60*60)} hours')   
 
         print('Killing surviving mutants with WGSLsmith...')
 
-        mutants_to_kill = get_surviving_mutants(output_dir)
+        mutants_to_kill = get_surviving_mutants(config.output_dir)
 
         wgslsmith_args.extend(['--mutants_to_kill',
             ','.join([str(m) for m in mutants_to_kill])])
 
-        if n_processes == 1:
+        if config.n_processes == 1:
             wgslsmith.kill_mutants.main(wgslsmith_args)
 
-        elif n_processes > 1:
+        elif config.n_processes > 1:
             processes = []
-            for i in range(n_processes):
+            for i in range(config.n_processes):
                 p = multiprocessing.Process(target=wgslsmith.kill_mutants.main, args=((wgslsmith_args,)))
                 processes.append(p)
                 p.start()
