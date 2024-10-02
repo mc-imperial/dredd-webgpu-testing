@@ -39,8 +39,10 @@ timeout=60
 ### Testing output info filepaths ###
 
 reliable_tests = Path(output_dir, 'reliable_tests.json')
+covered_by_wgslsmith_file = Path(output_dir, 'covered_by_wgslsmith.json')
 mutation_files_output = Path(output_dir,'mutation_files.txt')
 coverage_files_output = Path(output_dir,'coverage_files.txt')
+
 
 ### Script to perform mutation ###
 
@@ -63,11 +65,15 @@ rebuild_wgslsmith : bool = False
 '''
 cts_killing_completed : bool = True 
 
-''' param to select whether we refresh the covered mutants path
+''' param to select whether we refresh the CTS covered mutants
 '''
-delete_covered_mutants_path : bool = False
+refresh_cts_coverage : bool = False
 
-''' param to scrape compile_commands.json
+''' param to scrape compile_commands.json to ensure that we only
+    try to mutate files that are built as part of the original
+    build process. This ensures that we don't attempt to mutate
+    anything that wasn't built since Dredd won't have enough information
+    and will silently fail
 '''
 scrape_mutation_files : bool = True 
 
@@ -87,5 +93,9 @@ sampling = True
     so we target mutants with the cts that are likely to be killable 
     by wgslsmith (to avoid finding a bunch of surviving mutants that 
     aren't even covered by wgslsmith)
+    @refresh_wgslsmith_coverage re-calculates coverage using a sample
+    even if a file already exists that records the wgslsmith mutant
+    coverage (coverage is calculated by default if no file exists)
 '''
 get_mutants_covered_by_wgslsmith = True
+refresh_wgslsmith_coverage = False
