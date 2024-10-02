@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from random import sample
 import time
+from datetime import datetime
 
 from cts.utils import get_mutant_coverage
 import wgslsmith.kill_mutants
@@ -13,6 +14,9 @@ import cts.kill_mutants
 import config
 
 def main():
+
+    #TODO: add config paramter info to log
+    write_to_log(f'Start time: {datetime.now()}\n')
 
     if config.mutate:
         print('Mutating dawn')
@@ -210,6 +214,8 @@ def get_wgslsmith_args() -> list[str]:
             config.vk_icd,
             '--dawn_vk',
             config.dawn_vk,
+            '--log',
+            str(config.logging_file)
         ]
 
     return wgslsmith_args
@@ -388,6 +394,10 @@ def get_cts_args():
     ]
 
     return cts_args
+
+def write_to_log(msg : str):
+    with open(config.logging_file,'a') as f:
+        f.write(msg)
 
 if __name__=="__main__":
     main()

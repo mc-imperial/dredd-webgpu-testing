@@ -42,6 +42,7 @@ reliable_tests = Path(output_dir, 'reliable_tests.json')
 covered_by_wgslsmith_file = Path(output_dir, 'covered_by_wgslsmith.json')
 mutation_files_output = Path(output_dir,'mutation_files.txt')
 coverage_files_output = Path(output_dir,'coverage_files.txt')
+logging_file = Path(output_dir, 'log.txt')
 
 
 ### Script to perform mutation ###
