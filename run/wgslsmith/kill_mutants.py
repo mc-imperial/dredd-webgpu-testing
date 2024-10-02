@@ -92,9 +92,16 @@ def main(raw_args=None):
     parser.add_argument("--coverage_check",
                         action=argparse.BooleanOptionalAction,
                         help="Runs 50 WGSLsmith programs with mutant tracking enabled to check whether any mutants are covered.")
+    parser.add_argument("--log",
+                        type=str,
+                        help="Optional logging file to record summary of testing.")
 
     args = parser.parse_args(raw_args)
     n_coverage_check_tests = 50
+
+    if args.log:
+        logging_file = Path(args.log)
+        logdata = LogData(logging_file)
 
     assert args.mutation_info_file != args.mutation_info_file_for_mutant_coverage_tracking
 
@@ -202,9 +209,7 @@ def main(raw_args=None):
             run_cmd = [str(args.wgslsmith_root / "wgslsmith")] + compiler_args
             
             print("Running with unmutated WGSLsmith...")
-            print(f'Run cmd: {run_cmd}')
             run_time_start: float = time.time()
-            print(f'run timeout is {args.run_timeout}')
 
             env = os.environ.copy()
             env["VK_ICD_FILENAMES"] = f'{args.vk_icd}'
@@ -309,6 +314,15 @@ def main(raw_args=None):
                 print(f'adding to dict candidate mutants: {candidate_mutants_for_this_test}')
                 wgslsmith_covered[wgslsmith_test_name] = candidate_mutants_for_this_test
                 continue
+
+            if args.log:
+                logdata.new_test(wgslsmith_test_name)
+                logdata.mutants_to_kill = len(set(args.mutants_to_kill))
+                logdata.update_mutant_candidates(candidate_mutants_for_this_test)
+                logdata.mutants_covered_this_test = len(covered_by_this_test)
+                logdata.candidate_mutants_for_this_test = len(candidate_mutants_for_this_test)
+
+                logdata.write_pre_test_summary()
              
             for mutant in candidate_mutants_for_this_test:
 
@@ -327,6 +341,7 @@ def main(raw_args=None):
                     continue
                 
                 print("Trying mutant " + str(mutant))
+                logdata.write_trying_mutant(str(mutatnt))
 
                 env = os.environ.copy()
                 env["VK_ICD_FILENAMES"] = f'{args.vk_icd}'
@@ -389,6 +404,9 @@ def main(raw_args=None):
             already_killed_by_other_tests.sort()
             
             print('Saving kill summary...')
+            logdata.mutants_killed_this_test = len(killed_by_this_test)
+            logdata.update_mutants_killed(killed_by_this_test)
+            logdata.write_post_test_summary()
             
             test_output_directory: Path = Path(args.mutant_kill_path, f'tests/{wgslsmith_test_name}')
             
@@ -405,6 +423,54 @@ def main(raw_args=None):
                            "killed_mutants": killed_by_this_test,
                            "skipped_mutants": already_killed_by_other_tests,
                            "survived_mutants": covered_but_not_killed_by_this_test}, outfile)
+
+class LogData:
+
+    def __init__(self, logging_file : Path):
+        self.mutants_to_kill : int
+        self.wgslsmith_tests : int = 0
+        self.mutants_covered_all_tests : set[int] = set()
+        self.mutants_killed_all_tests : set[int] = set()
+        self.mutants_covered_this_test : int
+        self.candidate_mutants_for_this_test : int
+        self.mutants_killed_this_test : int
+        self.logging_file : Path = logging_file
+        self.current_test_id : int
+
+    def new_test(self, test_id : str):
+        self.wgslsmith_tests += 1
+        self.current_test_id = test_id
+
+        with open(self.logging_file, 'a') as f:
+            f.write(f"Test ID: {self.current_test_id}\n")
+            f.write(f"Mutants tried:")
+
+    def write_trying_mutant(self, id : str):
+        with open(self.logging_file, 'a') as f:
+            f.write(f' {id}')
+
+    def update_mutant_candidates(self, mutants : list[int]):
+        self.mutants_covered_all_tests = set(mutants).union(self.mutants_covered_all_tests)
+
+    def update_mutants_killed(self, mutants : list[int]):
+        self.mutants_killed_all_tests = set(mutants).union(self.mutants_killed_all_tests)
+
+    def write_pre_test_summary(self):
+        with open(self.logging_file, 'a') as f:
+            f.write(f"\nSummary for test ID {self.current_test_id}\n")
+            f.write(f"Mutants to kill: {self.mutants_to_kill}\n")
+            f.write(f"Running total of WGSLsmith tests: {self.wgslsmith_tests}\n")
+            f.write(f"Mutants covered by this test: {self.mutants_covered_this_test}\n")
+            f.write(f"Mutants covered by this test that have not been killed by the CTS: {self.candidate_mutants_for_this_test}\n")
+            f.write(f"Running total of mutants covered by WGSLsmith testst that have not been killed by the CTS: {len(self.mutants_covered_all_tests)}\n")
+            f.write(f"\n")
+
+    def write_post_test_summary(self):
+        with open(self.logging_file, 'a') as f:
+            f.write(f"Mutants to kill killed by this test: {self.mutants_killed_this_test}\n")
+            f.write(f"\nRunning total of mutants to kill killed by all tests: {len(self.mutants_killed_all_tests)}\n")
+            f.write(f"\n")
+
 
 if __name__ == '__main__':
     main()
