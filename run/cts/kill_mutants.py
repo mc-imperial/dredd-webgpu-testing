@@ -308,15 +308,9 @@ def main(raw_args = None):
                            "skipped_mutants": already_killed_by_other_tests,
                            "survived_mutants": covered_but_not_killed_by_this_test}, outfile)
             
-        print('EXITING!!!')
-        exit()
 
         # Loop over tests to determine which mutants are killed by the tests
         for query in test_queries:
-
-            print(f'PID: {os.getpid()} Query: {query}')
-            with open(f'/data/work/webgpu/log_{os.getpid()}.txt','a') as f:
-                f.write(f'Starting query {query} from pid {os.getpid()}')
 
             # Check if query has already been run (where we have read in queries from list)
             if query in completed_queries:
@@ -388,6 +382,7 @@ def main(raw_args = None):
             print("Running with mutant tracking compiler...")
             tracking_environment = os.environ.copy()
             tracking_environment["DREDD_MUTANT_TRACKING_FILE"] = str(dredd_covered_mutants_path)
+            tracking_environment["DREDD_MUTANT_TRACKING_PATH"] = str(dredd_covered_mutants_path.parent) + '/'
             tracking_environment["VK_ICD_FILENAMES"] = f'{args.vk_icd}'
             tracking_compile_cmd = [f'{args.tracking_path}/tools/run',
                     'run-cts', 
