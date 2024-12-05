@@ -1,4 +1,4 @@
-const { create, globals } = require("./dawn.node");
+const { create, globals } = require("/data/dev/dawn/build/dawn.node");
 Object.assign(globalThis, globals); // Provides constants like GPUBufferUsage.MAP_READ
 let navigator = { gpu: create([]) };
 
