@@ -3,7 +3,8 @@ from pathlib import Path
 ### Directories ###
 
 base_dir = Path('/data/dev/dredd-webgpu-testing')
-output_dir = Path('/data/work/webgpu/testing/out_spirv')
+output_dir = Path('/data/work/webgpu/testing/out_tint_lang')
+surviving_mutants_dir = Path('/data/work/webgpu/testing/out_tint_lang')
 cts_repo = Path('/data/dev/webgpu_cts')
 
 ### Dredd parameters ###
@@ -20,20 +21,22 @@ mutation_info_file_for_coverage = Path(dawn_coverage, 'dawn_tracking.json')
 compile_commands_mutated = Path(dawn_mutated,'out/Debug/compile_commands.json')
 compile_commands_coverage = Path(dawn_coverage,'out/Debug/compile_commands.json')
 
-covered_mutants_path = Path(output_dir, '__dredd_covered_mutants')
+cts_covered_mutants_path = Path(output_dir, 'tracking', 'cts_covered_mutants')
 
+#mutation_target = Path('src/tint/lang/spirv/writer/writer.cc')
 #mutation_target = Path('src/tint/lang/core/ir/validator.cc') # mutate validator.cc file
-mutation_target = Path('src/tint/lang/spirv') # mutate all files in the spirv lang folder
+mutation_target = Path('src/tint/lang') # mutate all files in tint
 
 ### WebGPU query ###
 
 query = 'webgpu:*'
+#query = 'webgpu:shader,execution,flow_control,loop:*' # CTS query to use
 #query = 'webgpu:shader,execution,flow_control,*' # CTS query to use
 
 ### Set GPU driver ###
 
 vk_icd="/data/dev/mesa/build/install/share/vulkan/icd.d/lvp_icd.x86_64.json" 
-dawn_vk="dawn:vk:0"
+dawn_vk="dawn:vk:7425"
 timeout=60
 
 ### Testing output info filepaths ###
@@ -64,7 +67,12 @@ rebuild_wgslsmith : bool = False
 ''' param to select whether cts mutant killing has already 
     been completed
 '''
-cts_killing_completed : bool = True 
+cts_killing_completed : bool = False 
+
+''' param to select whether we run cts testing on a
+    mutant-by-mutant basis
+'''
+get_per_test_cts_mutant_coverage : bool = False
 
 ''' param to select whether we refresh the CTS covered mutants
 '''
@@ -99,4 +107,4 @@ sampling = True
     coverage (coverage is calculated by default if no file exists)
 '''
 get_mutants_covered_by_wgslsmith = True
-refresh_wgslsmith_coverage = False
+refresh_wgslsmith_coverage = True

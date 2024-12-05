@@ -136,7 +136,7 @@ def main(raw_args=None):
         killed_mutants: Set[int] = set()
 
         if args.mutants_to_kill is not None:
-            unkilled_mutants: Set[int] = set(args.mutants_to_kill)
+            unkilled_mutants: Set[int] = set([int(x) for x in args.mutants_to_kill])
         else:
             unkilled_mutants: Set[int] = set(range(0, mutation_tree.num_mutations))
 
@@ -176,10 +176,11 @@ def main(raw_args=None):
             wgslsmith_test_name: str = "wgslsmith_" + str(wgslsmith_seed)
 
             print("Generating...")
+            
             if run_process_with_timeout(cmd=wgslsmith_cmd, timeout_seconds=args.generator_timeout) is None:
                 print(f"WGSLsmith timed out (seed {wgslsmith_seed})")
                 continue
-
+          
             # Extract inputs from WGSLsmith program
             with open(wgslsmith_generated_program) as f:
                 inputs = f.readline().strip('\n')[3:] # remove first 3 comment chars
@@ -221,7 +222,6 @@ def main(raw_args=None):
             run_time_end: float = time.time()
             run_time = run_time_end - run_time_start 
 
-            
             if regular_execution_result is None:
                 print("Runtime timeout.")
                 continue
@@ -229,12 +229,16 @@ def main(raw_args=None):
                 print(f"Std out:\n {regular_execution_result.stdout.decode('utf-8')}\n")
                 #print(f"Std err:\n {regular_execution_result.stderr.decode('utf-8')}\n")
                 print("Execution of generated program failed without mutants.")
+                print('done!')
+                shutil.copy(src=wgslsmith_generated_program, dst="/data/work/webgpu/prog.wgsl")
+                exit() 
                 continue
             else:
                 print("Execution of generated program succeeded without mutants.")
 
             print(f"Std out:\n {regular_execution_result.stdout.decode('utf-8')}\n")
             print(f"Std err:\n {regular_execution_result.stderr.decode('utf-8')}\n")
+
             
             # Extract output under no mutation
             output = regular_execution_result.stdout.decode("utf-8")
@@ -270,10 +274,6 @@ def main(raw_args=None):
                 print("Mutant tracking compilation complete")
                 with open(dredd_covered_mutants_path, 'r') as f:
                     covered_mutants_info = f.read()
-                with open(Path(args.mutant_kill_path,f'tracking/mutant_tracking_file_wgslsmith_{wgslsmith_seed}.txt'), 'w') as f:
-                    f.write(str(wgslsmith_seed))
-                    f.write(covered_mutants_info)
-
 
             print(f"Std out:\n {mutant_tracking_result.stdout.decode('utf-8')}\n")
             print(f"Std err:\n {mutant_tracking_result.stderr.decode('utf-8')}\n")
@@ -294,6 +294,9 @@ def main(raw_args=None):
             covered_by_this_test: List[int] = list(set([int(line.strip()) for line in
                                                         open(dredd_covered_mutants_path, 'r').readlines()]))
             covered_by_this_test.sort()
+
+            with open(Path(args.mutant_kill_path,f'tracking/mutant_tracking_file_wgslsmith_{wgslsmith_seed}.txt'), 'w') as f:
+                f.writelines([(str(x) + '\n') for x in covered_by_this_test])
             
             if args.mutants_to_kill is not None:
                  candidate_mutants_for_this_test: List[int] = ([m for m in covered_by_this_test 
@@ -301,9 +304,10 @@ def main(raw_args=None):
                                                                 and m in unkilled_mutants])
             else:
                 candidate_mutants_for_this_test: List[int] = ([m for m in covered_by_this_test if m not in killed_mutants])
-            
+
             print(f'n mutants covered by the wgslsmith test: {len(covered_by_this_test)}')
             print(f'n mutants covered by wgslsmith that are not killed by cts: {len(candidate_mutants_for_this_test)}')
+
             print("Number of mutants to try: " + str(len(candidate_mutants_for_this_test)))
             
             already_killed_by_other_tests: List[int] = ([m for m in covered_by_this_test if m in killed_mutants])
@@ -341,7 +345,7 @@ def main(raw_args=None):
                     continue
                 
                 print("Trying mutant " + str(mutant))
-                logdata.write_trying_mutant(str(mutatnt))
+                logdata.write_trying_mutant(str(mutant))
 
                 env = os.environ.copy()
                 env["VK_ICD_FILENAMES"] = f'{args.vk_icd}'

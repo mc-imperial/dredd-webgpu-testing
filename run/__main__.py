@@ -15,12 +15,11 @@ import config
 
 def main():
 
-    #TODO: add config paramter info to log
     write_to_log(f'Start time: {datetime.now()}\n')
 
     if config.mutate:
         print('Mutating dawn')
-        mutate_dawn()
+        restore_and_mutate_dawn()
         
     if config.mutate or config.rebuild_wgslsmith:
         print('Rebuilding WGSLsmith')
@@ -30,7 +29,10 @@ def main():
     # Option 1: Kill uncovered mutants
     if config.kill_uncovered_mutants_first:
         print('Kill uncovered mutants')
-        uncovered = find_mutants_not_covered_by_cts()
+        (covered, uncovered) = find_mutants_covered_by_cts()
+        
+        print('Finished checking CTS coverage!')
+        
         kill_uncovered_mutants(uncovered, coverage_check = True)
 
     # Option 2: Kill covered and surviving mutants
@@ -39,9 +41,12 @@ def main():
             print('Kill mutants with the CTS')
             kill_mutants_with_cts()
 
-        mutants_to_kill = get_surviving_mutants(config.output_dir)
+        exit()
+
+        mutants_to_kill = get_surviving_mutants(config.surviving_mutants_dir)
 
         print(f'There are {len(mutants_to_kill)} surviving mutants')
+
         print('Killing surviving mutants with WGSLsmith')
         kill_mutants_with_wgslsmith(mutants_to_kill, coverage_check = False)
 
@@ -49,7 +54,7 @@ def get_surviving_mutants(output_dir : Path) -> list[int]:
     
     with open(Path(output_dir, 'surviving_mutants.txt'),'r') as f:
         data = f.read()
-        return data.split('\n')
+        return [int(x) for x in data.split()]
 
 
 def make_dawn_clean(mutated : Path, coverage : Path) -> bool :
@@ -162,13 +167,26 @@ def get_files_for_mutation(compile_commands : Path, mutation_target) -> list[str
                             and '_bench' not in x
                             and str(mutation_target) in x]
 
+    # remove files from mutation that we know aren't compatible with current Dredd
+    files = [x for x in files if 'src/tint/lang/core/constant/eval.cc' not in x
+                            and 'src/tint/lang/wgsl/resolver/dependency_graph.cc' not in x]
+
+
     return files
 
-def mutate_dawn():
+def restore_and_mutate_dawn():
 
     # Delete dredd covered mutants path since mutations will be updated
-    os.remove(config.__dredd_covered_mutants)
-
+    try:
+        os.remove(config.cts_covered_mutants_path)
+    except OSError:
+        pass
+        
+    # Ensure that no mutants exist already in the files
+    if not make_dawn_clean(config.dawn_mutated, config.dawn_coverage):
+        print('Error!')
+        return
+    
     # Optionally scrape the compile commands database from the mutation targets 
     # This checks that our mutation targets were actually built by the original build process
     # Since if they weren't, then we cannot mutate them (e.g. test files that are not built by default)
@@ -178,17 +196,12 @@ def mutate_dawn():
         coverage_files = get_files_for_mutation(config.compile_commands_coverage, config.mutation_target)
 
         with open(config.mutation_files_output,'w') as f:
-            f.write(' '.join(config.mutation_files))
+            f.write(' '.join(mutation_files))
 
         with open(config.coverage_files_output,'w') as f:
-            f.write(' '.join(config.coverage_files))
+            f.write(' '.join(coverage_files))
 
     print('Mutating...')
-    
-    # Ensure that no mutants exist already in the files
-    if not make_dawn_clean(config.dawn_mutated, config.dawn_coverage):
-        print('Error!')
-        return
 
     mutate_dawn(config.mutation_script_path, 
         config.dawn_mutated,
@@ -220,14 +233,18 @@ def get_wgslsmith_args() -> list[str]:
 
     return wgslsmith_args
 
-def find_mutants_not_covered_by_cts() -> list[str]:
+def find_mutants_covered_by_cts() -> tuple[list[str],list[str]]:
 
-    if config.delete_covered_mutants_path:
-        os.remove(config.__dredd_covered_mutants)
-    
+    if config.refresh_cts_coverage:
+        try:
+            os.remove(config.cts_covered_mutants_path)
+        except OSError:
+            pass 
+
     # Check CTS mutant coverage for given query
     (covered, uncovered) = get_mutant_coverage(config.mutation_info_file,
-        config.covered_mutants_path,
+        config.cts_covered_mutants_path,
+        config.get_per_test_cts_mutant_coverage,
         config.dawn_coverage,
         config.cts_repo,
         config.query,
@@ -236,7 +253,7 @@ def find_mutants_not_covered_by_cts() -> list[str]:
     print(f'Covered mutants: \n{len(covered)}')
     print(f'Uncovered mutants: \n{len(uncovered)}')
     
-    return uncovered
+    return (covered, uncovered)
 
 def kill_mutants_with_wgslsmith(mutants_to_kill : list[str], coverage_check : bool):
 
@@ -249,7 +266,8 @@ def kill_mutants_with_wgslsmith(mutants_to_kill : list[str], coverage_check : bo
     # of the mutants in the mutants_to_kill list are covered by these tests
     if coverage_check:
 
-        find_mutants_covered_by_wgslsmith(config.covered_by_wgslsmith_file, config.refresh_wgslsmith_coverage)
+        find_mutants_covered_by_wgslsmith(config.covered_by_wgslsmith_file, 
+                config.refresh_wgslsmith_coverage)
 
     if config.n_processes == 1:
         wgslsmith.kill_mutants.main(wgslsmith_args)
@@ -276,19 +294,8 @@ def kill_mutants_with_cts():
 
         cts_args.append('--mutant_sample')
         cts_args.extend(mutant_sample)
-    
-    if config.n_processes == 1:
-        cts.kill_mutants.main(cts_args)
-    
-    elif config.n_processes > 1:
-        cts_processes = []
-        for i in range(config.n_processes):
-            p = multiprocessing.Process(target=cts.kill_mutants.main, args=((cts_args,)))
-            cts_processes.append(p)
-            p.start()
 
-        for p in cts_processes:
-            p.join()
+    cts.kill_mutants.main(cts_args)
 
 def find_mutants_covered_by_wgslsmith(coverage_file : Path, 
         refresh_coverage : bool) -> list[str]:
@@ -311,7 +318,7 @@ def find_mutants_covered_by_wgslsmith(coverage_file : Path,
     # Otherwise, run WGSLsmith with the coverage_check argument to get a 
     # fresh list of covered mutants and save them to a file for next time
     else:
-        wgslsmith_coverage_check_args = wgslsmith_args + ['--coverage_check']
+        wgslsmith_coverage_check_args = get_wgslsmith_args() + ['--coverage_check']
         
         covered_wgslsmith_dict = wgslsmith.kill_mutants.main(wgslsmith_coverage_check_args)
        
@@ -324,32 +331,12 @@ def find_mutants_covered_by_wgslsmith(coverage_file : Path,
 
     return covered_wgslsmith
 
-def find_mutants_covered_by_cts() -> list[str]:
-    
-    # If the mutant coverage file exists then the IDs are just read from the 
-    # existing coverage file. Refresh coverage if the refresh_cts_coverage 
-    # flag is set to true
-    if config.refresh_cts_coverage:
-        os.remove(config.__dredd_covered_mutants)
-    
-    # Check CTS mutant coverage for given query
-    (covered_cts, uncovered_cts) = get_mutant_coverage(config.mutation_info_file,
-        config.covered_mutants_path,
-        config.dawn_coverage,
-        config.cts_repo,
-        config.query,
-        config.vk_icd)
-
-    print(f'Covered mutants: \n{len(covered_cts)}')
-    print(f'Uncovered mutants: \n{len(uncovered_cts)}')
-
-    return covered_cts
-
 def get_mutant_sample(): 
-    n_sample = 50
 
-    covered_by_cts = find_mutants_covered_by_cts()
-    
+    n_sample = 100
+
+    (covered_by_cts, uncovered_by_cts) = find_mutants_covered_by_cts()
+
     # Optionally get a list of mutants that are covered by a sample of 
     # WGSLsmith tests before running the CTS. The purpose of this is to
     # identify the subset of mutants that are covered by both the CTS
@@ -360,14 +347,15 @@ def get_mutant_sample():
 
         covered_by_wgslsmith : list[int] = find_mutants_covered_by_wgslsmith(
                 config.covered_by_wgslsmith_file, 
-                refresh=config.refresh_wgslsmith_coverage)
+                config.refresh_wgslsmith_coverage)
 
-        covered_intersection = list(set(covered_by_cts).intersection(set(covered_wgslsmith)))
+        covered_intersection = list(set(covered_by_cts).intersection(set(covered_by_wgslsmith)))
         mutant_sample = [str(x) for x in sample(covered_intersection,n_sample)]
     
     else:
         mutant_sample = [str(x) for x in sample(covered_by_cts,n_sample)]
 
+    print(f'mutant intersection: {len(covered_by_wgslsmith)}')
     return mutant_sample
 
 def get_cts_args(): 
@@ -399,5 +387,30 @@ def write_to_log(msg : str):
     with open(config.logging_file,'a') as f:
         f.write(msg)
 
+def get_coverage():
+
+    wgslsmith_args = get_wgslsmith_args()
+
+    wgslsmith.kill_mutants.main(wgslsmith_args)
+
 if __name__=="__main__":
     main()
+    
+    '''
+    files = os.listdir('/data/work/webgpu/testing/wgslsmith_sample/tracking')
+
+    mutants = []
+
+    for file in files:
+        with open(f'/data/work/webgpu/testing/wgslsmith_sample/tracking/{file}','r') as f:
+            data = f.readlines()
+            mutants.extend(data)
+
+    with open('/data/work/webgpu/testing/out_spirv/surviving_mutants.txt','r') as f:
+        surviving_mutants = f.readlines()
+
+    # how many coverage files does each surviving mutant appear in?
+    for mutant in surviving_mutants:
+        print(f'Mutant {mutant.rstrip()} is covered by {mutants.count(mutant)} out of {len(files)} programs')
+    '''
+

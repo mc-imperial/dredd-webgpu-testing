@@ -119,7 +119,6 @@ def get_mutant_coverage(mutation_info_path,
 
     data = [line for line in data if ' ' not in line]
     data.extend(flatter_lines)
-    data.remove('')
 
     covered : List[int] = list(set([int(mutant.strip()) for mutant in data]))
 
@@ -170,8 +169,6 @@ def run_cts(mutation_info_path,
 
     # Get list of covered mutants from tracking file
     mutant_tracking_result = subprocess.run(tracking_compile_cmd, env=tracking_environment)
-
-    exit()
     
     return mutant_tracking_result
     
