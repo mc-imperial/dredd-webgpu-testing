@@ -16,9 +16,9 @@ $DREDD -p ${MUTATED}/out/Debug/compile_commands.json \
 
 cd ${MUTATED}/out/Debug
 ninja dawn.node
-ninja
 
 echo "Tint mutation finished"
+
 
 # Create mutation tracking tint
 TRACKING_FILES=$(cat ${TRACKING_FILEPATH})
@@ -31,7 +31,6 @@ $DREDD --only-track-mutant-coverage \
 
 cd ${TRACKING}/out/Debug
 ninja dawn.node
-ninja
 
 echo "Mutation tracking finished"
 

@@ -73,6 +73,7 @@ def get_reliable_tests(query : str,
 
 def get_mutant_coverage(mutation_info_path,
         dredd_covered_mutants_path : Path,
+        get_per_test_cts_mutant_coverage : bool,
         dawn_coverage : Path,
         cts_repo : Path,
         query : str,
@@ -81,11 +82,15 @@ def get_mutant_coverage(mutation_info_path,
     covered = []
     uncovered = []
 
+    # Make sure tracking folder exists
+    dredd_covered_mutants_path.parent.mkdir(exist_ok=True)
+
     # Run cts if we do not already have a mutant tracking file
     if not dredd_covered_mutants_path.exists():
     
         mutant_tracking_result = run_cts(mutation_info_path,
                 dredd_covered_mutants_path,
+                get_per_test_cts_mutant_coverage,
                 dawn_coverage,
                 cts_repo,
                 query,
@@ -114,7 +119,6 @@ def get_mutant_coverage(mutation_info_path,
 
     data = [line for line in data if ' ' not in line]
     data.extend(flatter_lines)
-    data.remove('')
 
     covered : List[int] = list(set([int(mutant.strip()) for mutant in data]))
 
@@ -136,6 +140,7 @@ def get_mutant_coverage(mutation_info_path,
 
 def run_cts(mutation_info_path,
         dredd_covered_mutants_path : Path,
+        get_per_test_cts_mutant_coverage : bool,
         dawn_coverage : Path,
         cts_repo : Path,
         query : str,
@@ -145,7 +150,15 @@ def run_cts(mutation_info_path,
     print("Running CTS with mutant tracking compiler...")
     
     tracking_environment = os.environ.copy()
-    tracking_environment["DREDD_MUTANT_TRACKING_FILE"] = str(dredd_covered_mutants_path)
+    
+    # Set env vars depending on whether we are doing per-test coverage tracking or not
+    if get_per_test_cts_mutant_coverage:
+        tracking_environment["DREDD_MUTANT_TRACKING_PER_TEST"] = str(dredd_covered_mutants_path.parent)
+    else:
+        tracking_environment["DREDD_MUTANT_TRACKING_FILE"] = str(dredd_covered_mutants_path)
+
+    print(str(dredd_covered_mutants_path.parent) + '/')
+
     tracking_environment["VK_ICD_FILENAMES"] = f'{vk_icd}'
     tracking_compile_cmd = [f'{dawn_coverage}/tools/run',
             'run-cts', 
