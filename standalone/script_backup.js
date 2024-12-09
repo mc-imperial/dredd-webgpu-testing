@@ -2,9 +2,6 @@ const { create, globals } = require("/data/dev/dawn/build/dawn.node");
 Object.assign(globalThis, globals); // Provides constants like GPUBufferUsage.MAP_READ
 let navigator = { gpu: create([]) };
 
-const shader_wgslsmith_js_1 = require("./wgslsmith.js");
-
-
 async function main() {
     const adapter = await navigator.gpu?.requestAdapter();
     const device = await adapter?.requestDevice();
@@ -12,14 +9,19 @@ async function main() {
       console.log('need a browser that supports WebGPU');
       return;
     }
-
-    const shader = shader_wgslsmith_js_1.shaderCode;
-    const input = new Uint8Array(shader_wgslsmith_js_1.input);
-    const expected = new Uint8Array(shader_wgslsmith_js_1.expected);
   
     const module = device.createShaderModule({
       label: 'doubling compute module',
-      code: shader,
+      code: `
+        @group(0) @binding(0) var<storage, read_write> data: array<f32>;
+  
+        @compute @workgroup_size(1) fn computeSomething(
+          @builtin(global_invocation_id) id: vec3u
+        ) {
+          let i = id.x;
+          data[i] = data[i] * 2.0;
+        }
+      `,
     });
   
     const pipeline = device.createComputePipeline({
@@ -29,7 +31,9 @@ async function main() {
         module,
       },
     });
-    
+  
+    const input = new Float32Array([1, 3, 5]);
+  
     // create a buffer on the GPU to hold our computation
     // input and output
     const workBuffer = device.createBuffer({
@@ -78,12 +82,11 @@ async function main() {
   
     // Read the results
     await resultBuffer.mapAsync(GPUMapMode.READ);
-    const result = new Uint8Array(resultBuffer.getMappedRange().slice());
+    const result = new Float32Array(resultBuffer.getMappedRange().slice());
     resultBuffer.unmap();
   
     console.log('input', input);
     console.log('result', result);
-    console.log('expected', expected);
   }
   
   /*function fail(msg) {
