@@ -1,4 +1,4 @@
-const { create, globals } = require("/data/dev/dawn/build/dawn.node");
+ const { create, globals } = require("/data/dev/dawn/build/dawn.node");
 Object.assign(globalThis, globals); // Provides constants like GPUBufferUsage.MAP_READ
 let navigator = { gpu: create([]) };
 
@@ -31,14 +31,22 @@ async function main() {
     });
     
     // create a buffer on the GPU to hold our computation
-    // input and output
-    const workBuffer = device.createBuffer({
-      label: 'work buffer',
+    // input 
+    const inputBuffer = device.createBuffer({
+      label: 'input buffer',
+      size: input.byteLength,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
+    });
+    // Copy our input data to that buffer
+    device.queue.writeBuffer(inputBuffer, 0, input);
+
+    // create a buffer on the GPU to hold our computation
+    // output
+    const storageBuffer = device.createBuffer({
+      label: 'storage buffer',
       size: input.byteLength,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
     });
-    // Copy our input data to that buffer
-    device.queue.writeBuffer(workBuffer, 0, input);
   
     // create a buffer on the GPU to get a copy of the results
     const resultBuffer = device.createBuffer({
@@ -53,7 +61,8 @@ async function main() {
       label: 'bindGroup for work buffer',
       layout: pipeline.getBindGroupLayout(0),
       entries: [
-        { binding: 0, resource: { buffer: workBuffer } },
+        { binding: 0, resource: { buffer: inputBuffer } },
+        { binding: 1, resource: { buffer: storageBuffer }},
       ],
     });
   
@@ -70,7 +79,7 @@ async function main() {
     pass.end();
   
     // Encode a command to copy the results to a mappable buffer.
-    encoder.copyBufferToBuffer(workBuffer, 0, resultBuffer, 0, resultBuffer.size);
+    encoder.copyBufferToBuffer(storageBuffer, 0, resultBuffer, 0, resultBuffer.size);
   
     // Finish encoding and submit the commands
     const commandBuffer = encoder.finish();
