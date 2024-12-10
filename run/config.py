@@ -15,6 +15,9 @@ dawn_coverage = Path('/data/dev/dawn_mutant_tracking')
 wgslsmith_mutated = Path('/data/dev/wgslsmith_mutated_dawn')
 wgslsmith_coverage = Path('/data/dev/wgslsmith_mutant_coverage_dawn')
 
+dawn_commit = '5d99b9ac23c5e2bd73ee1a137027767679e879bc'
+wgslsmith_commit = '0d27e212b2abcaeff8eb5bf421b4f08b3af7acbc'
+
 mutation_info_file = Path(dawn_mutated, 'dawn_mutated.json')
 mutation_info_file_for_coverage = Path(dawn_coverage, 'dawn_tracking.json')
 
