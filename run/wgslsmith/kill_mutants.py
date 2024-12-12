@@ -3,6 +3,7 @@ import shutil
 
 import json
 import os
+import subprocess
 import random
 import tempfile
 import time
@@ -198,59 +199,33 @@ def main(raw_args=None):
                 continue
             print(f'Inputs: {inputs}')
 
-            compiler_args = ["run",
-                             wgslsmith_reconditioned_program,
-                             wgslsmith_input,
-                             "-c",
-                             args.dawn_vk]
-            
-            #TODO: split compile and execution into separate steps
-            #run_cmd = [args.mutated_compiler_executable] + compiler_args
-
-            run_cmd = [str(args.wgslsmith_root / "wgslsmith")] + compiler_args
-            
-            print("Running with unmutated WGSLsmith...")
-            run_time_start: float = time.time()
-
-            env = os.environ.copy()
-            env["VK_ICD_FILENAMES"] = f'{args.vk_icd}'
-
-            regular_execution_result: ProcessResult = run_process_with_timeout(
-                cmd=run_cmd, 
-                timeout_seconds=args.run_timeout,
-                env=env)
-            run_time_end: float = time.time()
-            run_time = run_time_end - run_time_start 
+            regular_execution_result = run_wgslsmith_test(
+                    args=args,
+                    program=wgslsmith_reconditioned_program,
+                    input=wgslsmith_input,
+                    expected = None,
+                    standalone = True)
 
             if regular_execution_result is None:
                 print("Runtime timeout.")
                 continue
             if regular_execution_result.returncode != 0:
                 print(f"Std out:\n {regular_execution_result.stdout.decode('utf-8')}\n")
-                #print(f"Std err:\n {regular_execution_result.stderr.decode('utf-8')}\n")
+                print(f"Std err:\n {regular_execution_result.stderr.decode('utf-8')}\n")
                 print("Execution of generated program failed without mutants.")
                 print('done!')
-                shutil.copy(src=wgslsmith_generated_program, dst="/data/work/webgpu/prog.wgsl")
-                exit() 
                 continue
             else:
                 print("Execution of generated program succeeded without mutants.")
 
             print(f"Std out:\n {regular_execution_result.stdout.decode('utf-8')}\n")
             print(f"Std err:\n {regular_execution_result.stderr.decode('utf-8')}\n")
-
             
             # Extract output under no mutation
-            output = regular_execution_result.stdout.decode("utf-8")
-            if output.find('timeout') != -1:
-                print(f'Wgslsmith timeout')
-                continue
-            output_start_index = output.find('outputs') + 18
-            output_end_index = output.rfind(']')
-            output = output[output_start_index:output_end_index].split(", ")
-            output = [int(o) for o in output]
+            output = extract_output(regular_execution_result.stdout.decode("utf-8"))
 
             print(f"Output is: {output}")
+            exit()
            
             # Compile the program with the mutant tracking compiler.
             print("Running with mutant tracking compiler...")
@@ -427,6 +402,77 @@ def main(raw_args=None):
                            "killed_mutants": killed_by_this_test,
                            "skipped_mutants": already_killed_by_other_tests,
                            "survived_mutants": covered_but_not_killed_by_this_test}, outfile)
+
+def run_wgslsmith_test(args, 
+        program : Path,
+        input : Path,
+        expected : Path = None,
+        standalone : bool = True) -> ProcessResult:
+
+    if standalone:
+        # Get expected output 
+        if not expected:
+
+            with open(program, 'r') as f:
+                program_wgsl = f.read()
+
+            with open(input, 'r') as f:
+                program_input = f.read()
+
+            program_js = Path('/data/dev/dredd-webgpu-testing/standalone/wgslsmith.js')
+
+            with open(program_js,'w') as f:
+                f.write(f'export const input = [{program_input[8:-2]}];\n')
+                f.write(f'export const expected = [{program_input[8:-2]}];\n')
+                f.write(f'export const shaderCode = ` \n {program_wgsl}`;')
+
+        # Run standalone test
+        run_cmd = ['node', 'script.js']
+
+        result = subprocess.run(run_cmd, cwd='./standalone/', capture_output=True )
+
+        return result
+
+
+    else:
+
+        compiler_args = ["run",
+                            wgslsmith_reconditioned_program,
+                            wgslsmith_input,
+                            "-c",
+                            args.dawn_vk]
+        
+        run_cmd = [str(args.wgslsmith_root / "wgslsmith")] + compiler_args
+        
+        print("Running with unmutated WGSLsmith...")
+        env = os.environ.copy()
+
+        env["VK_ICD_FILENAMES"] = f'{args.vk_icd}'
+
+        regular_execution_result: ProcessResult = run_process_with_timeout(
+            cmd=run_cmd, 
+            timeout_seconds=args.run_timeout,
+            env=env)
+
+        return regular_execution_result
+
+def extract_output(output : str, standalone : bool = True):
+
+    output = output.replace('\n','')
+    output = output.replace(' ','')
+
+    if standalone:
+        output_start_index = output.find('[', output.find('result')) + 1
+        output_end_index = output.find(']', output_start_index)
+
+    else:
+        output_start_index = output.find('outputs') + 18
+        output_end_index = output.rfind(']')
+    
+    output = output[output_start_index:output_end_index].split(",")
+    output = [int(o) for o in output]
+
+    return output
 
 class LogData:
 
