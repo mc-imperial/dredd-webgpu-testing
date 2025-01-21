@@ -10,7 +10,7 @@ cts_repo = Path('/data/dev/webgpu_cts')
 ### Dredd parameters ###
 
 dawn_mutated = Path('/data/dev/dawn_mutated')
-dawn_coverage = Path('/data/dev/dawn_mutant_tracking')
+dawn_mutant_tracking = Path('/data/dev/dawn_mutant_tracking')
 
 wgslsmith_mutated = Path('/data/dev/wgslsmith_mutated_dawn')
 wgslsmith_coverage = Path('/data/dev/wgslsmith_mutant_coverage_dawn')
@@ -19,16 +19,19 @@ dawn_commit = '5d99b9ac23c5e2bd73ee1a137027767679e879bc'
 wgslsmith_commit = '0d27e212b2abcaeff8eb5bf421b4f08b3af7acbc'
 
 mutation_info_file = Path(dawn_mutated, 'dawn_mutated.json')
-mutation_info_file_for_coverage = Path(dawn_coverage, 'dawn_tracking.json')
+mutation_info_file_for_coverage = Path(dawn_mutant_tracking, 'dawn_tracking.json')
 
 compile_commands_mutated = Path(dawn_mutated,'out/Debug/compile_commands.json')
-compile_commands_coverage = Path(dawn_coverage,'out/Debug/compile_commands.json')
+compile_commands_coverage = Path(dawn_mutant_tracking,'out/Debug/compile_commands.json')
 
 cts_covered_mutants_path = Path(output_dir, 'tracking', 'cts_covered_mutants')
 
 #mutation_target = Path('src/tint/lang/spirv/writer/writer.cc')
 #mutation_target = Path('src/tint/lang/core/ir/validator.cc') # mutate validator.cc file
 mutation_target = Path('src/tint/lang') # mutate all files in tint
+
+standalone = True
+js_wrapper = Path(base_dir, 'standalone/script.js')
 
 ### WebGPU query ###
 
@@ -79,7 +82,7 @@ get_per_test_cts_mutant_coverage : bool = False
 
 ''' param to select whether we refresh the CTS covered mutants
 '''
-refresh_cts_coverage : bool = False
+refresh_cts_coverage : bool = True
 
 ''' param to scrape compile_commands.json to ensure that we only
     try to mutate files that are built as part of the original

@@ -11,24 +11,11 @@ import time
 from common.constants import DEFAULT_COMPILATION_TIMEOUT, DEFAULT_RUNTIME_TIMEOUT
 from common.mutation_tree import MutationTree
 from common.run_process_with_timeout import ProcessResult, run_process_with_timeout
-from common.run_test_with_mutants import run_wgslsmith_test_with_mutants, KillStatus
+from common.run_test import run_with_tracking, run_with_mutants, compare_results, KillStatus
 
 from pathlib import Path
 from typing import List, Set
 
-
-def still_testing(start_time_for_overall_testing: float,
-                  time_of_last_kill: float,
-                  total_test_time: int,
-                  maximum_time_since_last_kill: int) -> bool:
-    if 0 < total_test_time < int(time.time() - start_time_for_overall_testing):
-        return False
-    if 0 < maximum_time_since_last_kill < int(time.time() - time_of_last_kill):
-        return False
-    return True
-
-def comma_list(arg):
-    return arg.split(',')
 
 def main(raw_args=None):
     start_time_for_overall_testing: float = time.time()
@@ -44,10 +31,10 @@ def main(raw_args=None):
                              "instrument the source code to track mutant coverage; this will be compared against the "
                              "regular mutation info file to ensure that tracked mutants match applied mutants.",
                         type=Path)
-    parser.add_argument("mutated_wgslsmith_executable",
+    parser.add_argument("mutated_executable",
                         help="Path to the executable for the Dredd-mutated compiler.",
                         type=Path)
-    parser.add_argument("mutant_tracking_wgslsmith_executable",
+    parser.add_argument("tracking_executable",
                         help="Path to the executable for the compiler instrumented to track mutants.",
                         type=Path)
     parser.add_argument("wgslsmith_root", help="Path to a checkout of WGSLsmith", #TODO: check build exe location
@@ -92,13 +79,22 @@ def main(raw_args=None):
                         help="Optional list of mutant IDs to target")
     parser.add_argument("--coverage_check",
                         action=argparse.BooleanOptionalAction,
-                        help="Runs 50 WGSLsmith programs with mutant tracking enabled to check whether any mutants are covered.")
+                        help="Runs WGSLsmith programs with mutant tracking enabled to check whether any mutants are covered.")
+    parser.add_argument("--n_coverage_checks",
+                        type=int,
+                        default=50,
+                        help="Optionally specify the number of programs to run with tracking to check whether mutants are covered.")
     parser.add_argument("--log",
                         type=str,
                         help="Optional logging file to record summary of testing.")
+    parser.add_argument("--standalone",
+                        action=argparse.BooleanOptionalAction,
+                        help="Runs WGSLsmith programs as standalone JavaScript using Node and Dawn rather than the WGSLsmith harness")
+    parser.add_argument("--js_wrapper",
+                        default=None,
+                        type=Path)
 
     args = parser.parse_args(raw_args)
-    n_coverage_check_tests = 50
 
     if args.log:
         logging_file = Path(args.log)
@@ -128,10 +124,9 @@ def main(raw_args=None):
         #with Path('/data/work/tint_mutation_testing/temp') as temp_dir_for_generated_code:
         wgslsmith_generated_program: Path = Path(temp_dir_for_generated_code, '__prog.wgsl')
         wgslsmith_reconditioned_program: Path = Path(temp_dir_for_generated_code, '__reconditioned.wgsl')
+        wgslsmith_js_program: Path = Path(temp_dir_for_generated_code, '__prog.js')
+        wgslsmith_js_wrapper: Path = Path(temp_dir_for_generated_code, '__script.js')
         dredd_covered_mutants_path: Path = Path(temp_dir_for_generated_code, '__dredd_covered_mutants')
-        generated_program_exe_compiled_with_no_mutants = Path(temp_dir_for_generated_code, '__regular.exe')
-        generated_program_exe_compiled_with_mutant_tracking = Path(temp_dir_for_generated_code, '__tracking.exe')
-        mutant_exe = Path(temp_dir_for_generated_code, '__mutant.exe')
         wgslsmith_input : Path = Path(temp_dir_for_generated_code, '__inputs.json')
 
         killed_mutants: Set[int] = set()
@@ -156,18 +151,15 @@ def main(raw_args=None):
                             maximum_time_since_last_kill=args.maximum_time_since_last_kill,
                             start_time_for_overall_testing=start_time_for_overall_testing,
                             time_of_last_kill=time_of_last_kill):
+            
             if dredd_covered_mutants_path.exists():
                 os.remove(dredd_covered_mutants_path)
+            
             if wgslsmith_generated_program.exists():
                 os.remove(wgslsmith_generated_program)
-            if generated_program_exe_compiled_with_no_mutants.exists():
-                os.remove(generated_program_exe_compiled_with_no_mutants)
-            if generated_program_exe_compiled_with_mutant_tracking.exists():
-                os.remove(generated_program_exe_compiled_with_mutant_tracking)
 
             if args.coverage_check:
-                print(f'len of dict is {len(wgslsmith_covered)}')
-                if len(wgslsmith_covered) > n_coverage_check_tests:
+                if len(wgslsmith_covered) > args.n_coverage_check_tests:
                     return wgslsmith_covered
            
             # Generate a WGSLsmith program
@@ -193,78 +185,65 @@ def main(raw_args=None):
             recondition_cmd = [str(args.wgslsmith_root / "wgslsmith"), "recondition",
                     str(wgslsmith_generated_program), str(wgslsmith_reconditioned_program)]
 
-            print("Reconditioning")
+            print("Reconditioning...")
             if run_process_with_timeout(cmd=recondition_cmd, timeout_seconds=args.generator_timeout) is None:
                 print(f"WGSLsmith timed out (seed {wgslsmith_seed})")
                 continue
+
             print(f'Inputs: {inputs}')
 
-            regular_execution_result = run_wgslsmith_test(
-                    args=args,
-                    program=wgslsmith_reconditioned_program,
-                    input=wgslsmith_input,
-                    expected = None,
-                    standalone = True)
+            # Generate the WGSLsmith JavaScript program
+            if args.standalone:
+                gen_js_program(wgslsmith_reconditioned_program,
+                    wgslsmith_input,
+                    wgslsmith_js_program)
+
+                # Put wrapper script in temp folder
+                subprocess.run(['cp', str(args.js_wrapper), str(wgslsmith_js_wrapper)])
+
+                program = wgslsmith_js_program
+            else:
+                program = wgslsmith_reconditioned_program
+
+            # Run the program with the mutant tracking compiler to (a) check non mutated results,
+            # and (b) get the list of covered mutants
+
+            regular_execution_result : ProcessResult = run_with_tracking(program,
+                    wgslsmith_input,
+                    dredd_covered_mutants_path,
+                    args.vk_icd,
+                    args.tracking_executable,
+                    wrapper = wgslsmith_js_wrapper)
 
             if regular_execution_result is None:
                 print("Runtime timeout.")
                 continue
+
             if regular_execution_result.returncode != 0:
                 print(f"Std out:\n {regular_execution_result.stdout.decode('utf-8')}\n")
                 print(f"Std err:\n {regular_execution_result.stderr.decode('utf-8')}\n")
                 print("Execution of generated program failed without mutants.")
-                print('done!')
                 continue
-            else:
-                print("Execution of generated program succeeded without mutants.")
 
+            if not dredd_covered_mutants_path.exists():
+                print(f"Std out:\n {regular_execution_result.stdout.decode('utf-8')}\n")
+                print(f"Std err:\n {regular_execution_result.stderr.decode('utf-8')}\n")
+                print("No mutant tracking file created.")
+                continue
+
+            # If regular execution succeeded and some mutants are covered, then proceed
             print(f"Std out:\n {regular_execution_result.stdout.decode('utf-8')}\n")
             print(f"Std err:\n {regular_execution_result.stderr.decode('utf-8')}\n")
+
+            print("Execution of generated program succeeded without mutants.")
+            print("Mutant tracking compilation complete")
             
-            # Extract output under no mutation
+            # Extract non-mutated output and tracked mutants
             output = extract_output(regular_execution_result.stdout.decode("utf-8"))
-
-            print(f"Output is: {output}")
-            exit()
-           
-            # Compile the program with the mutant tracking compiler.
-            print("Running with mutant tracking compiler...")
-            tracking_environment = os.environ.copy()
-            tracking_environment["DREDD_MUTANT_TRACKING_FILE"] = str(dredd_covered_mutants_path)
-            tracking_environment["VK_ICD_FILENAMES"] = f'{args.vk_icd}'
-
-            tracking_compile_cmd = [args.mutant_tracking_wgslsmith_executable]\
-                + compiler_args
-            mutant_tracking_result : ProcessResult = run_process_with_timeout(cmd=tracking_compile_cmd, timeout_seconds=args.compile_timeout, env=tracking_environment) 
-
-            if mutant_tracking_result is None:
-                print("Mutant tracking compilation timed out.")
-                continue
-            elif not dredd_covered_mutants_path.exists():
-                print(f"Std out:\n {mutant_tracking_result.stdout.decode('utf-8')}\n")
-                print(f"Std err:\n {mutant_tracking_result.stderr.decode('utf-8')}\n")
-                print("No mutant tracking file created.")           
-                continue
-            else:
-                print("Mutant tracking compilation complete")
-                with open(dredd_covered_mutants_path, 'r') as f:
-                    covered_mutants_info = f.read()
-
-            print(f"Std out:\n {mutant_tracking_result.stdout.decode('utf-8')}\n")
-            print(f"Std err:\n {mutant_tracking_result.stderr.decode('utf-8')}\n")
             
-            ''' 
-            # Try to create a directory for this WGSLsmith test. It is very unlikely that it already exists, but this could
-            # happen if two test workers pick the same seed. If that happens, this worker will skip the test.
-            wgslsmith_test_name: str = "wgslsmith_" + str(wgslsmith_seed)
-            test_output_directory: Path = Path(args.mutant_kill_path, f'tests/{wgslsmith_test_name}')
-            try:
-                test_output_directory.mkdir()
-            except FileExistsError:
-                print(f"Skipping seed {wgslsmith_seed} as a directory for it already exists")
-                continue
-            shutil.copy(src=wgslsmith_generated_program, dst=test_output_directory / "prog.wgsl")
-            '''
+            with open(dredd_covered_mutants_path, 'r') as f:
+                covered_mutants_info = f.read()
+
             # Load file contents into a list. We go from list to set to list to eliminate duplicates.
             covered_by_this_test: List[int] = list(set([int(line.strip()) for line in
                                                         open(dredd_covered_mutants_path, 'r').readlines()]))
@@ -296,7 +275,7 @@ def main(raw_args=None):
 
             if args.log:
                 logdata.new_test(wgslsmith_test_name)
-                logdata.mutants_to_kill = len(set(args.mutants_to_kill))
+                logdata.mutants_to_kill = len(set(args.mutants_to_kill)) if args.mutants_to_kill else 'NA'
                 logdata.update_mutant_candidates(candidate_mutants_for_this_test)
                 logdata.mutants_covered_this_test = len(covered_by_this_test)
                 logdata.candidate_mutants_for_this_test = len(candidate_mutants_for_this_test)
@@ -322,17 +301,27 @@ def main(raw_args=None):
                 print("Trying mutant " + str(mutant))
                 logdata.write_trying_mutant(str(mutant))
 
-                env = os.environ.copy()
-                env["VK_ICD_FILENAMES"] = f'{args.vk_icd}'
+                '''
+                compiler_args = get_wgslsmith_compiler_args(wgslsmith_reconditioned_program,
+                                    wgslsmith_input,
+                                    args.dawn_vk)
 
                 (mutant_result, mutant_result_stdout) = run_wgslsmith_test_with_mutants(mutants=[mutant],
-                                                      compiler_path=str(args.mutated_wgslsmith_executable),
+                                                      compiler_path=str(args.mutated_executable),
                                                       compiler_args=compiler_args,
                                                       compile_time=args.compile_timeout,
-                                                      run_time=run_time,
+                                                      run_time=args.run_timeout,
                                                       execution_result_non_mutated=regular_execution_result,
-                                                      mutant_exe_path=mutant_exe,
                                                       env=env)
+                '''
+                mutant_result = run_with_mutants([mutant],
+                    program,
+                    args.vk_icd,
+                    args.mutated_executable,
+                    wrapper = wgslsmith_js_wrapper)
+
+                (mutant_result, mutant_result_stdout) = compare_results(regular_execution_result, mutant_result)
+
                 print("Mutant result: " + str(mutant_result))
                  
                 if mutant_result == KillStatus.SURVIVED_IDENTICAL \
@@ -403,6 +392,31 @@ def main(raw_args=None):
                            "skipped_mutants": already_killed_by_other_tests,
                            "survived_mutants": covered_but_not_killed_by_this_test}, outfile)
 
+def gen_js_program(program : Path,
+    input : Path,
+    program_js : Path):
+
+        with open(program, 'r') as f:
+            program_wgsl = f.read()
+
+        with open(input, 'r') as f:
+            program_input = f.read()
+
+        program_input = [int(x) for x in program_input[8:-2].split(',')]
+
+        # storage buffer must be at least 64 bytes so extend with '0' bytes if it is not long enough
+        if len(program_input) < 64:
+            extra_input = [0]*(64 - len(program_input))
+            program_input.extend(extra_input)
+
+        program_input = ','.join(map(str, program_input)) 
+
+        with open(program_js,'w') as f:
+            f.write(f'export const input = [{program_input}];\n')
+            f.write(f'export const expected = [{program_input}];\n')
+            f.write(f'export const shaderCode = ` \n {program_wgsl}`;')
+
+
 def run_wgslsmith_test(args, 
         program : Path,
         input : Path,
@@ -410,37 +424,20 @@ def run_wgslsmith_test(args,
         standalone : bool = True) -> ProcessResult:
 
     if standalone:
-        # Get expected output 
-        if not expected:
-
-            with open(program, 'r') as f:
-                program_wgsl = f.read()
-
-            with open(input, 'r') as f:
-                program_input = f.read()
-
-            program_js = Path('/data/dev/dredd-webgpu-testing/standalone/wgslsmith.js')
-
-            with open(program_js,'w') as f:
-                f.write(f'export const input = [{program_input[8:-2]}];\n')
-                f.write(f'export const expected = [{program_input[8:-2]}];\n')
-                f.write(f'export const shaderCode = ` \n {program_wgsl}`;')
 
         # Run standalone test
-        run_cmd = ['node', 'script.js']
+        run_cmd = ['node', 'script.js', '/data/dev/dawn/out/Debug/dawn.node']
 
-        result = subprocess.run(run_cmd, cwd='./standalone/', capture_output=True )
-
+        result = subprocess.run(run_cmd, cwd='./standalone/', capture_output=True, timeout=60)
+        
         return result
 
 
     else:
 
-        compiler_args = ["run",
-                            wgslsmith_reconditioned_program,
-                            wgslsmith_input,
-                            "-c",
-                            args.dawn_vk]
+        compiler_args = get_wgslsmith_compiler_args(wgslsmith_reconditioned_program,
+                wgslsmith_input,
+                args.dawn_vk)
         
         run_cmd = [str(args.wgslsmith_root / "wgslsmith")] + compiler_args
         
@@ -455,6 +452,13 @@ def run_wgslsmith_test(args,
             env=env)
 
         return regular_execution_result
+
+def get_wgslsmith_compiler_args(program, input, dawn_vk):
+    return ["run",
+            program,
+            input,
+            "-c",
+            dawn_vk]
 
 def extract_output(output : str, standalone : bool = True):
 
@@ -473,6 +477,19 @@ def extract_output(output : str, standalone : bool = True):
     output = [int(o) for o in output]
 
     return output
+
+def still_testing(start_time_for_overall_testing: float,
+                  time_of_last_kill: float,
+                  total_test_time: int,
+                  maximum_time_since_last_kill: int) -> bool:
+    if 0 < total_test_time < int(time.time() - start_time_for_overall_testing):
+        return False
+    if 0 < maximum_time_since_last_kill < int(time.time() - time_of_last_kill):
+        return False
+    return True
+
+def comma_list(arg):
+    return arg.split(',')
 
 class LogData:
 

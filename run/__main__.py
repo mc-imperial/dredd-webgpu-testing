@@ -41,8 +41,6 @@ def main():
             print('Kill mutants with the CTS')
             kill_mutants_with_cts()
 
-        exit()
-
         mutants_to_kill = get_surviving_mutants(config.surviving_mutants_dir)
 
         print(f'There are {len(mutants_to_kill)} surviving mutants')
@@ -57,7 +55,7 @@ def get_surviving_mutants(output_dir : Path) -> list[int]:
         return [int(x) for x in data.split()]
 
 
-def make_dawn_clean(mutated : Path, coverage : Path) -> bool :
+def make_dawn_clean(mutated : Path, coverage : Path, commit : str) -> bool :
 
     '''
     If mutations exist already in the mutated or coverage
@@ -78,7 +76,28 @@ def make_dawn_clean(mutated : Path, coverage : Path) -> bool :
     if  mutants_exist(mutated) or mutants_exist(coverage):
         return False
 
+    # Check out Dawn commit
+    for src in [mutated, coverage]:
+        check_out_commit(src, commit)
+
+    # Rebuild
+    if config.rebuild_dawn:
+        for src in [mutated, coverage]:
+            rebuild_dawn(src)
+
     return True
+
+def rebuild_dawn(dawn: Path):
+    result = subprocess.run(['./scripts/build_dawn.sh', str(dawn)])
+
+def check_out_commit(dawn : Path, commit : str):
+    print(f'Checking out commit {commit} for {dawn}')
+    cmd = ['git','pull']
+    result = subprocess.run(cmd, cwd=dawn)
+
+    cmd = ['git', 'checkout', commit]
+    result = subprocess.run(cmd, cwd=dawn)
+
 
 def find_dredd_files(src : Path) -> list[Path] :
 
@@ -169,8 +188,8 @@ def get_files_for_mutation(compile_commands : Path, mutation_target) -> list[str
 
     # remove files from mutation that we know aren't compatible with current Dredd
     files = [x for x in files if 'src/tint/lang/core/constant/eval.cc' not in x
-                            and 'src/tint/lang/wgsl/resolver/dependency_graph.cc' not in x]
-
+                            and 'src/tint/lang/wgsl/resolver/dependency_graph.cc' not in x
+                            and 'src/tint/lang/core/ir/transform/common/referenced_module_vars.cc' not in x]
 
     return files
 
@@ -183,7 +202,9 @@ def restore_and_mutate_dawn():
         pass
         
     # Ensure that no mutants exist already in the files
-    if not make_dawn_clean(config.dawn_mutated, config.dawn_coverage):
+    if not make_dawn_clean(config.dawn_mutated, 
+        config.dawn_coverage, 
+        config.dawn_commit):
         print('Error!')
         return
     
@@ -211,25 +232,39 @@ def restore_and_mutate_dawn():
 
     print('Finished mutating!') 
 
-def get_wgslsmith_args() -> list[str]:
+def get_wgslsmith_args(standalone : bool = True) -> list[str]:
 
-    wgslsmith_args =[str(config.mutation_info_file),
-            str(config.mutation_info_file_for_coverage),
-            f'{str(config.wgslsmith_mutated)}/target/release/wgslsmith',
-            f'{str(config.wgslsmith_coverage)}/target/release/wgslsmith',
-            f'{str(config.wgslsmith_mutated)}/target/release',
-            str(config.output_dir),
-            '--compile_timeout',
-            str(config.timeout),
-            '--run_timeout',
-            str(config.timeout),
-            '--vk_icd',
-            config.vk_icd,
-            '--dawn_vk',
-            config.dawn_vk,
-            '--log',
-            str(config.logging_file)
-        ]
+    if standalone:
+
+        wgslsmith_args =[str(config.mutation_info_file),
+                str(config.mutation_info_file_for_coverage),
+                f'{str(config.dawn_mutated)}/out/Debug/dawn.node', # mutated_exe
+                f'{str(config.dawn_mutant_tracking)}/out/Debug/dawn.node', # tracking_exe
+                f'{str(config.wgslsmith_mutated)}/target/release', # wgslsmith_root
+                str(config.output_dir),
+                '--compile_timeout', str(config.timeout),
+                '--run_timeout', str(config.timeout),
+                '--vk_icd', config.vk_icd,
+                '--dawn_vk', config.dawn_vk,
+                '--log', str(config.logging_file),
+                '--standalone',
+                '--js_wrapper', str(config.js_wrapper)
+            ]
+
+    else:
+
+                wgslsmith_args =[str(config.mutation_info_file),
+                str(config.mutation_info_file_for_coverage),
+                f'{str(config.wgslsmith_mutated)}/target/release/wgslsmith', # mutated_exe
+                f'{str(config.wgslsmith_coverage)}/target/release/wgslsmith', # tracking_exe
+                f'{str(config.wgslsmith_mutated)}/target/release', # wgslsmith_root
+                str(config.output_dir),
+                '--compile_timeout', str(config.timeout),
+                '--run_timeout', str(config.timeout),
+                '--vk_icd', config.vk_icd,
+                '--dawn_vk', config.dawn_vk,
+                '--log', str(config.logging_file)
+            ]
 
     return wgslsmith_args
 
@@ -255,12 +290,13 @@ def find_mutants_covered_by_cts() -> tuple[list[str],list[str]]:
     
     return (covered, uncovered)
 
-def kill_mutants_with_wgslsmith(mutants_to_kill : list[str], coverage_check : bool):
+def kill_mutants_with_wgslsmith(mutants_to_kill : list[str] = None, coverage_check : bool = False):
 
     wgslsmith_args = get_wgslsmith_args()
 
-    wgslsmith_args.extend(['--mutants_to_kill',
-        ','.join([str(m) for m in mutants_to_kill])])
+    if mutants_to_kill:
+        wgslsmith_args.extend(['--mutants_to_kill',
+            ','.join([str(m) for m in mutants_to_kill])])
     
     # The coverage check runs a sample of 50 WGSLsmith tests and reports which
     # of the mutants in the mutants_to_kill list are covered by these tests
@@ -394,23 +430,6 @@ def get_coverage():
     wgslsmith.kill_mutants.main(wgslsmith_args)
 
 if __name__=="__main__":
+
     main()
-    
-    '''
-    files = os.listdir('/data/work/webgpu/testing/wgslsmith_sample/tracking')
-
-    mutants = []
-
-    for file in files:
-        with open(f'/data/work/webgpu/testing/wgslsmith_sample/tracking/{file}','r') as f:
-            data = f.readlines()
-            mutants.extend(data)
-
-    with open('/data/work/webgpu/testing/out_spirv/surviving_mutants.txt','r') as f:
-        surviving_mutants = f.readlines()
-
-    # how many coverage files does each surviving mutant appear in?
-    for mutant in surviving_mutants:
-        print(f'Mutant {mutant.rstrip()} is covered by {mutants.count(mutant)} out of {len(files)} programs')
-    '''
 
