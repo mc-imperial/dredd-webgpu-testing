@@ -1,8 +1,9 @@
- const { create, globals } = require("/data/dev/dawn/build/dawn.node");
+//const { create, globals } = require("/data/dev/dawn/out/Debug/dawn.node");
+const { create, globals } = require(process.argv[2]);
 Object.assign(globalThis, globals); // Provides constants like GPUBufferUsage.MAP_READ
 let navigator = { gpu: create([]) };
 
-const shader_wgslsmith_js_1 = require("./wgslsmith.js");
+const shader_wgslsmith_js_1 = require(process.argv[3]);
 
 
 async function main() {
