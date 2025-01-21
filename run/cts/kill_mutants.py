@@ -14,7 +14,7 @@ import datetime
 from common.constants import DEFAULT_COMPILATION_TIMEOUT, DEFAULT_RUNTIME_TIMEOUT
 from common.mutation_tree import MutationTree
 from common.run_process_with_timeout import ProcessResult, run_process_with_timeout
-from common.run_test_with_mutants import run_webgpu_cts_test_with_mutants, KillStatus, CTSKillStatus
+from common.run_test import run_webgpu_cts_test_with_mutants, KillStatus, CTSKillStatus
 from run.cts.utils import get_queries_from_cts, get_reliable_tests, kill_gpu_processes, get_tests, get_passes, get_failures, get_unrun_tests, get_single_tests_from_stdout, get_completed_queries
 
 import run.cts.flaky_test_finder.find_non_flaky_cts_tests as find_non_flaky_cts_tests
