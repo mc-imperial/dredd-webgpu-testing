@@ -3,6 +3,8 @@
 DAWN=$1 # pass dawn src directory as argument
 
 cd $DAWN
+git pull
+git checkout 5d99b9ac23c5e2bd73ee1a137027767679e879bc
 cp scripts/standalone-with-node.gclient .gclient
 gclient sync
 mkdir -p out/Debug
