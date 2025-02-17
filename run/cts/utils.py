@@ -6,7 +6,6 @@ from enum import Enum
 from pathlib import Path
 
 from common.mutation_tree import MutationTree
-from run.cts.flaky_test_finder import find_non_flaky_cts_tests
 
 class TestStatus(Enum):
     PASS = 1
@@ -49,7 +48,7 @@ def get_reliable_tests(query : str,
     # These are individual level tests that consistently pass for
     # unmutated Dawn. Record these individual queries to use for results
     # checking tests that fail when a mutation is enabled.
-    if Path(reliable_tests).exists():
+    if reliable_tests is not None and Path(reliable_tests).exists():
         with open(reliable_tests,'r') as f:
             reliably_passing_tests : list = json.load(f)
 
@@ -138,7 +137,7 @@ def get_mutant_coverage(mutation_info_path,
 
     return (covered, uncovered)
 
-def run_cts(mutation_info_path,
+def run_cts_no_output(mutation_info_path,
         dredd_covered_mutants_path : Path,
         get_per_test_cts_mutant_coverage : bool,
         dawn_coverage : Path,
@@ -181,6 +180,41 @@ def get_all_mutants(mutation_info_file : Path) -> list[int]:
 
     return all_mutants
 
+
+def run_cts(cts : Path, dawn : Path, mesa_vk_icd : Path, output_name : str = "test_output", tracking_file : str = None) -> list[str]:
+
+    test_output = []
+
+    env = os.environ.copy()
+    env["VK_ICD_FILENAMES"] = str(mesa_vk_icd)
+
+    if tracking_file is not None:
+        env["DREDD_MUTANT_TRACKING_FILE"] = str(tracking_file)
+
+    cmd = [f'{dawn}/tools/run',
+        'run-cts', 
+        '--verbose',
+        f'--bin={dawn}/out/Debug',
+        f'--cts={str(cts)}',
+        'webgpu:*']  
+
+    with open(f'{output_name}_raw.txt','wb') as f:
+        p = subprocess.Popen(cmd, env=env, stdout=subprocess.PIPE)
+        for line in p.stdout:
+            print(line.decode('utf-8'))
+            test_output.append(line.decode('utf-8'))
+            f.write(line)
+
+    test_output = get_test_status(test_output)
+
+    with open(f'{output_name}_tests.txt','w') as f:
+        for (test, status) in test_output.items():
+            f.write(f'{test} - {status}\n')
+
+    return test_output
+    
+def get_test_status(test_output : list[str]) -> dict[str,str]:
+    return { x[:-8] : x[-6:-2] for x in test_output if ("- pass" in x or "- fail" in x or "- skip" in x)}
 
 
 def get_completed_queries(log : Path) -> list[str]:
@@ -236,6 +270,38 @@ def kill_gpu_processes(id : str):
         
         output, error = kill.communicate()
         print('GPU processes dead!') 
+
+    processes = subprocess.Popen(
+            ["ps","-ef"], 
+            stdout=subprocess.PIPE
+            )
+    dawn = subprocess.Popen(
+            ["grep","dawn"], 
+            stdin=processes.stdout,
+            stdout=subprocess.PIPE
+            )
+    formatlist = subprocess.Popen(
+            ["grep","-v","grep"], 
+            stdin=dawn.stdout,
+            stdout=subprocess.PIPE
+            )
+    pid_to_kill = subprocess.Popen(
+            ["awk","{ print $2 }"],
+            stdin=formatlist.stdout,
+            stdout=subprocess.PIPE,
+            text=True
+            )
+    kill = subprocess.Popen(
+            ["xargs", "-r", "kill", "-9"],
+            stdin=pid_to_kill.stdout,
+            stdout=subprocess.PIPE,
+            text=True
+            )
+    
+    output, error = kill.communicate()
+    print('Dawn processes dead!')
+
+    
 
 def get_single_tests_from_file(filename : Path) -> dict[str,str]:
     '''
@@ -384,10 +450,7 @@ def check_queries():
         print(f'Tests: {tests}')
 
 def main():
-    log_path = Path('/data/work/tint_mutation_testing/output/spirv_ast_printer/info.log')
-    queries = get_completed_queries(log_path)
-
-    print(f'\n\n{queries}')
+    kill_gpu_processes('node')
 
 def getlines():
     
