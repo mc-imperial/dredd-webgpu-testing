@@ -12,6 +12,7 @@ from common.constants import DEFAULT_COMPILATION_TIMEOUT, DEFAULT_RUNTIME_TIMEOU
 from common.mutation_tree import MutationTree
 from common.run_process_with_timeout import ProcessResult, run_process_with_timeout
 from common.run_test import run_with_tracking, run_with_mutants, compare_results, KillStatus
+from utils import *
 
 from pathlib import Path
 from typing import List, Set
@@ -159,7 +160,7 @@ def main(raw_args=None):
                 os.remove(wgslsmith_generated_program)
 
             if args.coverage_check:
-                if len(wgslsmith_covered) > args.n_coverage_check_tests:
+                if len(wgslsmith_covered) > args.n_coverage_checks:
                     return wgslsmith_covered
            
             # Generate a WGSLsmith program
@@ -237,9 +238,9 @@ def main(raw_args=None):
 
             print("Execution of generated program succeeded without mutants.")
             print("Mutant tracking compilation complete")
-            
-            # Extract non-mutated output and tracked mutants
-            output = extract_output(regular_execution_result.stdout.decode("utf-8"))
+
+            # Get list of tracked mutants
+ 
             
             with open(dredd_covered_mutants_path, 'r') as f:
                 covered_mutants_info = f.read()
@@ -251,6 +252,11 @@ def main(raw_args=None):
 
             with open(Path(args.mutant_kill_path,f'tracking/mutant_tracking_file_wgslsmith_{wgslsmith_seed}.txt'), 'w') as f:
                 f.writelines([(str(x) + '\n') for x in covered_by_this_test])
+
+            # If we are only checking coverage, then record that we have coverage for this test and move to next
+            if args.coverage_check:
+                wgslsmith_covered[wgslsmith_test_name] = covered_by_this_test
+                continue
             
             if args.mutants_to_kill is not None:
                  candidate_mutants_for_this_test: List[int] = ([m for m in covered_by_this_test 
@@ -267,12 +273,7 @@ def main(raw_args=None):
             already_killed_by_other_tests: List[int] = ([m for m in covered_by_this_test if m in killed_mutants])
             killed_by_this_test: List[int] = []
             covered_but_not_killed_by_this_test: List[int] = []
-
-            if args.coverage_check:
-                print(f'adding to dict candidate mutants: {candidate_mutants_for_this_test}')
-                wgslsmith_covered[wgslsmith_test_name] = candidate_mutants_for_this_test
-                continue
-
+ 
             if args.log:
                 logdata.new_test(wgslsmith_test_name)
                 logdata.mutants_to_kill = len(set(args.mutants_to_kill)) if args.mutants_to_kill else 'NA'
@@ -281,7 +282,10 @@ def main(raw_args=None):
                 logdata.candidate_mutants_for_this_test = len(candidate_mutants_for_this_test)
 
                 logdata.write_pre_test_summary()
-             
+
+            # Extract non-mutated output for comparison with mutated output
+            output = extract_output(regular_execution_result.stdout.decode("utf-8"))
+
             for mutant in candidate_mutants_for_this_test:
 
                 if not still_testing(total_test_time=args.total_test_time,
@@ -391,30 +395,6 @@ def main(raw_args=None):
                            "killed_mutants": killed_by_this_test,
                            "skipped_mutants": already_killed_by_other_tests,
                            "survived_mutants": covered_but_not_killed_by_this_test}, outfile)
-
-def gen_js_program(program : Path,
-    input : Path,
-    program_js : Path):
-
-        with open(program, 'r') as f:
-            program_wgsl = f.read()
-
-        with open(input, 'r') as f:
-            program_input = f.read()
-
-        program_input = [int(x) for x in program_input[8:-2].split(',')]
-
-        # storage buffer must be at least 64 bytes so extend with '0' bytes if it is not long enough
-        if len(program_input) < 64:
-            extra_input = [0]*(64 - len(program_input))
-            program_input.extend(extra_input)
-
-        program_input = ','.join(map(str, program_input)) 
-
-        with open(program_js,'w') as f:
-            f.write(f'export const input = [{program_input}];\n')
-            f.write(f'export const expected = [{program_input}];\n')
-            f.write(f'export const shaderCode = ` \n {program_wgsl}`;')
 
 
 def run_wgslsmith_test(args, 
