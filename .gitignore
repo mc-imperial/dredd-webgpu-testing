@@ -5,6 +5,11 @@
 records.md
 todo.md
 
+# Data
+tracking/
+*.csv
+llvmpipe/wgslsmith
+
 # PyCharm
 .idea
 
