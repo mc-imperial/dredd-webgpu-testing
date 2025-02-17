@@ -5,7 +5,6 @@ let navigator = { gpu: create([]) };
 
 const shader_wgslsmith_js_1 = require(process.argv[3]);
 
-
 async function main() {
     const adapter = await navigator.gpu?.requestAdapter();
     const device = await adapter?.requestDevice();
