@@ -169,6 +169,7 @@ def main(raw_args = None):
         # crashed previously.
         Path(args.mutant_kill_path).mkdir(exist_ok=True)
         Path(args.mutant_kill_path,"killed_mutants").mkdir(exist_ok=True)
+        Path(args.mutant_kill_path,"survived_mutants").mkdir(exist_ok=True)
         Path(args.mutant_kill_path,"tracking").mkdir(exist_ok=True)
         Path(args.mutant_kill_path,"tests").mkdir(exist_ok=True)
 
@@ -214,14 +215,19 @@ def main(raw_args = None):
 
             for mutant in args.mutant_sample:
                 
-                # Check whether mutant has already been killed by another process
+                # Check whether mutant has already been killed or marked as survived by another process
                 mutant_path = Path(args.mutant_kill_path,f'killed_mutants/{str(mutant)}')
                 if mutant_path.exists():
                     print("Skipping mutant " + str(mutant) + " as it is noted as already killed.")
                     unkilled_mutants.remove(mutant)
                     killed_mutants.add(mutant)
                     already_killed_by_other_tests.append(mutant)
-                    print(f'Unkilled mutants: {unkilled_mutants}')
+                    continue
+
+                surviving_mutant_path = Path(args.mutant_kill_path,f'surviving_mutants/{str(mutant)}')
+                if surviving_mutant_path.exists():
+                    print("Skipping mutant " + str(mutant) + " as it is noted as surviving.")
+                    unkilled_mutants.remove(mutant)
                     continue
                 
                 print("Trying mutant " + str(mutant))
@@ -270,6 +276,8 @@ def main(raw_args = None):
                     covered_but_not_killed_by_this_test.append(mutant)
                     with open(f"{str(args.mutant_kill_path)}/surviving_mutants.txt", 'a') as outfile:
                         outfile.write(f'{mutant}\n')
+                    with open(surviving_mutant_path / "survived.txt", 'w') as outfile:
+                        outfile.write(f'Survived!')
                     continue
 
                 unkilled_mutants.remove(mutant)
@@ -438,12 +446,19 @@ def main(raw_args = None):
             for mutant in candidate_mutants_for_this_test:
 
                 mutant_path = Path(args.mutant_kill_path,f'killed_mutants/{str(mutant)}')
+                surviving_mutant_path = Path(args.mutant_kill_path,f'surviving_mutants/{str(mutant)}')
+
                 if mutant_path.exists():
                     print("Skipping mutant " + str(mutant) + " as it is noted as already killed.")
                     unkilled_mutants.remove(mutant)
                     killed_mutants.add(mutant)
                     already_killed_by_other_tests.append(mutant)
                     print(f'Unkilled mutants: {unkilled_mutants}')
+                    continue
+                print(surviving_mutant_path)
+                if surviving_mutant_path.exists():
+                    print("Skipping mutant " + str(mutant) + " as it is noted as surviving.")
+                    unkilled_mutants.remove(mutant)
                     continue
                 
                 print("Trying mutant " + str(mutant))
