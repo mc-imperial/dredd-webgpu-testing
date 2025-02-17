@@ -32,7 +32,23 @@ def get_test_summary_info(filepath : Path) -> dict:
 
     return test_info
 
+def get_wgslsmith_tracking_info(filepath : Path, output_file : Path):
+    covered_mutants = set()
 
+    files = [d for d in filepath.iterdir() if not d.is_dir()]
+
+    for file in files:
+        if 'wgslsmith' in file.stem:
+            with open(file,'r') as f:
+                mutants = f.readlines()
+                mutants = [int(m.replace('\n','')) for m in mutants]
+
+            covered_mutants = covered_mutants.union(set(mutants))
+
+    with open(output_file, 'w') as f:
+        for m in list(covered_mutants):
+            f.writelines(str(m)+'\n')
+            
 
 def get_tracking_info(filepath : Path):
 
@@ -82,8 +98,7 @@ def print_tracking_info(cts_path : Path, mutants_killed_by_cts : list):
 def flatten(somelist : list) -> list:
     return [i for item in somelist for i in item]
 
-if __name__=="__main__":
-
+def main():
     base = Path("/data/work/tint_mutation_testing/spirv_ast_printer_cts")
     info = get_mutant_info(Path(base, 'killed_mutants'))
     print(f"Example mutant info for mutant 8: {info['8']}")
@@ -131,3 +146,6 @@ if __name__=="__main__":
         print(f'Mutant: {i} Kill info: {mutants_killed_by_wgslsmith[i]}')
     '''
 
+if __name__=="__main__":
+    get_wgslsmith_tracking_info(Path('/data/work/webgpu/testing/out_tint_lang/tracking'), 
+            Path('/data/work/webgpu/testing/out_tint_lang/covered_by_wgslsmith.txt'))
