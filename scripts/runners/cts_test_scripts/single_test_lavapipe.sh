@@ -1,9 +1,13 @@
 #!/bin/sh
 
 MESA_INSTALL=/data/dev/mesa/build/install
-DAWN=/data/dev/dawn_mutated
+DAWN=/data/dev/dawn
 
-DREDD_ENABLED_MUTATION=8 VK_ICD_FILENAMES=$MESA_INSTALL/share/vulkan/icd.d/lvp_icd.x86_64.json $DAWN/tools/run run-cts \
+export VK_ICD_FILENAMES=$MESA_INSTALL/share/vulkan/icd.d/lvp_icd.x86_64.json 
+export LD_PRELOAD=/usr/lib/gcc/x86_64-linux-gnu/12/libasan.so
+
+$DAWN/tools/run run-cts \
+    --isolate \
     --verbose \
     --bin=$DAWN/out/Debug \
     --cts=/data/dev/webgpu_cts \
