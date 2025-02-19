@@ -119,42 +119,6 @@ def main():
             print("Not implemented yet")
             pass
 
-
-    '''
-    if args.cmd == "mutate":
-        pass
-        print('Mutating dawn')
-        restore_and_mutate_dawn()
-        
-    if args.mutate or args.rebuild_wgslsmith:
-        print('Rebuilding WGSLsmith')
-        build_wgslsmith(args.wgslsmith_mutated, args.dawn_mutated)
-        build_wgslsmith(args.wgslsmith_coverage, args.dawn_mutant_tracking)
-
-    # Option 1: Kill uncovered mutants
-    if args.kill_uncovered_mutants_first:
-        print('Kill uncovered mutants')
-        (covered, uncovered) = find_mutants_covered_by_cts()
-        
-        print('Finished checking CTS coverage!')
-        
-        kill_uncovered_mutants(uncovered, coverage_check = True)
-
-    # Option 2: Kill covered and surviving mutants
-    else:
-        if not args.cts_killing_completed:
-            print('Kill mutants with the CTS')
-            kill_mutants_with_cts()
-
-        mutants_to_kill = get_surviving_mutants(args.surviving_mutants_dir)
-
-        print(f'There are {len(mutants_to_kill)} surviving mutants')
-
-        print('Killing surviving mutants with WGSLsmith')
-        kill_mutants_with_wgslsmith(mutants_to_kill, coverage_check = False)
-
-    '''
-
 def get_surviving_mutants(output_dir : Path) -> list[int]:
     
     with open(Path(output_dir, 'surviving_mutants.txt'),'r') as f:
