@@ -53,7 +53,7 @@ def track(track_cts : bool = True, track_wgslsmith : bool = True):
                 generate=True,
                 tracking=tracking_file)
 
-def process_tracking(cts : Path, wgslsmith : Path):
+def process_tracking(cts : Path, wgslsmith : Path) -> dict[str,list[int]]:
 
     if cts is not None:
         cts_mutants = get_mutants(cts)
@@ -71,6 +71,13 @@ def process_tracking(cts : Path, wgslsmith : Path):
         print(f'Covered by both: {len(covered_by_both)}')
         print(f'Covered by CTS only: {len(covered_by_cts_only)}')
         print(f'Covered by WGSLsmith only: {len(covered_by_wgslsmith_only)}')
+
+    coverage = {'covered_by_both' : covered_by_both,
+                'covered_by_cts_only' : covered_by_cts_only,
+                'covered_by_wgslsmith_only' : covered_by_wgslsmith_only
+                }
+
+    return coverage
 
 def get_mutants(filepath : Path):
 
