@@ -64,20 +64,31 @@ def gen_js_program(program : Path,
             f.write(f'export const expected = [{program_input}];\n')
             f.write(f'export const shaderCode = ` \n {program_wgsl}`;')
 
-def run_wgslsmith_program(program_js : Path, vk_icd : Path, generate : bool = False, tracking : Path = None):
+def run_wgslsmith_program(program_js : Path, 
+    dawn_node : Path, 
+    vk_icd : Path = None, 
+    generate : bool = False, 
+    tracking : Path = None,
+    mutants : List[int] = None):
+
+    if tracking is not None and mutants is not None:
+        print('Error! Cannot run with tracking and mutants enabled')
+        exit(1)
+        
+    if generate:
+        gen_wgslsmith_program(program_js)
 
     env = os.environ.copy()
     env["VK_ICD_FILENAMES"] = str(vk_icd)
-
     
     if tracking is not None:
         print(tracking)
         env["DREDD_MUTANT_TRACKING_FILE"] = str(tracking)
-    
-    if generate:
-        gen_wgslsmith_program(program_js)
 
-    run_cmd = ['node', 'script.js', '/data/dev/dawn/out/Debug/dawn.node', str(program_js)]
+    if mutants is not None:  
+        env["DREDD_ENABLED_MUTATION"] = ','.join([str(m) for m in mutants])
+
+    run_cmd = ['node', 'script.js', str(dawn_node), str(program_js)]
 
     abspath = os.path.abspath(__file__)
     dname = Path(os.path.dirname(abspath),'../../standalone').resolve()
@@ -86,7 +97,7 @@ def run_wgslsmith_program(program_js : Path, vk_icd : Path, generate : bool = Fa
         result = subprocess.run(run_cmd, cwd=str(dname), env=env, timeout=180)
     except subprocess.TimeoutExpired:
         print('Timeout expired!')
-        return
+        return None
 
     return result
 
