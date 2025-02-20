@@ -2,22 +2,20 @@
 
 MESA=$1
 
-source /data/dev/dredd-webgpu/testing/llvmpipe/mesavenv/bin/activate
-
 cd $MESA
 
+BUILDDIR=build_sanitized
+
 meson setup --reconfigure  \
-    --prefix="${MESA}/build/install" \
+    --prefix="${MESA}/${BUILDDIR}/install" \
     -Dgallium-drivers=llvmpipe \
     -Dvulkan-drivers=swrast \
     -Dplatforms=x11 \
     -Dincludedir=include \
     -Db_sanitize=address \
-    build/
-    #-Dincludedir=/data/dev/${MESA}/src \
+    $BUILDDIR/
 
-
-ninja -C build/
-ninja -C build/ install
+ninja -C build_sanitized/
+ninja -C build_sanitized/ install
 
 
