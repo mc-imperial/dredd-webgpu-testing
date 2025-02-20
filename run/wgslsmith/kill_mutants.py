@@ -202,13 +202,13 @@ def main(raw_args=None):
                 regular_execution_result = run_wgslsmith_program(program_js, 
                     f'{args.tracking_dawn}/dawn.node', 
                     vk_icd = str(args.vk_icd), 
-                    tracking = dredd_covered_mutants_path):
+                    tracking = dredd_covered_mutants_path)
 
             elif args.cmd == "mesa":
                 regular_execution_result = run_wgslsmith_program(program_js, 
                     f'{args.dawn}/dawn.node', 
                     vk_icd = str(args.tracked_vk_icd), 
-                    tracking = dredd_covered_mutants_path):
+                    tracking = dredd_covered_mutants_path)
 
             if regular_execution_result is None:
                 print("Runtime timeout.")

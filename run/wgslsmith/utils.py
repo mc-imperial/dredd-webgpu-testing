@@ -69,7 +69,7 @@ def run_wgslsmith_program(program_js : Path,
     vk_icd : Path = None, 
     generate : bool = False, 
     tracking : Path = None,
-    mutants : List[int] = None):
+    mutants : list[int] = None):
 
     if tracking is not None and mutants is not None:
         print('Error! Cannot run with tracking and mutants enabled')
