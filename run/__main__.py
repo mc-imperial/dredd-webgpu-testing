@@ -309,20 +309,22 @@ def get_wgslsmith_args(args, standalone : bool = True) -> list[str]:
 
         wgslsmith_args =[str(args.info_file_mutated),
                 str(args.info_file_coverage),
-                f'{str(args.dawn_mutated)}/out/Debug/dawn.node', # mutated_exe
-                f'{str(args.dawn_coverage)}/out/Debug/dawn.node', # tracking_exe
                 f'{str(args.wgslsmith_exe)}', # wgslsmith_root
                 str(args.output),
                 '--compile_timeout', str(args.timeout),
                 '--run_timeout', str(args.timeout),
-                '--vk_icd', args.vk_icd,
                 '--standalone',
                 '--js_wrapper', str(args.js_wrapper)
+                'dawn',
+                f'{str(args.dawn_mutated)}/out/Debug/dawn.node', # mutated_exe
+                f'{str(args.dawn_coverage)}/out/Debug/dawn.node', # tracking_exe
+                '--vk_icd', args.vk_icd,
             ]
 
     else:
-
-                wgslsmith_args =[str(args.info_file_mutated),
+            print('Not implemented yet!')
+            exit(1)
+            wgslsmith_args =[str(args.info_file_mutated),
                 str(args.info_file_coverage),
                 f'{str(args.wgslsmith_mutated)}/target/release/wgslsmith', # mutated_exe
                 f'{str(args.wgslsmith_coverage)}/target/release/wgslsmith', # tracking_exe
@@ -332,7 +334,9 @@ def get_wgslsmith_args(args, standalone : bool = True) -> list[str]:
                 '--run_timeout', str(args.timeout),
                 '--vk_icd', args.vk_icd,
                 '--dawn_vk', args.dawn_vk,
-                '--log', str(args.logging_file)
+                '--log', str(args.logging_file),
+                'dawn',
+                '--vk_icd', args.vk_icd,
             ]
 
     return wgslsmith_args

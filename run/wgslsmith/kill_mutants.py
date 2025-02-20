@@ -23,6 +23,7 @@ def main(raw_args=None):
     time_of_last_kill: float = start_time_for_overall_testing
 
     parser = argparse.ArgumentParser()
+
     parser.add_argument("mutation_info_file",
                         help="File containing information about mutations, generated when Dredd was used to actually "
                              "mutate the source code.",
@@ -31,12 +32,6 @@ def main(raw_args=None):
                         help="File containing information about mutations, generated when Dredd was used to "
                              "instrument the source code to track mutant coverage; this will be compared against the "
                              "regular mutation info file to ensure that tracked mutants match applied mutants.",
-                        type=Path)
-    parser.add_argument("mutated_executable",
-                        help="Path to the executable for the Dredd-mutated compiler.",
-                        type=Path)
-    parser.add_argument("tracking_executable",
-                        help="Path to the executable for the compiler instrumented to track mutants.",
                         type=Path)
     parser.add_argument("wgslsmith_root", help="Path to a checkout of WGSLsmith", #TODO: check build exe location
                         type=Path)
@@ -68,9 +63,6 @@ def main(raw_args=None):
                         help="Cease testing if a kill has not occurred for this length of time. Default is 24 hours. "
                              "To test indefinitely, pass 0.",
                         type=int)
-    parser.add_argument("--vk_icd",
-                        default="",
-                        help="Specify driver")
     parser.add_argument("--dawn_vk",
                         default="dawn:vk:7425",
                         help="Specify driver code")
@@ -95,6 +87,34 @@ def main(raw_args=None):
                         default=None,
                         type=Path)
 
+    subparsers = parser.add_subparsers(dest="cmd")
+
+    # Action: kill mutants in Dawn
+    parser_dawn = subparsers.add_parser("dawn",
+            help='Kill mutants in Dawn')
+    parser_dawn.add_argument("mutated_executable",
+                        help="Path to the executable for the Dredd-mutated compiler.",
+                        type=Path)
+    parser_dawn.add_argument("tracking_executable",
+                        help="Path to the executable for the compiler instrumented to track mutants.",
+                        type=Path)
+    parser_dawn.add_argument("--vk_icd",
+                        default="",
+                        help="Specify driver")
+
+    # Action: kill mutants in Mesa
+    parser_mesa = subparsers.add_parser("mesa",
+            help='Kill mutants in Mesa')
+    parser_mesa.add_argument("dawn",
+                        help="Path to Dawn for using dawn.node to execute WGSLsmith tests. Should be unmutated!",
+                        type=Path)
+    parser_mesa.add_argument("mutated_vk_icd",
+                        help="Path to the executable for the Dredd-mutated Mesa vk_icd.",
+                        type=Path)
+    parser_mesa.add_argument("tracked_vk_icd",
+                        help="Path to the executable for the Mesa vk_icd instrumented to track mutants.",
+                        type=Path)
+
     args = parser.parse_args(raw_args)
 
     if args.log:
@@ -117,6 +137,8 @@ def main(raw_args=None):
     assert mutation_tree.num_nodes == mutation_tree_for_coverage_tracking.num_nodes
     assert mutation_tree.num_mutations == mutation_tree_for_coverage_tracking.num_mutations
     print("Check complete!")
+
+    exit()
     
     if args.seed is not None:
         random.seed(args.seed)
@@ -165,56 +187,28 @@ def main(raw_args=None):
            
             # Generate a WGSLsmith program
             wgslsmith_seed = random.randint(0, 2 ** 32 - 1)
-            wgslsmith_cmd = [str(args.wgslsmith_root / "wgslsmith"), "gen", "-o",
-                          str(wgslsmith_generated_program)]
             wgslsmith_test_name: str = "wgslsmith_" + str(wgslsmith_seed)
 
             print("Generating...")
-            
-            if run_process_with_timeout(cmd=wgslsmith_cmd, timeout_seconds=args.generator_timeout) is None:
+            result = gen_wgslsmith_program(str(wgslsmith_generated_program))
+
+            if not result:
                 print(f"WGSLsmith timed out (seed {wgslsmith_seed})")
                 continue
-          
-            # Extract inputs from WGSLsmith program
-            with open(wgslsmith_generated_program) as f:
-                inputs = f.readline().strip('\n')[3:] # remove first 3 comment chars
-
-            with open(wgslsmith_input, "w") as f:
-                f.write(inputs)
-
-            # Recondition the WGSLsmith program
-            recondition_cmd = [str(args.wgslsmith_root / "wgslsmith"), "recondition",
-                    str(wgslsmith_generated_program), str(wgslsmith_reconditioned_program)]
-
-            print("Reconditioning...")
-            if run_process_with_timeout(cmd=recondition_cmd, timeout_seconds=args.generator_timeout) is None:
-                print(f"WGSLsmith timed out (seed {wgslsmith_seed})")
-                continue
-
-            print(f'Inputs: {inputs}')
-
-            # Generate the WGSLsmith JavaScript program
-            if args.standalone:
-                gen_js_program(wgslsmith_reconditioned_program,
-                    wgslsmith_input,
-                    wgslsmith_js_program)
-
-                # Put wrapper script in temp folder
-                subprocess.run(['cp', str(args.js_wrapper), str(wgslsmith_js_wrapper)])
-
-                program = wgslsmith_js_program
-            else:
-                program = wgslsmith_reconditioned_program
 
             # Run the program with the mutant tracking compiler to (a) check non mutated results,
             # and (b) get the list of covered mutants
+            if args.cmd == "dawn":
+                regular_execution_result = run_wgslsmith_program(program_js, 
+                    f'{args.tracking_dawn}/dawn.node', 
+                    vk_icd = str(args.vk_icd), 
+                    tracking = dredd_covered_mutants_path):
 
-            regular_execution_result : ProcessResult = run_with_tracking(program,
-                    wgslsmith_input,
-                    dredd_covered_mutants_path,
-                    args.vk_icd,
-                    args.tracking_executable,
-                    wrapper = wgslsmith_js_wrapper)
+            elif args.cmd == "mesa":
+                regular_execution_result = run_wgslsmith_program(program_js, 
+                    f'{args.dawn}/dawn.node', 
+                    vk_icd = str(args.tracked_vk_icd), 
+                    tracking = dredd_covered_mutants_path):
 
             if regular_execution_result is None:
                 print("Runtime timeout.")
@@ -240,7 +234,6 @@ def main(raw_args=None):
             print("Mutant tracking compilation complete")
 
             # Get list of tracked mutants
- 
             
             with open(dredd_covered_mutants_path, 'r') as f:
                 covered_mutants_info = f.read()
@@ -301,28 +294,18 @@ def main(raw_args=None):
                     killed_mutants.add(mutant)
                     already_killed_by_other_tests.append(mutant)
                     continue
+
+                if args.cmd == "dawn":
+                    mutant_result = run_wgslsmith_program(program,
+                        args.mutated_dawn,
+                        vk_icd = args.vk_icd,
+                        mutants=[mutant])
                 
-                print("Trying mutant " + str(mutant))
-                logdata.write_trying_mutant(str(mutant))
-
-                '''
-                compiler_args = get_wgslsmith_compiler_args(wgslsmith_reconditioned_program,
-                                    wgslsmith_input,
-                                    args.dawn_vk)
-
-                (mutant_result, mutant_result_stdout) = run_wgslsmith_test_with_mutants(mutants=[mutant],
-                                                      compiler_path=str(args.mutated_executable),
-                                                      compiler_args=compiler_args,
-                                                      compile_time=args.compile_timeout,
-                                                      run_time=args.run_timeout,
-                                                      execution_result_non_mutated=regular_execution_result,
-                                                      env=env)
-                '''
-                mutant_result = run_with_mutants([mutant],
-                    program,
-                    args.vk_icd,
-                    args.mutated_executable,
-                    wrapper = wgslsmith_js_wrapper)
+                elif args.cmd == "mesa":
+                    mutant_result = run_wgslsmith_program(program,
+                        args.dawn,
+                        vk_icd = args.mutated_vk_icd,
+                        mutants=[mutant])
 
                 (mutant_result, mutant_result_stdout) = compare_results(regular_execution_result, mutant_result)
 
