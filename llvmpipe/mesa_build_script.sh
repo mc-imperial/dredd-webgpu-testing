@@ -9,6 +9,8 @@ export CXX=/data/dev/dredd/third_party/clang+llvm/bin/clang++
 
 cd $MESA
 
+meson setup build/
+
 meson setup --reconfigure  \
     --prefix="${MESA}/build/install" \
     -Dgallium-drivers=llvmpipe \
