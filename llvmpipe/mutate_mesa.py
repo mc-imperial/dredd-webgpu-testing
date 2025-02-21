@@ -132,8 +132,8 @@ def main():
     
     base = Path('/data/dev')
     dredd = Path(base,'dredd/third_party/clang+llvm/bin/dredd')
-    mutation_dir = Path('src/gallium/drivers/llvmpipe')
-    #mutation_dir = Path('src')
+    #mutation_dir = Path('src/gallium/drivers/llvmpipe')
+    mutation_dir = Path('src')
     dredd_issues = Path(base, 'dredd-webgpu-testing','llvmpipe','dredd_issues')
 
     mutated : FileInfo = FileInfo(Path(base, 'mesa_mutated'),
@@ -146,23 +146,18 @@ def main():
         Path(base,'mesa_tracked','mutation_info.json'),
         track_only=True)
 
-    restore(mutated.src)
-    restore(tracked.src)
-
-    (mutation_files, tracked_files) = get_files(mutated.compile_commands, 
-                                        mutation_dir, 
-                                        mutated.src, 
-                                        tracked.src)
-
-    with open(Path(mutated.src,'mutated_files.txt'), 'w') as f:
-        for file in mutation_files:
-            f.write(file + '\n')
-
-    mutated.mutation_files = mutation_files
-    tracked.mutation_files = tracked_files
-    
-    for x in [tracked]:
+    for x in [mutated]: # [mutated, tracked]
         
+        restore(x.src)
+
+        x.mutation_files = get_files_for_mutation(x.compile_commands, 
+                                mutation_dir, 
+                                x.src)
+
+        with open(Path(x.src,'mutated_files.txt'), 'w') as f:
+            for file in x.mutation_files:
+                f.write(file + '\n')
+
         mutate(dredd,
             x.mutation_files,
             x.mutant_info_file,
@@ -170,6 +165,7 @@ def main():
             x.src,
             x.track_only)
         
+
         build_result = build(x.src)
 
         with open(f'build_result_{x}.txt','w') as f:
