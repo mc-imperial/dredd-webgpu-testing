@@ -25,6 +25,18 @@ def gen_wgslsmith_program(program_path : Path, recondition : bool = True, as_js 
         return False
 
     # Extract inputs
+    inputs = get_inputs(program_path)
+
+    with open(input_path, 'w') as f:
+        json.dump(inputs, f)
+
+    if as_js:
+        gen_js_program(program_path, input_path, js_path)
+
+    return True
+
+def get_inputs(program_path : Path) -> dict[str]:
+
     with open(program_path, 'r') as f:
         code = f.readlines()
 
@@ -34,15 +46,12 @@ def gen_wgslsmith_program(program_path : Path, recondition : bool = True, as_js 
     # Convert str representation of dict to dict
     inputs = ast.literal_eval(inputs)
 
-    with open(input_path, 'w') as f:
-        json.dump(inputs, f)
-
-    if as_js:
-        gen_js_program(program_path, input_path, js_path)
+    return inputs
 
 def gen_js_program(program : Path,
     input : Path,
-    program_js : Path):
+    program_js : Path,
+    self_contained_js : bool = True):
 
         with open(program, 'r') as f:
             program_wgsl = f.read()
@@ -52,24 +61,42 @@ def gen_js_program(program : Path,
         
         program_input = program_input["0:0"]
 
-        # storage buffer must be at least 64 bytes so extend with '0' bytes if it is not long enough
-        if len(program_input) < 64:
-            extra_input = [0]*(64 - len(program_input))
+        # storage buffer must be at least x bytes so extend with '0' bytes if it is not long enough
+        # the x keeps changing - TODO look into why this is, or just use a large number to avoid further problems
+        storage_buffer_minimum = 80
+        if len(program_input) < storage_buffer_minimum:
+            extra_input = [0]*(storage_buffer_minimum - len(program_input))
             program_input.extend(extra_input)
 
         program_input = ','.join(map(str, program_input)) 
 
-        with open(program_js,'w') as f:
-            f.write(f'export const input = [{program_input}];\n')
-            f.write(f'export const expected = [{program_input}];\n')
-            f.write(f'export const shaderCode = ` \n {program_wgsl}`;')
+        if self_contained_js:
+
+            abspath = os.path.abspath(__file__)
+            shader_boilerplate = Path(os.path.dirname(abspath),'shader_boilerplate.js').resolve()
+
+            with open(shader_boilerplate, 'r') as f:
+                boilerplate_code = f.readlines()
+            
+            with open(program_js, 'w') as f:
+                f.write(f'const inputArray = [{program_input}];\n')
+                f.write(f'const expectedArray = [{program_input}];\n')
+                f.write(f'const shaderCode = ` \n {program_wgsl}`;')
+                f.writelines(boilerplate_code)
+        else:
+            with open(program_js,'w') as f:
+                f.write(f'export const input = [{program_input}];\n')
+                f.write(f'export const expected = [{program_input}];\n')
+                f.write(f'export const shaderCode = ` \n {program_wgsl}`;')
 
 def run_wgslsmith_program(program_js : Path, 
     dawn_node : Path, 
     vk_icd : Path = None, 
     generate : bool = False, 
     tracking : Path = None,
-    mutants : list[int] = None):
+    mutants : list[int] = None,
+    self_contained_js : bool = True,
+    timeout : int = 60):
 
     if tracking is not None and mutants is not None:
         print('Error! Cannot run with tracking and mutants enabled')
@@ -88,13 +115,18 @@ def run_wgslsmith_program(program_js : Path,
     if mutants is not None:  
         env["DREDD_ENABLED_MUTATION"] = ','.join([str(m) for m in mutants])
 
-    run_cmd = ['node', 'script.js', str(dawn_node), str(program_js)]
+    if self_contained_js:
+        run_cmd = ['node', str(program_js), str(dawn_node)]
+        working_dir = os.getcwd()
+    
+    else:
+        run_cmd = ['node', 'script.js', str(dawn_node), str(program_js)]
 
-    abspath = os.path.abspath(__file__)
-    dname = Path(os.path.dirname(abspath),'../../standalone').resolve()
+        abspath = os.path.abspath(__file__)
+        working_dir = str(Path(os.path.dirname(abspath),'../../standalone').resolve())
 
     try:
-        result = subprocess.run(run_cmd, cwd=str(dname), env=env, timeout=180)
+        result = subprocess.run(run_cmd, cwd=working_dir, env=env, timeout=timeout, capture_output=True, text = True)
     except subprocess.TimeoutExpired:
         print('Timeout expired!')
         return None
