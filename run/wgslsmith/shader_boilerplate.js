@@ -87,8 +87,10 @@ async function main() {
     const result = new Uint8Array(resultBuffer.getMappedRange().slice());
     resultBuffer.unmap();
   
-    console.log('input', input);
-    console.log('result', result);
+    console.log('input')
+    console.dir(input, {'maxArrayLength': null});
+    console.log('result')
+    console.dir(result, {'maxArrayLength': null});
     //console.log('expected', expected);
 }
 
