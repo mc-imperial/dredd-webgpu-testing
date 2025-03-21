@@ -7,12 +7,13 @@ import subprocess
 import random
 import tempfile
 import time
+import logging
 
 from common.constants import DEFAULT_COMPILATION_TIMEOUT, DEFAULT_RUNTIME_TIMEOUT
 from common.mutation_tree import MutationTree
 from common.run_process_with_timeout import ProcessResult, run_process_with_timeout
 from common.run_test import run_with_tracking, run_with_mutants, compare_results, KillStatus
-from utils import *
+from run.wgslsmith.utils import gen_wgslsmith_program, run_wgslsmith_program, extract_output
 
 from pathlib import Path
 from typing import List, Set
@@ -117,12 +118,32 @@ def main(raw_args=None):
 
     args = parser.parse_args(raw_args)
 
-    if args.log:
-        logging_file = Path(args.log)
-        logdata = LogData(logging_file)
+    
+    '''
+    mutant = '438114'
+    test_dir = Path('/data/dev/dredd-webgpu-testing/llvmpipe/output/tests/')
+    wgslsmith_js_program = Path(test_dir, 'wgslsmith_3179931480', 'prog.js')
+
+    unmutated_result = run_wgslsmith_program(wgslsmith_js_program,
+        args.dawn,
+        vk_icd = args.mutated_vk_icd,
+        timeout=(args.run_timeout*3))
+    
+    print(unmutated_result.stdout)
+
+    mutant_result = run_wgslsmith_program(wgslsmith_js_program,
+        args.dawn,
+        vk_icd = args.mutated_vk_icd,
+        mutants=[mutant],
+        timeout=(args.run_timeout*3))
+
+    print(mutant_result.stdout)
+
+    exit()
+    '''
 
     assert args.mutation_info_file != args.mutation_info_file_for_mutant_coverage_tracking
-
+    
     print("Building the real mutation tree...")
     with open(args.mutation_info_file, 'r') as json_input:
         mutation_tree = MutationTree(json.load(json_input))
@@ -137,8 +158,25 @@ def main(raw_args=None):
     assert mutation_tree.num_nodes == mutation_tree_for_coverage_tracking.num_nodes
     assert mutation_tree.num_mutations == mutation_tree_for_coverage_tracking.num_mutations
     print("Check complete!")
+    
+    # Make a work directory in which information about the mutant killing process will be stored. If this already
+    # exists that's OK - there may be other processes working on mutant killing, or we may be continuing a job that
+    # crashed previously.
+    Path(args.mutant_kill_path).mkdir(exist_ok=True)
+    Path(args.mutant_kill_path, "tests").mkdir(exist_ok=True)
+    Path(args.mutant_kill_path, "killed_mutants").mkdir(exist_ok=True)
+    Path(args.mutant_kill_path, "tracking").mkdir(exist_ok=True)
 
-    exit()
+    log_name = args.log if args.log is not None else 'log'
+
+    logging.basicConfig(
+        filename=Path(args.mutant_kill_path, log_name),
+        encoding="utf-8",
+        filemode="a",
+        level=logging.INFO,
+        format="{asctime} - {levelname} - {message}",
+        style="{",
+        datefmt="%Y-%m-%d %H:%M",)
     
     if args.seed is not None:
         random.seed(args.seed)
@@ -158,14 +196,6 @@ def main(raw_args=None):
             unkilled_mutants: Set[int] = set([int(x) for x in args.mutants_to_kill])
         else:
             unkilled_mutants: Set[int] = set(range(0, mutation_tree.num_mutations))
-
-        # Make a work directory in which information about the mutant killing process will be stored. If this already
-        # exists that's OK - there may be other processes working on mutant killing, or we may be continuing a job that
-        # crashed previously.
-        Path(args.mutant_kill_path).mkdir(exist_ok=True)
-        Path(args.mutant_kill_path, "tests").mkdir(exist_ok=True)
-        Path(args.mutant_kill_path, "killed_mutants").mkdir(exist_ok=True)
-        Path(args.mutant_kill_path, "tracking").mkdir(exist_ok=True)
 
         if args.coverage_check:
             wgslsmith_covered = {}
@@ -190,48 +220,59 @@ def main(raw_args=None):
             wgslsmith_test_name: str = "wgslsmith_" + str(wgslsmith_seed)
 
             print("Generating...")
-            result = gen_wgslsmith_program(str(wgslsmith_generated_program))
+            result = gen_wgslsmith_program(wgslsmith_generated_program, wgslsmith_seed)
 
             if not result:
-                print(f"WGSLsmith timed out (seed {wgslsmith_seed})")
+                print(f"Problem generating WGSLsmith program (seed {wgslsmith_seed})")
                 continue
 
             # Run the program with the mutant tracking compiler to (a) check non mutated results,
             # and (b) get the list of covered mutants
             if args.cmd == "dawn":
-                regular_execution_result = run_wgslsmith_program(program_js, 
-                    f'{args.tracking_dawn}/dawn.node', 
+                regular_execution_result = run_wgslsmith_program(wgslsmith_generated_program, 
+                    str(args.tracking_dawn), 
                     vk_icd = str(args.vk_icd), 
                     tracking = dredd_covered_mutants_path)
 
             elif args.cmd == "mesa":
-                regular_execution_result = run_wgslsmith_program(program_js, 
-                    f'{args.dawn}/dawn.node', 
+                regular_execution_result = run_wgslsmith_program(wgslsmith_js_program, 
+                    str(args.dawn), 
                     vk_icd = str(args.tracked_vk_icd), 
-                    tracking = dredd_covered_mutants_path)
+                    tracking = dredd_covered_mutants_path,
+                    timeout = args.run_timeout)
 
             if regular_execution_result is None:
                 print("Runtime timeout.")
+                logging.info("Runtime timeout.")
+                continue
+
+            if 'error' in regular_execution_result.stdout or 'Error' in regular_execution_result.stdout:
+                print("Validation error.")
+                logging.info(f"Validation error: {regular_execution_result.stdout}")
                 continue
 
             if regular_execution_result.returncode != 0:
-                print(f"Std out:\n {regular_execution_result.stdout.decode('utf-8')}\n")
-                print(f"Std err:\n {regular_execution_result.stderr.decode('utf-8')}\n")
+                print(f"Std out:\n {regular_execution_result.stdout}\n")
+                print(f"Std err:\n {regular_execution_result.stderr}\n")
                 print("Execution of generated program failed without mutants.")
+                logging.info("Execution of generated program failed without mutants.")
                 continue
 
             if not dredd_covered_mutants_path.exists():
-                print(f"Std out:\n {regular_execution_result.stdout.decode('utf-8')}\n")
-                print(f"Std err:\n {regular_execution_result.stderr.decode('utf-8')}\n")
+                print(f"Std out:\n {regular_execution_result.stdout}\n")
+                print(f"Std err:\n {regular_execution_result.stderr}\n")
                 print("No mutant tracking file created.")
                 continue
 
             # If regular execution succeeded and some mutants are covered, then proceed
-            print(f"Std out:\n {regular_execution_result.stdout.decode('utf-8')}\n")
-            print(f"Std err:\n {regular_execution_result.stderr.decode('utf-8')}\n")
+            print(type(regular_execution_result))
+            print(f"Std out:\n {regular_execution_result.stdout}\n")
+            print(f"Std err:\n {regular_execution_result.stderr}\n")
 
             print("Execution of generated program succeeded without mutants.")
             print("Mutant tracking compilation complete")
+
+            logging.info(f'Seed {wgslsmith_seed} unmutated execution succeeded.')
 
             # Get list of tracked mutants
             
@@ -262,24 +303,24 @@ def main(raw_args=None):
             print(f'n mutants covered by wgslsmith that are not killed by cts: {len(candidate_mutants_for_this_test)}')
 
             print("Number of mutants to try: " + str(len(candidate_mutants_for_this_test)))
+
+            logging.info(f'n mutants covered by the wgslsmith test: {len(covered_by_this_test)}')
+            logging.info(f'n mutants covered by wgslsmith that are not killed by cts: {len(candidate_mutants_for_this_test)}')
+            logging.info("Number of mutants to try: " + str(len(candidate_mutants_for_this_test)))
             
             already_killed_by_other_tests: List[int] = ([m for m in covered_by_this_test if m in killed_mutants])
             killed_by_this_test: List[int] = []
             covered_but_not_killed_by_this_test: List[int] = []
  
-            if args.log:
-                logdata.new_test(wgslsmith_test_name)
-                logdata.mutants_to_kill = len(set(args.mutants_to_kill)) if args.mutants_to_kill else 'NA'
-                logdata.update_mutant_candidates(candidate_mutants_for_this_test)
-                logdata.mutants_covered_this_test = len(covered_by_this_test)
-                logdata.candidate_mutants_for_this_test = len(candidate_mutants_for_this_test)
-
-                logdata.write_pre_test_summary()
-
             # Extract non-mutated output for comparison with mutated output
-            output = extract_output(regular_execution_result.stdout.decode("utf-8"))
+            output = extract_output(regular_execution_result.stdout)
+
+            logging.info(f'Non mutated output: {output}')
 
             for mutant in candidate_mutants_for_this_test:
+
+                print(f'Trying mutant {mutant}...')
+                logging.info(f'Trying mutant {mutant}')
 
                 if not still_testing(total_test_time=args.total_test_time,
                                      maximum_time_since_last_kill=args.maximum_time_since_last_kill,
@@ -290,29 +331,31 @@ def main(raw_args=None):
                 mutant_path = Path(args.mutant_kill_path, f'killed_mutants/{str(mutant)}')
                 if mutant_path.exists():
                     print("Skipping mutant " + str(mutant) + " as it is noted as already killed.")
+                    logging.info("Skipping mutant " + str(mutant) + " as it is noted as already killed.")
                     unkilled_mutants.remove(mutant)
                     killed_mutants.add(mutant)
                     already_killed_by_other_tests.append(mutant)
                     continue
 
                 if args.cmd == "dawn":
-                    mutant_result = run_wgslsmith_program(program,
+                    mutant_result = run_wgslsmith_program(wgslsmith_js_program,
                         args.mutated_dawn,
                         vk_icd = args.vk_icd,
                         mutants=[mutant])
                 
                 elif args.cmd == "mesa":
-                    mutant_result = run_wgslsmith_program(program,
+                    mutant_result = run_wgslsmith_program(wgslsmith_js_program,
                         args.dawn,
                         vk_icd = args.mutated_vk_icd,
-                        mutants=[mutant])
+                        mutants=[mutant],
+                        timeout=(args.run_timeout*3))
 
                 (mutant_result, mutant_result_stdout) = compare_results(regular_execution_result, mutant_result)
 
-                print("Mutant result: " + str(mutant_result))
-                 
-                if mutant_result == KillStatus.SURVIVED_IDENTICAL \
-                        or mutant_result == KillStatus.SURVIVED_BINARY_DIFFERENCE:
+                print(f"Mutant {mutant} result:{str(mutant_result)} ")
+                logging.info(f"Mutant {mutant} result: {str(mutant_result)}")
+
+                if mutant_result == KillStatus.SURVIVED_IDENTICAL:
                     #or mutant_result == KillStatus.KILL_COMPILER_CRASH:
                     covered_but_not_killed_by_this_test.append(mutant)
                     continue
@@ -322,20 +365,39 @@ def main(raw_args=None):
                 killed_by_this_test.append(mutant)
                 time_of_last_kill = time.time()
                 print(f"Kill! Mutants killed so far: {len(killed_mutants)}")
-                
 
+                # Save the mutant kill information
                 try:
                     mutant_path.mkdir()
                     print("Writing kill info to file.")
+                    if mutant_result_stdout is None:
+                        mutant_result_stdout = 'None - timeout'
+                    else:
+                        mutant_result_stdout = mutant_result_stdout.stdout
                     with open(mutant_path / "kill_info.json", "w") as outfile:
                         json.dump({"killing_test": wgslsmith_test_name,
                                    "kill_type": str(mutant_result),
-                                   "unmutated_stdout" : regular_execution_result.stdout.decode("utf-8"),
-                                   "mutated_stdout" : mutant_result_stdout.stdout.decode("utf-8")},
+                                   "unmutated_stdout" : regular_execution_result.stdout,
+                                   "mutated_stdout" : mutant_result_stdout},
                                    outfile)
                 except FileExistsError:
                     print(f"Mutant {mutant} was independently discovered to be killed.")
                     continue
+                
+                # Save test after the first kill so that it is saved even if the run is interrupted
+                test_output_directory: Path = Path(args.mutant_kill_path, f'tests/{wgslsmith_test_name}')
+                try:
+                    test_output_directory.mkdir()
+                except FileExistsError:
+                    print(f"Test {wgslsmith_seed} has already been saved")
+                    with open(test_output_directory / "kill_log.txt", "a") as f:
+                        f.write(f'{mutant}\n')
+                    continue
+                
+                shutil.copy(src=wgslsmith_generated_program, dst=test_output_directory / "prog.wgsl")
+                shutil.copy(src=wgslsmith_js_program, dst=test_output_directory / "prog.js")
+                with open(test_output_directory / "kill_log.txt", "w") as f:
+                    f.writelines(f'{mutant}\n')
              
             terminating_test_process: bool = not still_testing(
                 total_test_time=args.total_test_time,
@@ -359,18 +421,6 @@ def main(raw_args=None):
             already_killed_by_other_tests.sort()
             
             print('Saving kill summary...')
-            logdata.mutants_killed_this_test = len(killed_by_this_test)
-            logdata.update_mutants_killed(killed_by_this_test)
-            logdata.write_post_test_summary()
-            
-            test_output_directory: Path = Path(args.mutant_kill_path, f'tests/{wgslsmith_test_name}')
-            
-            try:
-                test_output_directory.mkdir()
-            except FileExistsError:
-                print(f"Skipping seed {wgslsmith_seed} as a directory for it already exists")
-                continue
-            shutil.copy(src=wgslsmith_generated_program, dst=test_output_directory / "prog.wgsl")
 
             with open(test_output_directory / "kill_summary.json", "w") as outfile:
                 json.dump({"terminated_early": terminated_early,
@@ -422,24 +472,6 @@ def get_wgslsmith_compiler_args(program, input, dawn_vk):
             input,
             "-c",
             dawn_vk]
-
-def extract_output(output : str, standalone : bool = True):
-
-    output = output.replace('\n','')
-    output = output.replace(' ','')
-
-    if standalone:
-        output_start_index = output.find('[', output.find('result')) + 1
-        output_end_index = output.find(']', output_start_index)
-
-    else:
-        output_start_index = output.find('outputs') + 18
-        output_end_index = output.rfind(']')
-    
-    output = output[output_start_index:output_end_index].split(",")
-    output = [int(o) for o in output]
-
-    return output
 
 def still_testing(start_time_for_overall_testing: float,
                   time_of_last_kill: float,
