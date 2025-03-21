@@ -1,60 +1,123 @@
 import subprocess
 import multiprocessing
 import os
+import argparse
 from pathlib import Path
+from random import sample
 
 import run.cts.kill_mutants
 import run.wgslsmith.kill_mutants
 
 from track_mutants_cts import process_tracking
 
-class dotdict(dict):
-    """dot.notation access to dictionary attributes"""
-    __getattr__ = dict.get
-    __setattr__ = dict.__setitem__
-    __delattr__ = dict.__delitem__
-
-
-def get_coverage_from_tracking_output(cts_tracking, wgslsmith_tracking, mutants_to_kill):
-    coverage = process_tracking(cts_tracking, wgslsmith_tracking)
-    with open(mutants_to_kill,'w') as f:
-        f.writelines(coverage['covered_by_wgslsmith_only'])
 
 def main():
     
-    base = Path('/data/dev')
-    cts_tracking = Path(base,'tracking')
-    wgslsmith_tracking = Path(base, 'wgslsmith', 'tracking')
-    output = Path(base,'dredd-webgpu-testing/llvmpipe/output')
-    mutants_to_kill_file = Path(output, 'mutants_to_kill.txt')
+    parser = argparse.ArgumentParser()
 
-    mesa_mutated = Path(base,'mesa_mutated')
-    mesa_tracked = Path(base, 'mesa_tracked')
-    info_file_mutated = Path(mesa_mutated, 'mutation_info.json')
-    info_file_tracked = Path(mesa_tracked, 'mutation_info.json')
-    mutated_vk_icd =  Path(mesa_mutated, 'build/install/share/vulkan/icd.d/lvp_icd.x86_64.json')
-    tracked_vk_icd = Path(mesa_tracked, 'build/install/share/vulkan/icd.d/lvp_icd.x86_64.json')
-    wgslsmith_exe = Path(base,'wgslsmith','target','release','wgslsmith')
+    parser.add_argument('output',
+            type=Path,
+            help='Output path')
+    parser.add_argument('mutated_vk_icd',
+            type=Path,
+            help='Absolute path to mutated VK ICD .json file')
+    parser.add_argument('tracked_vk_icd',
+            type=Path,
+            help='Absolute path to tracked VK ICD .json file')
+    parser.add_argument('info_file_mutated',
+            type=Path,
+            help='Path to json file for mutated mutant info')
+    parser.add_argument('info_file_tracked',
+            type=Path,
+            help='Path to json file for tracked mutant info')
+    parser.add_argument('cts_tracking',
+            type=Path,
+            help='Path to CTS tracking records')
+    parser.add_argument('wgslsmith_tracking',
+            type=Path,
+            help='Path to WGSLsmith tracking records')
+    parser.add_argument('dawn',
+            type=Path,
+            help='Path to dawn.node for node execution')
 
-    args = dotdict({'info_file_mutated' : info_file_mutated ,
-        'info_file_tracked' : info_file_tracked ,
-        'wgslsmith_exe' : wgslsmith_exe ,
-        'output' : output,
-        'mutated_vk_icd' : mutated_vk_icd,
-        'tracked_vk_icd' : tracked_vk_icd,
-        'dawn' : Path(base,'dawn/out/Debug/dawn.node'),
-        'n_processes' : 1,
-        })
+    subparsers = parser.add_subparsers(dest="cmd")
+    
+    kill_with_cts = subparsers.add_parser('kill_with_cts', 
+        help='Kill mutants with the CTS')
 
-    # Get list of Mesa mutants to kill
-    with open(mutants_to_kill_file,'r') as f:
-        mutants_to_kill = f.readlines()
+    kill_with_cts.add_argument('cts',
+            type=Path,
+            help='Path to root of CTS')
+    kill_with_cts.add_argument('target_mutants',
+            choices=['cts_intersect_wgslsmith'],
+            help='''Set of mutants to target. Options are:
+            \tcts_intersect_wgslsmith - mutants touched by the CTS and by a sample of WGSLsmith tests''')
+    kill_with_cts.add_argument('target_mutant_file',
+            type=Path,
+            help='Path in which a list of targetted mutants will be saved')
+    kill_with_cts.add_argument('target_mutant_sample',
+            help='Number of mutants from the target set to try and kill')
+ 
+    kill_with_wgslsmith = subparsers.add_parser('kill_with_wgslsmith', 
+        help='Kill mutants with the WGSLsmith')
 
-    mutants_to_kill = [x.rstrip() for x in mutants_to_kill]
+    kill_with_wgslsmith.add_argument('wgslsmith',
+            type=Path,
+            help='Path to WGSLsmith executable')
+    kill_with_wgslsmith.add_argument('n_processes',
+            type=int,
+            help='Number of processes to run in parallel',
+            default=1)
 
-    print(f'There are {len(mutants_to_kill)} mutants to kill')
+    args = parser.parse_args()
 
-    # Kill mutants with wgslsmith
+    if args.cmd == 'kill_with_wgslsmith':
+        kill_mutants_with_wgslsmith(args)
+    
+    if args.cmd == 'kill_with_cts':
+        kill_mutants_with_cts(args)
+
+def get_mutants_to_kill(cts_tracking, wgslsmith_tracking, target_mutants, mutant_file, n_sample=None):
+
+    # Read mutants from file if it already exists
+    if mutant_file.is_file():
+        with open(mutant_file,'r') as f:
+            mutants = f.readlines()
+            mutants = [x.rstrip() for x in mutants]
+
+    # Otherwise, process tracking information to identify mutants
+    else:
+        
+        coverage = process_tracking(cts_tracking, wgslsmith_tracking)
+
+        if target_mutants == 'cts_intersect_wgslsmith':
+            with open(mutant_file,'w') as f:
+                f.writelines(coverage['covered_by_both'])
+
+            mutants = coverage['covered_by_both']
+
+        elif target_mutants == 'wgslsmith_only':
+            with open(mutant_file,'w') as f:
+                f.writelines(coverage['covered_by_wgslsmith_only'])
+
+            mutants = coverage['covered_by_wgslsmith_only']
+
+    # Sample mutants if required
+    if n_sample is None:
+        return mutants
+
+    mutant_sample = sample(mutants, n_sample)
+
+    return mutant_sample
+    
+def kill_mutants_with_wgslsmith(args):
+
+    mutants_to_kill = get_mutants_to_kill(args.cts_tracking,
+        args.wgslsmith_tracking,
+        args.target_mutant,
+        args.target_mutant_file,
+        int(args.target_mutant_sample))
+
     wgslsmith_args = [str(args.info_file_mutated),
                 str(args.info_file_tracked),
                 f'{str(args.wgslsmith_exe)}', # wgslsmith_root
@@ -82,6 +145,54 @@ def main():
 
         for p in processes:
             p.join()
+
+    
+def kill_mutants_with_cts(args):
+
+    mutants_to_kill = get_mutants_to_kill(args.cts_tracking,
+        args.wgslsmith_tracking,
+        args.target_mutants,
+        args.target_mutant_file,
+        int(args.target_mutant_sample))
+
+    print(f'There are {len(mutants_to_kill)} mutants to kill')
+    print('Here are some:')
+    print(mutants_to_kill[10:20])
+    exit()
+
+    #TODO: SORT OUT CTS ARGUMENTS
+    cts_args = [str(args.info_file_mutated),
+                str(args.info_file_tracked),
+                f'{str(args.wgslsmith_exe)}', # wgslsmith_root
+                str(args.output),
+                '--mutants_to_kill', ','.join([str(m) for m in mutants_to_kill]),
+                'mesa',
+                str(args.dawn),
+                str(args.mutated_vk_icd),
+                str(args.tracked_vk_icd)]
+
+    cts_args=[str(args.dawn_mutated),
+            str(args.dawn_coverage),
+            str(args.info_file_mutated),
+            str(args.info_file_coverage),
+            str(args.output),
+            'arg', # Use high-level arg.query as query
+            '--cts_repo',
+            str(args.cts),
+            '--query',
+            args.query,
+            '--cts_only',
+            '--run_timeout',
+            '600',
+            '--compile_timeout',
+            '600',
+            '--vk_icd',
+            args.vk_icd,
+            '--reliable_tests',
+            str(args.reliable_tests),
+    ]
+
+    run.cts.kill_mutants.main(cts_args)
 
 if __name__=="__main__":
     main()
