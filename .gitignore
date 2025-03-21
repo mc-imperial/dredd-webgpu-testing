@@ -10,6 +10,9 @@ tracking/
 output/
 *.csv
 llvmpipe/wgslsmith
+reduce/mutant_*
+reduce/backup*
+reduce/reduce_pro*
 
 # PyCharm
 .idea
