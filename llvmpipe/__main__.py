@@ -1,4 +1,5 @@
 import subprocess
+import multiprocessing
 import os
 from pathlib import Path
 
@@ -31,14 +32,16 @@ def main():
     mesa_tracked = Path(base, 'mesa_tracked')
     info_file_mutated = Path(mesa_mutated, 'mutation_info.json')
     info_file_tracked = Path(mesa_tracked, 'mutation_info.json')
+    mutated_vk_icd =  Path(mesa_mutated, 'build/install/share/vulkan/icd.d/lvp_icd.x86_64.json')
+    tracked_vk_icd = Path(mesa_tracked, 'build/install/share/vulkan/icd.d/lvp_icd.x86_64.json')
     wgslsmith_exe = Path(base,'wgslsmith','target','release','wgslsmith')
 
     args = dotdict({'info_file_mutated' : info_file_mutated ,
         'info_file_tracked' : info_file_tracked ,
         'wgslsmith_exe' : wgslsmith_exe ,
         'output' : output,
-        'mesa_mutated' : mesa_mutated,
-        'mesa_tracked' : mesa_tracked,
+        'mutated_vk_icd' : mutated_vk_icd,
+        'tracked_vk_icd' : tracked_vk_icd,
         'dawn' : Path(base,'dawn/out/Debug/dawn.node'),
         'n_processes' : 1,
         })
@@ -51,20 +54,16 @@ def main():
 
     print(f'There are {len(mutants_to_kill)} mutants to kill')
 
-    print(f'Just testing 2 for now')
-    mutants_to_kill = mutants_to_kill[:2]
-
     # Kill mutants with wgslsmith
     wgslsmith_args = [str(args.info_file_mutated),
                 str(args.info_file_tracked),
                 f'{str(args.wgslsmith_exe)}', # wgslsmith_root
                 str(args.output),
-                '--mutants_to_kill',
-                ','.join([str(m) for m in mutants_to_kill]),
+                '--mutants_to_kill', ','.join([str(m) for m in mutants_to_kill]),
                 'mesa',
                 str(args.dawn),
-                str(args.mesa_mutated),
-                str(args.mesa_tracked)]
+                str(args.mutated_vk_icd),
+                str(args.tracked_vk_icd)]
 
     if args.n_processes == 1:
         run.wgslsmith.kill_mutants.main(wgslsmith_args)
@@ -72,7 +71,12 @@ def main():
     elif args.n_processes > 1:
         processes = []
         for i in range(args.n_processes):
-            p = multiprocessing.Process(target=wgslsmith.kill_mutants.main, args=((wgslsmith_args,)))
+            log_name = Path(args.output, f'process_{i}.log')
+            arguments = wgslsmith_args.copy()
+            arguments.insert(arguments.index('mesa'),'--log')
+            arguments.insert(arguments.index('mesa'),str(log_name))
+
+            p = multiprocessing.Process(target=run.wgslsmith.kill_mutants.main, args=((arguments,)))
             processes.append(p)
             p.start()
 
