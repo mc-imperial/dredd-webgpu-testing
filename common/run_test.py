@@ -87,7 +87,7 @@ def run_with_mutants(mutants: List[int],
 def compare_results(execution_result_non_mutated, mutated_result) -> (KillStatus, ProcessResult):
 
     if mutated_result is None:
-        return (KillStatus.KILL_COMPILER_TIMEOUT, None)
+        return (KillStatus.KILL_RUNTIME_TIMEOUT, None)
 
     if mutated_result.returncode != 0:
         return (KillStatus.KILL_COMPILER_CRASH, mutated_result)
@@ -97,20 +97,18 @@ def compare_results(execution_result_non_mutated, mutated_result) -> (KillStatus
 
     if execution_result_non_mutated.stdout != mutated_result.stdout:
 
-        non_mutated_output = extract_output(execution_result_non_mutated.stdout.decode("utf-8"))
-        mutated_output = extract_output(mutated_result.stdout.decode("utf-8"))
-        
-        if mutated_output is None:
-            return (KillStatus.KILL_RUNTIME_TIMEOUT, mutated_result)
+        non_mutated_output = extract_output(execution_result_non_mutated.stdout)
+        mutated_output = extract_output(mutated_result.stdout)
 
         if non_mutated_output != mutated_output:
-            print(f'Unmutated:\n {execution_result_non_mutated.stdout.decode("utf-8")}')
-            print(f'Mutated:\n {mutated_result.stdout.decode("utf-8")}')
+            print(f'Unmutated:\n {execution_result_non_mutated.stdout}')
+            print(f'Mutated:\n {mutated_result.stdout}')
             
             return (KillStatus.KILL_DIFFERENT_STDOUT, mutated_result)
 
         # if stdouts differ but not for timeout or different output array reasons,
-        # then the mutant is not being killed
+        # then the mutant is not being killed. e.g. sometimes 'cache miss' will
+        # be included in the stdout
 
     if execution_result_non_mutated.stderr != mutated_result.stderr:
         return (KillStatus.KILL_DIFFERENT_STDERR, mutated_result)
@@ -132,8 +130,6 @@ def run_wgslsmith_test_with_mutants(mutants: List[int],
     mutated_environment["DREDD_ENABLED_MUTATION"] = ','.join([str(m) for m in mutants])
     
     mutated_cmd = [compiler_path] + compiler_args
-
-    print(mutated_cmd)
 
     mutated_result: ProcessResult = run_process_with_timeout(
             cmd = mutated_cmd,
