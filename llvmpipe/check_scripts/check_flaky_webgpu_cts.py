@@ -17,18 +17,21 @@ from pathlib import Path
 from mutate_mesa import *
 from check_c11_threads_header import replace_threads_h
 
-def test_cts(cts, dawn, mesa_vk_icd, output_prefix, n_tests : int = 10):
+def test_cts(cts, dawn, mesa_vk_icd, output_prefix, n_tests : int = 10, sanitized=False):
 
     for i in range(n_tests):
-        run_cts(cts, dawn, mesa_vk_icd, output_name=f'{output_prefix}_run_{i}')
+        run_cts(cts, dawn, mesa_vk_icd, output_name=f'{output_prefix}_run_{i}', sanitized=sanitized)
 
 
-def run_cts(cts : Path, dawn : Path, mesa_vk_icd : Path, output_name : str = "test_output") -> list[str]:
+def run_cts(cts : Path, dawn : Path, mesa_vk_icd : Path, output_name : str = "test_output", sanitized=False) -> list[str]:
 
     test_raw = []
 
     env = os.environ.copy()
     env["VK_ICD_FILENAMES"] = str(mesa_vk_icd)
+
+    if sanitized:
+        env["LD_PRELOAD"]="/usr/lib/llvm-18/lib/clang/18/lib/linux/libclang_rt.asan-x86_64.so"
 
     cmd = [f'{dawn}/tools/run',
         'run-cts', 
@@ -37,6 +40,7 @@ def run_cts(cts : Path, dawn : Path, mesa_vk_icd : Path, output_name : str = "te
         f'--cts={str(cts)}',
         'webgpu:*']  
 
+    print(output_name)
     with open(f'{output_name}_raw.txt','wb') as f:
         p = subprocess.Popen(cmd, env=env, stdout=subprocess.PIPE)
         for line in p.stdout:
@@ -44,7 +48,7 @@ def run_cts(cts : Path, dawn : Path, mesa_vk_icd : Path, output_name : str = "te
             test_raw.append(line.decode('utf-8'))
             f.write(line)
 
-    test_output = [f'{x}\n' for x in test_raw if '- pass' in x or '- fail' in x or '- skip in x']
+    test_output = [f'{x}\n' for x in test_raw if '- pass' in x or '- fail' in x or '- skip' in x]
 
     with open(f'{output_name}_tests.txt','w') as f:
         f.writelines(test_output)
@@ -81,6 +85,8 @@ def result_map(raw : str) -> str:
         return 'fail'
     if ' - skip' in raw:
         return 'skip'
+
+    print(raw)
 
     print('Problem with result map!')
     exit()
@@ -342,20 +348,34 @@ def main():
     install(mesa)
     test_cts(cts, dawn, mesa_vk_icd, 'cts_issues/mutated')
 
+def analyse_sanitized_output(prefix : str, n_runs : int):
+
+    for i in range(n_runs):
+        with open(f'{prefix}_run_{i}_raw.txt','r') as f:
+            data = f.readlines()
+
+        sanitized_indices = [ind for ind, x in enumerate(data) if 'Sanitize' in x]
+
+        with open(f'{prefix}_run_{i}_sanitized.txt','w') as f:
+            for i in sanitized_indices:
+                f.writelines(data[i-40:i+40])
+                f.write('\n\n\n')
+        
+
 def test_sanitized_mesa():
     mesa : Path = Path('/data/dev/mesa')
-    mesa_vk_icd : Path = Path(mesa, 'build/install/share/vulkan/icd.d/lvp_icd.x86_64.json')
+    mesa_vk_icd : Path = Path(mesa, 'build_sanitized/install/share/vulkan/icd.d/lvp_icd.x86_64.json')
     cts : Path = Path('/data/dev/webgpu_cts')
     dawn : Path = Path('/data/dev/dawn')
     dredd : Path = Path('/data/dev/dredd/third_party/clang+llvm/bin/dredd')
 
-    test_cts(cts, dawn, mesa_vk_icd, 'cts_issues/sanitized')
+    test_cts(cts, dawn, mesa_vk_icd, 'sanitized/cts_output/cts', n_tests=5, sanitized=True)
 
 
 if __name__=="__main__":
     #main()
     #analyse('cts_issues/clean',gather_runs=True,get_flaky_tests=True)
-    #analyse('cts_issues/threads_header_replaced',gather_runs=True,get_flaky_tests=True)
+    #analyse('cts_issues/threads_header_replaced',gather_runs=Truem,get_flaky_tests=True)
     #analyse('cts_issues/mutated',gather_runs=True,get_flaky_tests=True)
 
     '''compare_flaky_tests('cts_issues/clean',
@@ -364,4 +384,6 @@ if __name__=="__main__":
         get_results=False)
     '''
 
-    test_sanitized_mesa()
+    #test_sanitized_mesa()
+    #analyse('sanitized/cts_output/cts',gather_runs=True,get_flaky_tests=True, n_runs=5)
+    analyse_sanitized_output('sanitized/cts_output/cts', n_runs=5)
