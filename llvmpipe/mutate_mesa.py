@@ -146,7 +146,7 @@ def main():
         Path(base,'mesa_tracked','mutation_info.json'),
         track_only=True)
 
-    for x in [mutated]: # [mutated, tracked]
+    for x in [tracked]: # [mutated, tracked]
         
         restore(x.src)
 
@@ -175,6 +175,10 @@ def main():
 
         with open(f'install_result_{x}.txt','w') as f:
             f.write(f'install returncode: {install_result.returncode}')
+
+        if build_result.returncode != 0 or install_result.returncode != 0:
+            print(f'Error in {x}! Stopping.')
+            exit(1)
 
 
 if __name__=="__main__":
