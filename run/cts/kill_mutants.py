@@ -23,26 +23,11 @@ from pathlib import Path
 from typing import List, Set
 
 
-def still_testing(start_time_for_overall_testing: float,
-                  time_of_last_kill: float,
-                  total_test_time: int,
-                  maximum_time_since_last_kill: int) -> bool:
-    if 0 < total_test_time < int(time.time() - start_time_for_overall_testing):
-        return False
-    if 0 < maximum_time_since_last_kill < int(time.time() - time_of_last_kill):
-        return False
-    return True
-
-
 def main(raw_args = None):
     start_time_for_overall_testing: float = time.time()
     time_of_last_kill: float = start_time_for_overall_testing
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("mutated_path",
-                        type=Path)
-    parser.add_argument("tracking_path",
-                        type=Path),
     parser.add_argument("mutation_info_file",
                         help="File containing information about mutations, generated when Dredd was used to actually "
                              "mutate the source code.",
@@ -101,10 +86,6 @@ def main(raw_args = None):
     parser.add_argument("--cts_only",
                         action=argparse.BooleanOptionalAction,
                         help="Run CTS tests only. Default is false.")
-    parser.add_argument("--vk_icd",
-                        default='',
-                        type=str,
-                        help="Value to set VK_ICD_FILENAMES environment variable, which specifies a particular GPU driver.")
     parser.add_argument("--reliable_tests",
                         default=None,
                         type=str,
@@ -114,8 +95,36 @@ def main(raw_args = None):
                         type=int,
                         default=None # default if nothing is provided
                         )
-    args = parser.parse_args(raw_args)
 
+    subparsers = parser.add_subparsers(dest="cmd")
+
+    # Action: kill mutants in Dawn
+    parser_dawn = subparsers.add_parser("dawn",
+            help='Kill mutants in Dawn')
+    parser_dawn.add_argument("mutated_executable",
+                        help="Path to the executable for the Dredd-mutated compiler.",
+                        type=Path)
+    parser_dawn.add_argument("tracking_executable",
+                        help="Path to the executable for the compiler instrumented to track mutants.",
+                        type=Path)
+    parser_dawn.add_argument("--vk_icd",
+                        default="",
+                        help="Specify driver")
+
+    # Action: kill mutants in Mesa
+    parser_mesa = subparsers.add_parser("mesa",
+            help='Kill mutants in Mesa')
+    parser_mesa.add_argument("dawn",
+                        help="Path to Dawn for using dawn.node to execute tests. Should be unmutated!",
+                        type=Path)
+    parser_mesa.add_argument("mutated_vk_icd",
+                        help="Path to the executable for the Dredd-mutated Mesa vk_icd.",
+                        type=Path)
+    parser_mesa.add_argument("tracked_vk_icd",
+                        help="Path to the executable for the Mesa vk_icd instrumented to track mutants.",
+                        type=Path)
+
+    args = parser.parse_args(raw_args)
 
     assert args.mutation_info_file != args.mutation_info_file_for_mutant_coverage_tracking
 
@@ -192,15 +201,17 @@ def main(raw_args = None):
         elif args.query_source == "arg":
             test_queries = [args.query]
 
-        # Get reliably passing tests
-        reliable_tests = get_reliable_tests(args.query,
-            args.mutated_path,
-            args.cts_repo,
-            args.mutant_kill_path,
-            args.vk_icd,
-            args.reliable_tests)
+        if args.reliable_tests is not None:
 
-        print(f'There are {len(reliable_tests)} reliable tests and the query to run is {test_queries}')
+            # Get reliably passing tests
+            reliable_tests = get_reliable_tests(args.query,
+                args.mutated_path,
+                args.cts_repo,
+                args.mutant_kill_path,
+                args.vk_icd,
+                args.reliable_tests)
+
+            print(f'There are {len(reliable_tests)} reliable tests and the query to run is {test_queries}')
         
         if args.mutant_sample:
 
@@ -262,7 +273,8 @@ def main(raw_args = None):
                         print(line)
                         if f' - fail' in line:
                             test = line[:line.index(' ')] 
-                            if test in reliable_tests:
+
+                            if (args.reliable_tests is None) or (test in reliable_tests):
                                 os.killpg(os.getpgid(p.pid), signal.SIGTERM)
                                 mutant_result = CTSKillStatus.KILL_TEST_FAIL
                                 failing_tests = test
@@ -519,6 +531,17 @@ def main(raw_args = None):
                            "survived_mutants": covered_but_not_killed_by_this_test}, outfile)
             
             logger.info('Query complete')
+
+def still_testing(start_time_for_overall_testing: float,
+                  time_of_last_kill: float,
+                  total_test_time: int,
+                  maximum_time_since_last_kill: int) -> bool:
+    if 0 < total_test_time < int(time.time() - start_time_for_overall_testing):
+        return False
+    if 0 < maximum_time_since_last_kill < int(time.time() - time_of_last_kill):
+        return False
+    return True
+
 
 if __name__ == '__main__':
     main()
