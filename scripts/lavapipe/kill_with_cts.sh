@@ -3,7 +3,7 @@
 BASE=/data/dev
 
 DAWN=$BASE/dawn/out/Debug/dawn.node
-OUTPUT=$BASE/dredd-webgpu-testing/llvmpipe/output
+OUTPUT=$BASE/dredd-webgpu-testing/llvmpipe/output/covered_by_cts
 CTS=$BASE/webgpu_cts
 
 MESA_MUTATED=$BASE/mesa_mutated
@@ -18,7 +18,7 @@ INFO_TRACKED=$MESA_TRACKED/mutation_info.json
 CTS_TRACKING=$BASE/dredd-webgpu-testing/llvmpipe/tracking
 WGSLSMITH_TRACKING=$BASE/dredd-webgpu-testing/llvmpipe/wgslsmith/tracking
 
-TARGET_MUTANT_FILE=$OUTPUT/cts_mutant_targets.txt
+TARGET_MUTANT_FILE=$BASE/dredd-webgpu-testing/llvmpipe/output/cts_mutant_targets.txt
 
 cd $BASE/dredd-webgpu-testing
 
