@@ -199,66 +199,19 @@ def get_completed_queries(log : Path) -> list[str]:
     return queries[:-1]
 
 def kill_gpu_processes(id : str):
-    print("Killing mutant GPU processes")
-                            
-    nvidia_smi = subprocess.Popen(
-            ["nvidia-smi"], 
-            stdout=subprocess.PIPE
-            )
-    processes = subprocess.Popen(
-            ["grep",id], 
-            stdin=nvidia_smi.stdout, 
-            stdout=subprocess.PIPE, 
-            text=True
-            )
-
-    p_output, p_error = processes.communicate()
-
-    if processes.returncode == 0:
-
-        nvidia_smi = subprocess.Popen(
-                ["nvidia-smi"], 
-                stdout=subprocess.PIPE
-                )
-        processes = subprocess.Popen(
-                ["grep","node"], 
-                stdin=nvidia_smi.stdout, 
-                stdout=subprocess.PIPE, 
-                text=True
-                )
-        pid_to_kill = subprocess.Popen(
-                ["awk","{ print $5 }"],
-                stdin=processes.stdout,
-                stdout=subprocess.PIPE,
-                text=True
-                )
-        kill = subprocess.Popen(
-                ["xargs", "-n1", "kill", "-9"],
-                stdin=pid_to_kill.stdout,
-                stdout=subprocess.PIPE,
-                text=True
-                )
-        
-        output, error = kill.communicate()
-        print('GPU processes dead!') 
 
     processes = subprocess.Popen(
             ["ps","-ef"], 
             stdout=subprocess.PIPE
             )
     dawn = subprocess.Popen(
-            ["grep","dawn"], 
+            ["grep","dawn.*node.*--gpu-provider"], 
             stdin=processes.stdout,
-            stdout=subprocess.PIPE
-            )
-    formatlist = subprocess.Popen(
-            ["grep","-v","grep"], 
-            stdin=dawn.stdout,
             stdout=subprocess.PIPE
             )
     pid_to_kill = subprocess.Popen(
             ["awk","{ print $2 }"],
-            stdin=formatlist.stdout,
+            stdin=dawn.stdout,
             stdout=subprocess.PIPE,
             text=True
             )
@@ -268,8 +221,7 @@ def kill_gpu_processes(id : str):
             stdout=subprocess.PIPE,
             text=True
             )
-    
-    output, error = kill.communicate()
+
     print('Dawn processes dead!')
 
     
