@@ -17,8 +17,6 @@ from common.run_process_with_timeout import ProcessResult, run_process_with_time
 from common.run_test import run_webgpu_cts_test_with_mutants, KillStatus, CTSKillStatus
 from run.cts.utils import get_queries_from_cts, get_reliable_tests, kill_gpu_processes, get_tests, get_passes, get_failures, get_unrun_tests, get_single_tests_from_stdout, get_completed_queries
 
-import run.cts.flaky_test_finder.find_non_flaky_cts_tests as find_non_flaky_cts_tests
-
 from pathlib import Path
 from typing import List, Set
 
@@ -152,7 +150,7 @@ def main(raw_args = None):
                 vk_icd = args.vk_icd
             elif args.cmd == 'mesa':
                 dawn = args.dawn
-                vk_icd = args.unmutated_vk_icd
+                vk_icd = args.tracked_vk_icd
 
             # Get reliably passing tests
             reliable_tests = get_reliable_tests(args.query,
@@ -532,7 +530,7 @@ def get_test_queries(args):
         with open(args.query_file, 'r') as f:
             test_queries = json.load(f)
 
-    elif args.query_source == "arg":
+    if args.query is not None:
         test_queries = [args.query]
 
     return test_queries

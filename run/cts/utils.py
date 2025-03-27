@@ -6,6 +6,7 @@ from enum import Enum
 from pathlib import Path
 
 from common.mutation_tree import MutationTree
+import run.cts.flaky_test_finder.find_non_flaky_cts_tests as find_non_flaky_cts_tests
 
 class TestStatus(Enum):
     PASS = 1
