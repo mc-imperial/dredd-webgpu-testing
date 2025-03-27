@@ -39,11 +39,12 @@ def get_queries_from_cts(query : str,
     return test_queries
 
 def get_reliable_tests(query : str,
-            mutated_path : Path,
+            dawn : Path,
             cts_repo : Path,
             mutant_killing_path : Path,
             vk_icd : str,
             reliable_tests : Path = None):
+    
     # Identify reliable tests within the queries
     # These are individual level tests that consistently pass for
     # unmutated Dawn. Record these individual queries to use for results
@@ -53,13 +54,13 @@ def get_reliable_tests(query : str,
             reliably_passing_tests : list = json.load(f)
 
     else:
-        reliable_test_args = [str(mutated_path),
+        reliable_test_args = [str(dawn),
             str(cts_repo),
             str(mutant_killing_path),
             '--query_base',
             query,
             '--vk_icd',
-            vk_icd]
+            str(vk_icd)]
 
         reliably_passing_tests = find_non_flaky_cts_tests.main(reliable_test_args)
 

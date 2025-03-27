@@ -40,7 +40,7 @@ def main(raw_args = None):
     parser.add_argument("mutant_kill_path",
                         help="Directory in which to record mutant kill info and mutant killing tests.",
                         type=Path)
-    parser.add_argument("query_source",
+    parser.add_argument("--query_source",
                         choices = ['file','cts_repo','arg'],
                         help="Source for CTS queries. Can be 'file' to get from file, or 'cts_repo' to  \
                             retrieve from repo, or 'arg' to directly use the query passed in args.query \
@@ -91,8 +91,7 @@ def main(raw_args = None):
                         type=str,
                         help="File path for json containing reliably passing CTS tests")
     parser.add_argument("--mutant_sample",
-                        nargs="*",  # 0 or more values expected => creates a list
-                        type=int,
+                        type=comma_list,
                         default=None # default if nothing is provided
                         )
 
@@ -125,15 +124,350 @@ def main(raw_args = None):
                         type=Path)
 
     args = parser.parse_args(raw_args)
+    
+    if not validate_args(args):
+        exit()
+    
+    start_logging(args.mutant_kill_path)
 
-    assert args.mutation_info_file != args.mutation_info_file_for_mutant_coverage_tracking
+    with tempfile.TemporaryDirectory() as temp_dir_for_generated_code:
+        #with Path('/data/dev/dredd-compiler-testing/dredd_test_runners/wgslsmith_runner/temp') as temp_dir_for_generated_code:
+        dredd_covered_mutants_path: Path = Path(temp_dir_for_generated_code, '__dredd_covered_mutants')
 
-    if args.query_source == 'file':
-        assert Path(args.query_file).exists()
-    elif args.query_source == 'cts_repo':
-        assert Path(args.cts_repo).exists()
+        # Make a work directory in which information about the mutant killing process will be stored. If this already
+        # exists that's OK - there may be other processes working on mutant killing, or we may be continuing a job that
+        # crashed previously.
+        Path(args.mutant_kill_path).mkdir(exist_ok=True)
+        Path(args.mutant_kill_path,"killed_mutants").mkdir(exist_ok=True)
+        Path(args.mutant_kill_path,"survived_mutants").mkdir(exist_ok=True)
+        Path(args.mutant_kill_path,"tracking").mkdir(exist_ok=True)
+        Path(args.mutant_kill_path,"tests").mkdir(exist_ok=True)
 
-    cts_base = Path(args.cts_repo,'src')
+        test_queries = get_test_queries(args)
+
+        if args.reliable_tests is not None:
+
+            if args.cmd == 'dawn':
+                dawn = args.unmutated_path
+                vk_icd = args.vk_icd
+            elif args.cmd == 'mesa':
+                dawn = args.dawn
+                vk_icd = args.unmutated_vk_icd
+
+            # Get reliably passing tests
+            reliable_tests = get_reliable_tests(args.query,
+                dawn,
+                args.cts_repo,
+                args.mutant_kill_path,
+                vk_icd,
+                args.reliable_tests)
+
+            print(f'There are {len(reliable_tests)} reliable tests and the query to run is {test_queries}')
+        
+        if args.killing_strategy == 'by_mutant':
+            kill_by_mutant(test_queries, reliable_tests, args)
+
+        elif args.killing_strategy == 'by_test':
+            kill_by_test(test_queries, reliable_tests, args)
+
+ 
+def kill_by_mutant(test_queries, reliable_tests, args):
+
+    print(f'Running mutant sample of {len(args.mutant_sample)} mutants')
+
+    # Mutants for killing are given by a sample input list
+    # We know that these mutants are covered by the CTS
+    unkilled_mutants = set(args.mutant_sample)
+    killed_mutants : Set(int) = set()
+    already_killed_by_other_tests : list(int) = []
+    killed_by_this_test : list(int) = []
+
+    for mutant in args.mutant_sample:
+        
+        # Check whether mutant has already been killed or marked as survived by another process
+        mutant_path = Path(args.mutant_kill_path,f'killed_mutants/{str(mutant)}')
+        if mutant_path.exists():
+            print("Skipping mutant " + str(mutant) + " as it is noted as already killed.")
+            unkilled_mutants.remove(mutant)
+            killed_mutants.add(mutant)
+            already_killed_by_other_tests.append(mutant)
+            continue
+
+        surviving_mutant_path = Path(args.mutant_kill_path,f'surviving_mutants/{str(mutant)}')
+        if surviving_mutant_path.exists():
+            print("Skipping mutant " + str(mutant) + " as it is noted as surviving.")
+            unkilled_mutants.remove(mutant)
+            continue
+        
+        print("Trying mutant " + str(mutant))
+       
+        mutation_target = args.cmd
+
+        (mutant_result, failing_tests) = kill_mutant(mutation_target, args)
+        print(f'Mutant result: {mutant_result}')
+
+        if mutant_result == CTSKillStatus.SURVIVED or mutant_result == CTSKillStatus.TEST_TIMEOUT:
+            print(f'Mutant ID {mutant} survived!')
+            covered_but_not_killed_by_this_test.append(mutant)
+            with open(f"{str(args.mutant_kill_path)}/surviving_mutants.txt", 'a') as outfile:
+                outfile.write(f'{mutant}\n')
+            with open(surviving_mutant_path / "survived.txt", 'w') as outfile:
+                outfile.write(f'Survived!')
+            continue
+
+            unkilled_mutants.remove(mutant)
+            killed_mutants.add(mutant)
+            killed_by_this_test.append(mutant)
+        
+        print(f"Kill! Mutants killed so far: {len(killed_mutants)}")
+        print(f"Mutant killed is ID {mutant}")
+        try:
+            mutant_path.mkdir()
+            print("Writing kill info to file.")
+            with open(mutant_path / "kill_info.json", "w") as outfile:
+                json.dump({"killing_query": args.query,
+                            "killing_tests" : failing_tests,
+                            "kill_type": str(mutant_result)}, outfile)
+        except FileExistsError:
+            print(f"Mutant {mutant} was independently discovered to be killed.")
+            continue
+
+
+    all_considered_mutants = killed_by_this_test \
+        + covered_but_not_killed_by_this_test \
+        + already_killed_by_other_tests
+    all_considered_mutants.sort()
+    
+    killed_by_this_test.sort()
+    covered_but_not_killed_by_this_test.sort()
+    already_killed_by_other_tests.sort()
+    
+    query_output_directory = Path(args.mutant_kill_path,'tests',args.query.replace('*','').replace(':','-'))
+    query_output_directory.mkdir(exist_ok=True)
+    
+    with open(Path(query_output_directory,'kill_summary.json'), "w") as outfile:
+        json.dump({"query": args.query,
+                    "mutant_sample": args.mutant_sample,
+                    "killed_mutants": killed_by_this_test,
+                    "skipped_mutants": already_killed_by_other_tests,
+                    "survived_mutants": covered_but_not_killed_by_this_test}, outfile)
+    
+def kill_by_test(test_queries, reliable_tests, args):
+    # Loop over tests to determine which mutants are killed by the tests
+    for query in test_queries:
+
+        # Check if query has already been run (where we have read in queries from list)
+        if query in completed_queries:
+            print(f"Query '{query}' already completed")
+            continue
+
+        # Try to create a directory for the test; if it already exists then skip this
+        # test as that means the results for this test have already been computed or
+        # are being computed in parallel by another process
+        query_output_directory = Path(args.mutant_kill_path,'tests',query.replace('\*','').replace(':','-'))
+
+        try:
+            query_output_directory.mkdir()
+        except FileExistsError:
+            print(f"Skipping query {query} as a directory for it already exists")
+            continue
+
+        test_id = hash(query)
+
+        test_name = 'unit' if 'unittests:' in query else 'cts'
+        
+        if dredd_covered_mutants_path.exists():
+            os.remove(dredd_covered_mutants_path)
+
+        # Log that this test has been started
+        logger.info(f'\nQuery: {query}')
+        logger.info(f'test_type: {test_name}')
+        logger.info(f'test_id: {test_id}')
+        
+        # Run tests with unmutated Dawn to find the list of tests that pass
+        env = os.environ.copy()
+        env["VK_ICD_FILENAMES"] = f'{args.vk_icd}'
+        run_unmutated_cmd = [f'{args.mutated_path}/tools/run',
+                'run-cts', 
+                '--verbose',
+                f'--bin={args.mutated_path}/out/Debug',
+                f'--cts={args.cts_repo}',
+                query]
+        
+        print("Running with unmutated Dawn...")
+        run_time_start: float = time.time()
+        regular_execution_result: ProcessResult = run_process_with_timeout(
+            cmd=run_unmutated_cmd, 
+            timeout_seconds=args.run_timeout,
+            env=env)
+        run_time_end: float = time.time()
+        run_time = run_time_end - run_time_start
+    
+        if regular_execution_result is None:
+            print("Runtime timeout.")
+            logger.info('Runtime timeout')
+            continue
+
+        # Parse stdout to find which tests ran and what their outcome was
+        out : list[str] = regular_execution_result.stdout.decode('utf-8').split('\n')
+
+        unmutated_results : dict[str,str] = get_single_tests_from_stdout(out)
+
+        print(f"Std out:\n {regular_execution_result.stdout.decode('utf-8')}\n")
+        print(f"Std err:\n {regular_execution_result.stderr.decode('utf-8')}\n")
+
+        # If all tests in the query fail with the unmutated dawn, then move on to next query
+        if 'pass' not in unmutated_results.values():
+            print('No tests pass with unmutated Dawn; skipping query')
+            logger.info('No tests pass with unmutated Dawn; skipping query')
+            continue
+
+        # Run the test with mutant tracking enabled
+        print("Running with mutant tracking compiler...")
+        tracking_environment = os.environ.copy()
+        tracking_environment["DREDD_MUTANT_TRACKING_FILE"] = str(dredd_covered_mutants_path)
+        tracking_environment["DREDD_MUTANT_TRACKING_PATH"] = str(dredd_covered_mutants_path.parent) + '/'
+        tracking_environment["VK_ICD_FILENAMES"] = f'{args.vk_icd}'
+        tracking_compile_cmd = [f'{args.tracking_path}/tools/run',
+                'run-cts', 
+                '--verbose',
+                f'--bin={args.tracking_path}/out/Debug',
+                f'--cts={args.cts_repo}',
+                query]            
+        
+        mutant_tracking_result : ProcessResult = run_process_with_timeout(cmd=tracking_compile_cmd, 
+                                                                          timeout_seconds=args.compile_timeout, 
+                                                                          env=tracking_environment) 
+        
+        if mutant_tracking_result is None:
+            print("Mutant tracking compilation timed out.")
+            logger.info('Mutant tracking compilation timed out')
+            continue
+        
+        elif not dredd_covered_mutants_path.exists():
+            print(f"Std out:\n {mutant_tracking_result.stdout.decode('utf-8')}\n")
+            print(f"Std err:\n {mutant_tracking_result.stderr.decode('utf-8')}\n")
+            print("No mutant tracking file created.")
+            logger.info('No mutant tracking file created')
+            with open(Path(args.mutant_kill_path,f'tracking/no_tracking_file_{test_name}_{test_id}.txt'), 'w') as f:
+                f.write(query)
+            continue
+        
+        else:
+            print("Mutant tracking compilation complete")
+            with open(dredd_covered_mutants_path, 'r') as f:
+                covered_mutants_info = f.read()
+            with open(Path(args.mutant_kill_path,f'tracking/mutant_tracking_file_{test_name}_{test_id}.txt'), 'w') as f:
+                f.write(query)
+                f.write(covered_mutants_info)
+
+        print(f"Std out:\n {mutant_tracking_result.stdout.decode('utf-8')}\n")
+        print(f"Std err:\n {mutant_tracking_result.stderr.decode('utf-8')}\n")
+        
+        # Load covered mutants into a list. We go from list to set to list to eliminate duplicates.
+        covered_by_this_test: List[int] = list(set([int(line.strip()) for line in
+                                                    open(dredd_covered_mutants_path, 'r').readlines()]))
+        covered_by_this_test.sort()
+        candidate_mutants_for_this_test: List[int] = ([m for m in covered_by_this_test if m not in killed_mutants])
+        
+        print("Number of mutants to try: " + str(len(candidate_mutants_for_this_test)))
+        already_killed_by_other_tests: List[int] = ([m for m in covered_by_this_test if m in killed_mutants])
+        killed_by_this_test: List[int] = []
+        covered_but_not_killed_by_this_test: List[int] = []
+                   
+        logger.info(f'Number of mutants to try: {str(len(candidate_mutants_for_this_test))}')
+
+        # Enable mutants one at a time
+        # Check whether any tests within the current query that previously passed now fail
+        for mutant in candidate_mutants_for_this_test:
+
+            mutant_path = Path(args.mutant_kill_path,f'killed_mutants/{str(mutant)}')
+            surviving_mutant_path = Path(args.mutant_kill_path,f'surviving_mutants/{str(mutant)}')
+
+            if mutant_path.exists():
+                print("Skipping mutant " + str(mutant) + " as it is noted as already killed.")
+                unkilled_mutants.remove(mutant)
+                killed_mutants.add(mutant)
+                already_killed_by_other_tests.append(mutant)
+                print(f'Unkilled mutants: {unkilled_mutants}')
+                continue
+            print(surviving_mutant_path)
+            if surviving_mutant_path.exists():
+                print("Skipping mutant " + str(mutant) + " as it is noted as surviving.")
+                unkilled_mutants.remove(mutant)
+                continue
+            
+            print("Trying mutant " + str(mutant))
+            
+            env = os.environ.copy()
+            env["VK_ICD_FILENAMES"] = f'{args.vk_icd}'
+            mutated_cmd = [f'{args.mutated_path}/tools/run',
+                'run-cts', 
+                '--verbose',
+                f'--bin={args.mutated_path}/out/Debug',
+                '--cts',
+                str(args.cts_repo),
+                query]    
+
+            (mutant_result, failing_tests) = run_webgpu_cts_test_with_mutants(mutants=[mutant],
+                    mutated_cmd=mutated_cmd,
+                    timeout_seconds=args.compile_timeout,
+                    unmutated_results = unmutated_results,
+                    reliable_tests = reliably_passing_tests,
+                    env=env)
+            
+            #kill_gpu_processes('node')
+
+            print(f'Mutant result: {mutant_result}')
+
+            if mutant_result == CTSKillStatus.SURVIVED or mutant_result == CTSKillStatus.TEST_TIMEOUT:
+                covered_but_not_killed_by_this_test.append(mutant)
+                continue
+
+            unkilled_mutants.remove(mutant)
+            killed_mutants.add(mutant)
+            killed_by_this_test.append(mutant)
+            print(f"Kill! Mutants killed so far: {len(killed_mutants)}")
+            try:
+                mutant_path.mkdir()
+                print("Writing kill info to file.")
+                with open(mutant_path / "kill_info.json", "w") as outfile:
+                    json.dump({"killing_query": query,
+                               "killing_tests" : list(failing_tests),
+                               "kill_type": str(mutant_result)}, outfile)
+            except FileExistsError:
+                print(f"Mutant {mutant} was independently discovered to be killed.")
+                continue
+
+        all_considered_mutants = killed_by_this_test \
+            + covered_but_not_killed_by_this_test \
+            + already_killed_by_other_tests
+        all_considered_mutants.sort()
+        
+        killed_by_this_test.sort()
+        covered_but_not_killed_by_this_test.sort()
+        already_killed_by_other_tests.sort()
+        with open(Path(query_output_directory,'kill_summary.json'), "w") as outfile:
+            json.dump({"query": query,
+                       "covered_mutants": covered_by_this_test,
+                       "killed_mutants": killed_by_this_test,
+                       "skipped_mutants": already_killed_by_other_tests,
+                       "survived_mutants": covered_but_not_killed_by_this_test}, outfile)
+        
+        logger.info('Query complete')
+
+
+def still_testing(start_time_for_overall_testing: float,
+                  time_of_last_kill: float,
+                  total_test_time: int,
+                  maximum_time_since_last_kill: int) -> bool:
+    if 0 < total_test_time < int(time.time() - start_time_for_overall_testing):
+        return False
+    if 0 < maximum_time_since_last_kill < int(time.time() - time_of_last_kill):
+        return False
+    return True
+
+def check_mutation_trees(args):
 
     print("Building the real mutation tree...")
     with open(args.mutation_info_file, 'r') as json_input:
@@ -150,12 +484,10 @@ def main(raw_args = None):
     assert mutation_tree.num_mutations == mutation_tree_for_coverage_tracking.num_mutations
     print("Check complete!")
 
-    if args.seed is not None:
-        random.seed(args.seed)
-
+def start_logging(kill_path):
     # Set up log in append mode so we can continue runs that were cancelled
     logger = logging.getLogger(__name__)
-    log_name = Path(args.mutant_kill_path, f'info_{os.getpid()}.log')
+    log_name = Path(kill_path, f'info_{os.getpid()}.log')
     logging.basicConfig(filename=log_name, 
             format='%(asctime)s - %(message)s',
             datefmt=('%Y-%m-%d %H:%M:%S'),
@@ -165,383 +497,105 @@ def main(raw_args = None):
 
     logging.info('Start')
 
-    with tempfile.TemporaryDirectory() as temp_dir_for_generated_code:
-        #with Path('/data/dev/dredd-compiler-testing/dredd_test_runners/wgslsmith_runner/temp') as temp_dir_for_generated_code:
-        dredd_covered_mutants_path: Path = Path(temp_dir_for_generated_code, '__dredd_covered_mutants')
+def validate_args(args) -> bool:
+    
+    assert args.mutation_info_file != args.mutation_info_file_for_mutant_coverage_tracking
 
-        killed_mutants: Set[int] = set()
-        unkilled_mutants: Set[int] = set(range(0, mutation_tree.num_mutations))
-        covered_but_not_killed_by_this_test: List[int] = []
+    if args.query_source == 'file':
+        assert Path(args.query_file).exists()
+    elif args.query_source == 'cts_repo':
+        assert Path(args.cts_repo).exists()
 
-        # Make a work directory in which information about the mutant killing process will be stored. If this already
-        # exists that's OK - there may be other processes working on mutant killing, or we may be continuing a job that
-        # crashed previously.
-        Path(args.mutant_kill_path).mkdir(exist_ok=True)
-        Path(args.mutant_kill_path,"killed_mutants").mkdir(exist_ok=True)
-        Path(args.mutant_kill_path,"survived_mutants").mkdir(exist_ok=True)
-        Path(args.mutant_kill_path,"tracking").mkdir(exist_ok=True)
-        Path(args.mutant_kill_path,"tests").mkdir(exist_ok=True)
+    cts_base = Path(args.cts_repo,'src')
 
-        # Get list of test queries
-        if args.query_source == "cts_repo":
-            test_queries = get_queries_from_cts(query,
-                cts_base,
-                args.unittests_only,
-                args.cts_only,
-                args.reliable_tests,
-                args.mutated_path,
-                args.cts_repo,
-                args.mutant_kill_path,
-                args.vk_icd)
+    check_mutation_trees(args)
 
-        elif args.query_source == "file":
-            with open(args.query_file, 'r') as f:
-                test_queries = json.load(f)
+    if args.seed is not None:
+        random.seed(args.seed)
 
-        elif args.query_source == "arg":
-            test_queries = [args.query]
-
-        if args.reliable_tests is not None:
-
-            # Get reliably passing tests
-            reliable_tests = get_reliable_tests(args.query,
-                args.mutated_path,
-                args.cts_repo,
-                args.mutant_kill_path,
-                args.vk_icd,
-                args.reliable_tests)
-
-            print(f'There are {len(reliable_tests)} reliable tests and the query to run is {test_queries}')
-        
-        if args.mutant_sample:
-
-            print(f'Running mutant sample of {len(args.mutant_sample)} mutants')
-
-            # Mutants for killing are given by a sample input list
-            # We know that these mutants are covered by the CTS
-            unkilled_mutants = set(args.mutant_sample)
-            killed_mutants : Set(int) = set()
-            already_killed_by_other_tests : list(int) = []
-            killed_by_this_test : list(int) = []
-
-            for mutant in args.mutant_sample:
-                
-                # Check whether mutant has already been killed or marked as survived by another process
-                mutant_path = Path(args.mutant_kill_path,f'killed_mutants/{str(mutant)}')
-                if mutant_path.exists():
-                    print("Skipping mutant " + str(mutant) + " as it is noted as already killed.")
-                    unkilled_mutants.remove(mutant)
-                    killed_mutants.add(mutant)
-                    already_killed_by_other_tests.append(mutant)
-                    continue
-
-                surviving_mutant_path = Path(args.mutant_kill_path,f'surviving_mutants/{str(mutant)}')
-                if surviving_mutant_path.exists():
-                    print("Skipping mutant " + str(mutant) + " as it is noted as surviving.")
-                    unkilled_mutants.remove(mutant)
-                    continue
-                
-                print("Trying mutant " + str(mutant))
-                
-                env = os.environ.copy()
-                env["VK_ICD_FILENAMES"] = f'{args.vk_icd}'
-                env["DREDD_ENABLED_MUTATION"] = str(mutant)
-
-                mutated_cmd = [f'{args.mutated_path}/tools/run',
-                    'run-cts', 
-                    '--verbose',
-                    f'--bin={args.mutated_path}/out/Debug',
-                    '--cts',
-                    str(args.cts_repo),
-                    f"'{args.query}'"]  
-
-                shell_cmd = ' '.join(mutated_cmd)  
-                print(shell_cmd)
-
-                with subprocess.Popen(shell_cmd, 
-                    stdout=subprocess.PIPE, 
-                    universal_newlines=True, 
-                    shell=True,
-                    preexec_fn=os.setsid,
-                    env=env) as p:
-                    
-                    # Parse stdout live and kill the process if the 
-                    # mutant is killed by a reliable test that fails
-                    mutant_result = CTSKillStatus.SURVIVED
-
-                    for line in p.stdout:
-                        print(line)
-                        if f' - fail' in line:
-                            test = line[:line.index(' ')] 
-
-                            if (args.reliable_tests is None) or (test in reliable_tests):
-                                os.killpg(os.getpgid(p.pid), signal.SIGTERM)
-                                mutant_result = CTSKillStatus.KILL_TEST_FAIL
-                                failing_tests = test
-                
-                kill_gpu_processes('node')
-
-                print(f'Mutant result: {mutant_result}')
-
-                if mutant_result == CTSKillStatus.SURVIVED or mutant_result == CTSKillStatus.TEST_TIMEOUT:
-                    print(f'Mutant ID {mutant} survived!')
-                    covered_but_not_killed_by_this_test.append(mutant)
-                    with open(f"{str(args.mutant_kill_path)}/surviving_mutants.txt", 'a') as outfile:
-                        outfile.write(f'{mutant}\n')
-                    with open(surviving_mutant_path / "survived.txt", 'w') as outfile:
-                        outfile.write(f'Survived!')
-                    continue
-
-                unkilled_mutants.remove(mutant)
-                killed_mutants.add(mutant)
-                killed_by_this_test.append(mutant)
-                print(f"Kill! Mutants killed so far: {len(killed_mutants)}")
-                print(f"Mutant killed is ID {mutant}")
-                try:
-                    mutant_path.mkdir()
-                    print("Writing kill info to file.")
-                    with open(mutant_path / "kill_info.json", "w") as outfile:
-                        json.dump({"killing_query": args.query,
-                                   "killing_tests" : failing_tests,
-                                   "kill_type": str(mutant_result)}, outfile)
-                except FileExistsError:
-                    print(f"Mutant {mutant} was independently discovered to be killed.")
-                    continue
-
-
-            all_considered_mutants = killed_by_this_test \
-                + covered_but_not_killed_by_this_test \
-                + already_killed_by_other_tests
-            all_considered_mutants.sort()
-            
-            killed_by_this_test.sort()
-            covered_but_not_killed_by_this_test.sort()
-            already_killed_by_other_tests.sort()
-            
-            query_output_directory = Path(args.mutant_kill_path,'tests',args.query.replace('*','').replace(':','-'))
-            query_output_directory.mkdir(exist_ok=True)
-            
-            with open(Path(query_output_directory,'kill_summary.json'), "w") as outfile:
-                json.dump({"query": args.query,
-                           "mutant_sample": args.mutant_sample,
-                           "killed_mutants": killed_by_this_test,
-                           "skipped_mutants": already_killed_by_other_tests,
-                           "survived_mutants": covered_but_not_killed_by_this_test}, outfile)
-            
-
-        # Loop over tests to determine which mutants are killed by the tests
-        for query in test_queries:
-
-            # Check if query has already been run (where we have read in queries from list)
-            if query in completed_queries:
-                print(f"Query '{query}' already completed")
-                continue
-
-            # Try to create a directory for the test; if it already exists then skip this
-            # test as that means the results for this test have already been computed or
-            # are being computed in parallel by another process
-            query_output_directory = Path(args.mutant_kill_path,'tests',query.replace('\*','').replace(':','-'))
-
-            try:
-                query_output_directory.mkdir()
-            except FileExistsError:
-                print(f"Skipping query {query} as a directory for it already exists")
-                continue
- 
-            test_id = hash(query)
-
-            test_name = 'unit' if 'unittests:' in query else 'cts'
-            
-            if dredd_covered_mutants_path.exists():
-                os.remove(dredd_covered_mutants_path)
-
-            # Log that this test has been started
-            logger.info(f'\nQuery: {query}')
-            logger.info(f'test_type: {test_name}')
-            logger.info(f'test_id: {test_id}')
-            
-            # Run tests with unmutated Dawn to find the list of tests that pass
-            env = os.environ.copy()
-            env["VK_ICD_FILENAMES"] = f'{args.vk_icd}'
-            run_unmutated_cmd = [f'{args.mutated_path}/tools/run',
-                    'run-cts', 
-                    '--verbose',
-                    f'--bin={args.mutated_path}/out/Debug',
-                    f'--cts={args.cts_repo}',
-                    query]
-            
-            print("Running with unmutated Dawn...")
-            run_time_start: float = time.time()
-            regular_execution_result: ProcessResult = run_process_with_timeout(
-                cmd=run_unmutated_cmd, 
-                timeout_seconds=args.run_timeout,
-                env=env)
-            run_time_end: float = time.time()
-            run_time = run_time_end - run_time_start
-        
-            if regular_execution_result is None:
-                print("Runtime timeout.")
-                logger.info('Runtime timeout')
-                continue
-
-            # Parse stdout to find which tests ran and what their outcome was
-            out : list[str] = regular_execution_result.stdout.decode('utf-8').split('\n')
-
-            unmutated_results : dict[str,str] = get_single_tests_from_stdout(out)
-
-            print(f"Std out:\n {regular_execution_result.stdout.decode('utf-8')}\n")
-            print(f"Std err:\n {regular_execution_result.stderr.decode('utf-8')}\n")
-
-            # If all tests in the query fail with the unmutated dawn, then move on to next query
-            if 'pass' not in unmutated_results.values():
-                print('No tests pass with unmutated Dawn; skipping query')
-                logger.info('No tests pass with unmutated Dawn; skipping query')
-                continue
-
-            # Run the test with mutant tracking enabled
-            print("Running with mutant tracking compiler...")
-            tracking_environment = os.environ.copy()
-            tracking_environment["DREDD_MUTANT_TRACKING_FILE"] = str(dredd_covered_mutants_path)
-            tracking_environment["DREDD_MUTANT_TRACKING_PATH"] = str(dredd_covered_mutants_path.parent) + '/'
-            tracking_environment["VK_ICD_FILENAMES"] = f'{args.vk_icd}'
-            tracking_compile_cmd = [f'{args.tracking_path}/tools/run',
-                    'run-cts', 
-                    '--verbose',
-                    f'--bin={args.tracking_path}/out/Debug',
-                    f'--cts={args.cts_repo}',
-                    query]            
-            
-            mutant_tracking_result : ProcessResult = run_process_with_timeout(cmd=tracking_compile_cmd, 
-                                                                              timeout_seconds=args.compile_timeout, 
-                                                                              env=tracking_environment) 
-            
-            if mutant_tracking_result is None:
-                print("Mutant tracking compilation timed out.")
-                logger.info('Mutant tracking compilation timed out')
-                continue
-            
-            elif not dredd_covered_mutants_path.exists():
-                print(f"Std out:\n {mutant_tracking_result.stdout.decode('utf-8')}\n")
-                print(f"Std err:\n {mutant_tracking_result.stderr.decode('utf-8')}\n")
-                print("No mutant tracking file created.")
-                logger.info('No mutant tracking file created')
-                with open(Path(args.mutant_kill_path,f'tracking/no_tracking_file_{test_name}_{test_id}.txt'), 'w') as f:
-                    f.write(query)
-                continue
-            
-            else:
-                print("Mutant tracking compilation complete")
-                with open(dredd_covered_mutants_path, 'r') as f:
-                    covered_mutants_info = f.read()
-                with open(Path(args.mutant_kill_path,f'tracking/mutant_tracking_file_{test_name}_{test_id}.txt'), 'w') as f:
-                    f.write(query)
-                    f.write(covered_mutants_info)
-
-            print(f"Std out:\n {mutant_tracking_result.stdout.decode('utf-8')}\n")
-            print(f"Std err:\n {mutant_tracking_result.stderr.decode('utf-8')}\n")
-            
-            # Load covered mutants into a list. We go from list to set to list to eliminate duplicates.
-            covered_by_this_test: List[int] = list(set([int(line.strip()) for line in
-                                                        open(dredd_covered_mutants_path, 'r').readlines()]))
-            covered_by_this_test.sort()
-            candidate_mutants_for_this_test: List[int] = ([m for m in covered_by_this_test if m not in killed_mutants])
-            
-            print("Number of mutants to try: " + str(len(candidate_mutants_for_this_test)))
-            already_killed_by_other_tests: List[int] = ([m for m in covered_by_this_test if m in killed_mutants])
-            killed_by_this_test: List[int] = []
-            covered_but_not_killed_by_this_test: List[int] = []
-                       
-            logger.info(f'Number of mutants to try: {str(len(candidate_mutants_for_this_test))}')
-
-            # Enable mutants one at a time
-            # Check whether any tests within the current query that previously passed now fail
-            for mutant in candidate_mutants_for_this_test:
-
-                mutant_path = Path(args.mutant_kill_path,f'killed_mutants/{str(mutant)}')
-                surviving_mutant_path = Path(args.mutant_kill_path,f'surviving_mutants/{str(mutant)}')
-
-                if mutant_path.exists():
-                    print("Skipping mutant " + str(mutant) + " as it is noted as already killed.")
-                    unkilled_mutants.remove(mutant)
-                    killed_mutants.add(mutant)
-                    already_killed_by_other_tests.append(mutant)
-                    print(f'Unkilled mutants: {unkilled_mutants}')
-                    continue
-                print(surviving_mutant_path)
-                if surviving_mutant_path.exists():
-                    print("Skipping mutant " + str(mutant) + " as it is noted as surviving.")
-                    unkilled_mutants.remove(mutant)
-                    continue
-                
-                print("Trying mutant " + str(mutant))
-                
-                env = os.environ.copy()
-                env["VK_ICD_FILENAMES"] = f'{args.vk_icd}'
-                mutated_cmd = [f'{args.mutated_path}/tools/run',
-                    'run-cts', 
-                    '--verbose',
-                    f'--bin={args.mutated_path}/out/Debug',
-                    '--cts',
-                    str(args.cts_repo),
-                    query]    
-
-                (mutant_result, failing_tests) = run_webgpu_cts_test_with_mutants(mutants=[mutant],
-                        mutated_cmd=mutated_cmd,
-                        timeout_seconds=args.compile_timeout,
-                        unmutated_results = unmutated_results,
-                        reliable_tests = reliably_passing_tests,
-                        env=env)
-                
-                #kill_gpu_processes('node')
-
-                print(f'Mutant result: {mutant_result}')
-
-                if mutant_result == CTSKillStatus.SURVIVED or mutant_result == CTSKillStatus.TEST_TIMEOUT:
-                    covered_but_not_killed_by_this_test.append(mutant)
-                    continue
-
-                unkilled_mutants.remove(mutant)
-                killed_mutants.add(mutant)
-                killed_by_this_test.append(mutant)
-                print(f"Kill! Mutants killed so far: {len(killed_mutants)}")
-                try:
-                    mutant_path.mkdir()
-                    print("Writing kill info to file.")
-                    with open(mutant_path / "kill_info.json", "w") as outfile:
-                        json.dump({"killing_query": query,
-                                   "killing_tests" : list(failing_tests),
-                                   "kill_type": str(mutant_result)}, outfile)
-                except FileExistsError:
-                    print(f"Mutant {mutant} was independently discovered to be killed.")
-                    continue
-
-            all_considered_mutants = killed_by_this_test \
-                + covered_but_not_killed_by_this_test \
-                + already_killed_by_other_tests
-            all_considered_mutants.sort()
-            
-            killed_by_this_test.sort()
-            covered_but_not_killed_by_this_test.sort()
-            already_killed_by_other_tests.sort()
-            with open(Path(query_output_directory,'kill_summary.json'), "w") as outfile:
-                json.dump({"query": query,
-                           "covered_mutants": covered_by_this_test,
-                           "killed_mutants": killed_by_this_test,
-                           "skipped_mutants": already_killed_by_other_tests,
-                           "survived_mutants": covered_but_not_killed_by_this_test}, outfile)
-            
-            logger.info('Query complete')
-
-def still_testing(start_time_for_overall_testing: float,
-                  time_of_last_kill: float,
-                  total_test_time: int,
-                  maximum_time_since_last_kill: int) -> bool:
-    if 0 < total_test_time < int(time.time() - start_time_for_overall_testing):
-        return False
-    if 0 < maximum_time_since_last_kill < int(time.time() - time_of_last_kill):
-        return False
     return True
 
+def get_test_queries(args):
+    # Get list of test queries
+    if args.query_source == "cts_repo":
+        test_queries = get_queries_from_cts(query,
+            cts_base,
+            args.unittests_only,
+            args.cts_only,
+            args.reliable_tests,
+            args.mutated_path,
+            args.cts_repo,
+            args.mutant_kill_path,
+            args.vk_icd)
+
+    elif args.query_source == "file":
+        with open(args.query_file, 'r') as f:
+            test_queries = json.load(f)
+
+    elif args.query_source == "arg":
+        test_queries = [args.query]
+
+    return test_queries
+
+def kill_mutant(target, args):
+
+    if target == 'dawn':
+        vk_icd = str(args.vk_icd)
+        dawn = str(args.mutated_path)
+    elif target == 'mesa':
+        vk_icd = str(args.mutated_vk_icd)
+        dawn = str(args.dawn)
+
+    env = os.environ.copy()
+    env["VK_ICD_FILENAMES"] = vk_icd
+    env["DREDD_ENABLED_MUTATION"] = str(mutant)
+
+    mutated_cmd = [f'{dawn}/tools/run',
+        'run-cts', 
+        '--verbose',
+        f'--bin={dawn}/out/Debug',
+        '--cts',
+        str(args.cts_repo),
+        f"'{args.query}'"]  
+
+    shell_cmd = ' '.join(mutated_cmd)  
+
+    (mutant_result, failing_tests) = kill_mutant_cmd(shell_cmd, args)
+
+    return (mutant_result, failing_tests)
+   
+def kill_mutant_cmd(shell_cmd, args):
+
+    with subprocess.Popen(shell_cmd, 
+        stdout=subprocess.PIPE, 
+        universal_newlines=True, 
+        shell=True,
+        preexec_fn=os.setsid,
+        env=env) as p:
+        
+        # Parse stdout live and kill the process if the 
+        # mutant is killed by a reliable test that fails
+        mutant_result = CTSKillStatus.SURVIVED
+
+        failing_tests = None
+
+        for line in p.stdout:
+            print(line)
+            if f' - fail' in line:
+                test = line[:line.index(' ')] 
+
+                if (args.reliable_tests is None) or (test in reliable_tests):
+                    os.killpg(os.getpgid(p.pid), signal.SIGTERM)
+                    mutant_result = CTSKillStatus.KILL_TEST_FAIL
+                    failing_tests = test
+    
+    kill_gpu_processes('node')
+
+    return (mutant_result, failing_tests)
+
+
+def comma_list(arg):
+    return arg.split(',')
 
 if __name__ == '__main__':
     main()

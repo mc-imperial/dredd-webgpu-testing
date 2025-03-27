@@ -4,6 +4,7 @@ import os
 import argparse
 from pathlib import Path
 from random import sample
+from typing import List, Set
 
 import run.cts.kill_mutants
 import run.wgslsmith.kill_mutants
@@ -56,7 +57,15 @@ def main():
             type=Path,
             help='Path in which a list of targetted mutants will be saved')
     kill_with_cts.add_argument('target_mutant_sample',
-            help='Number of mutants from the target set to try and kill')
+            help='Number of mutants from the target set to try and kill',
+            type=int)
+    kill_with_cts.add_argument('--query',
+            help='CTS query',
+            type=str,
+            default='webgpu:*')
+    kill_with_cts.add_argument('--reliable_tests',
+            help='Filepath to store reliable CTS tests',
+            type=Path)
  
     kill_with_wgslsmith = subparsers.add_parser('kill_with_wgslsmith', 
         help='Kill mutants with the WGSLsmith')
@@ -149,6 +158,11 @@ def kill_mutants_with_wgslsmith(args):
     
 def kill_mutants_with_cts(args):
 
+    if args.reliable_tests is None:
+        reliable_tests = Path(args.output, 'reliable_tests.json')
+    else:
+        reliable_tests = args.reliable_tests
+
     mutants_to_kill = get_mutants_to_kill(args.cts_tracking,
         args.wgslsmith_tracking,
         args.target_mutants,
@@ -158,41 +172,25 @@ def kill_mutants_with_cts(args):
     print(f'There are {len(mutants_to_kill)} mutants to kill')
     print('Here are some:')
     print(mutants_to_kill[10:20])
-    exit()
 
-    #TODO: SORT OUT CTS ARGUMENTS
-    cts_args = [str(args.info_file_mutated),
-                str(args.info_file_tracked),
-                f'{str(args.wgslsmith_exe)}', # wgslsmith_root
-                str(args.output),
-                '--mutants_to_kill', ','.join([str(m) for m in mutants_to_kill]),
-                'mesa',
-                str(args.dawn),
-                str(args.mutated_vk_icd),
-                str(args.tracked_vk_icd)]
-
-    cts_args=[str(args.dawn_mutated),
-            str(args.dawn_coverage),
-            str(args.info_file_mutated),
-            str(args.info_file_coverage),
-            str(args.output),
-            'arg', # Use high-level arg.query as query
-            '--cts_repo',
-            str(args.cts),
-            '--query',
-            args.query,
-            '--cts_only',
-            '--run_timeout',
-            '600',
-            '--compile_timeout',
-            '600',
-            '--vk_icd',
-            args.vk_icd,
-            '--reliable_tests',
-            str(args.reliable_tests),
-    ]
+    cts_args=[str(args.info_file_mutated),
+        str(args.info_file_tracked),
+        str(args.output),
+        '--query', args.query,
+        '--cts_repo', str(args.cts),
+        '--cts_only',
+        '--run_timeout', '600',
+        '--compile_timeout', '600',
+        '--reliable_tests', str(reliable_tests),
+        '--mutant_sample', f'''{','.join([str(m) for m in mutants_to_kill])}''',
+        'mesa',
+        str(args.dawn),
+        str(args.mutated_vk_icd), 
+        str(args.tracked_vk_icd)
+        ]
 
     run.cts.kill_mutants.main(cts_args)
+
 
 if __name__=="__main__":
     main()
