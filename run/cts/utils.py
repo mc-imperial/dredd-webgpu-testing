@@ -6,7 +6,6 @@ from enum import Enum
 from pathlib import Path
 
 from common.mutation_tree import MutationTree
-import run.cts.flaky_test_finder.find_non_flaky_cts_tests as find_non_flaky_cts_tests
 
 class TestStatus(Enum):
     PASS = 1
@@ -39,37 +38,7 @@ def get_queries_from_cts(query : str,
 
     return test_queries
 
-def get_reliable_tests(query : str,
-            dawn : Path,
-            cts_repo : Path,
-            mutant_killing_path : Path,
-            vk_icd : str,
-            reliable_tests : Path = None):
-    
-    # Identify reliable tests within the queries
-    # These are individual level tests that consistently pass for
-    # unmutated Dawn. Record these individual queries to use for results
-    # checking tests that fail when a mutation is enabled.
-    if reliable_tests is not None and Path(reliable_tests).exists():
-        with open(reliable_tests,'r') as f:
-            reliably_passing_tests : list = json.load(f)
 
-    else:
-        reliable_test_args = [str(dawn),
-            str(cts_repo),
-            str(mutant_killing_path),
-            '--query_base',
-            query,
-            '--vk_icd',
-            str(vk_icd)]
-
-        reliably_passing_tests = find_non_flaky_cts_tests.main(reliable_test_args)
-
-        if reliable_tests:
-            with open(reliable_tests,'w') as f:
-                json.dump(reliably_passing_tests,f,indent=4)
-
-    return reliably_passing_tests
 
 
 def get_mutant_coverage(mutation_info_path,
