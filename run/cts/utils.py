@@ -198,7 +198,13 @@ def get_completed_queries(log : Path) -> list[str]:
     # Remove final query since it will be unfinished
     return queries[:-1]
 
-def kill_gpu_processes(id : str):
+def kill_gpu_processes():
+
+    n_processes = find_dawn_processes()
+
+    if n_processes == 0:
+        print('No Dawn processes running')
+        return
 
     processes = subprocess.Popen(
             ["ps","-ef"], 
@@ -209,9 +215,14 @@ def kill_gpu_processes(id : str):
             stdin=processes.stdout,
             stdout=subprocess.PIPE
             )
+    remove_grep = subprocess.Popen(
+            ["grep","-v","grep"],
+            stdin=dawn.stdout,
+            stdout=subprocess.PIPE
+    )
     pid_to_kill = subprocess.Popen(
             ["awk","{ print $2 }"],
-            stdin=dawn.stdout,
+            stdin=remove_grep.stdout,
             stdout=subprocess.PIPE,
             text=True
             )
@@ -222,9 +233,29 @@ def kill_gpu_processes(id : str):
             text=True
             )
 
-    print('Dawn processes dead!')
+    stdout, stderr = kill.communicate()
 
+    # Check that all relevant processes have been killed
+    n_processes = find_dawn_processes()
+
+    if n_processes == 0:
+        print('No Dawn processes running')
+        return
+
+    else:
+        print('Problem killing Dawn processes!')
+        exit(1)
+
+
+def find_dawn_processes() -> int:
+    list_processes = subprocess.Popen(["ps","-ef"], stdout=subprocess.PIPE)
+    find_dawn = subprocess.Popen(["grep","dawn.*node.*--gpu-provider"], stdout=subprocess.PIPE, stdin=list_processes.stdout)
+    exclude_grep = subprocess.run(['grep','-v','grep'], stdin=find_dawn.stdout, capture_output=True)
+    dawn_count = subprocess.run(['wc', '-l'], stdin=exclude_grep.stdout, capture_output=True)
     
+    print(f'Number of processes that contain "dawn" is: {int(dawn_count.stdout)}') 
+
+    return int(dawn_count.stdout)
 
 def get_single_tests_from_file(filename : Path) -> dict[str,str]:
     '''
