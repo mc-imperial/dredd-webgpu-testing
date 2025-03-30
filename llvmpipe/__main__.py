@@ -66,6 +66,10 @@ def main():
     kill_with_cts.add_argument('--reliable_tests',
             help='Filepath to store reliable CTS tests',
             type=Path)
+    kill_with_cts.add_argument('--killing_strategy',
+            choices=['by_mutant','by_test'],
+            default='by_mutant',
+            help='Approach to mutant killing')
  
     kill_with_wgslsmith = subparsers.add_parser('kill_with_wgslsmith', 
         help='Kill mutants with the WGSLsmith')
@@ -176,6 +180,7 @@ def kill_mutants_with_cts(args):
     cts_args=[str(args.info_file_mutated),
         str(args.info_file_tracked),
         str(args.output),
+        args.killing_strategy,
         '--query', args.query,
         '--cts_repo', str(args.cts),
         '--cts_only',

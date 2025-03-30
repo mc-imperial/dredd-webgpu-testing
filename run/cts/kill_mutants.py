@@ -39,6 +39,9 @@ def main(raw_args = None):
     parser.add_argument("mutant_kill_path",
                         help="Directory in which to record mutant kill info and mutant killing tests.",
                         type=Path)
+    parser.add_argument("killing_strategy",
+                        help="Approach to mutant killing",
+                        choices=['by_mutant','by_test'])
     parser.add_argument("--query_source",
                         choices = ['file','cts_repo','arg'],
                         help="Source for CTS queries. Can be 'file' to get from file, or 'cts_repo' to  \
@@ -113,7 +116,7 @@ def main(raw_args = None):
     parser_mesa = subparsers.add_parser("mesa",
             help='Kill mutants in Mesa')
     parser_mesa.add_argument("dawn",
-                        help="Path to Dawn for using dawn.node to execute tests. Should be unmutated!",
+                        help="Path to Dawn src for using dawn.node to execute tests. Should be unmutated!",
                         type=Path)
     parser_mesa.add_argument("mutated_vk_icd",
                         help="Path to the executable for the Dredd-mutated Mesa vk_icd.",
@@ -123,10 +126,10 @@ def main(raw_args = None):
                         type=Path)
 
     args = parser.parse_args(raw_args)
-    
+    '''
     if not validate_args(args):
         exit()
-    
+    '''
     start_logging(args.mutant_kill_path)
 
     with tempfile.TemporaryDirectory() as temp_dir_for_generated_code:
@@ -138,7 +141,7 @@ def main(raw_args = None):
         # crashed previously.
         Path(args.mutant_kill_path).mkdir(exist_ok=True)
         Path(args.mutant_kill_path,"killed_mutants").mkdir(exist_ok=True)
-        Path(args.mutant_kill_path,"survived_mutants").mkdir(exist_ok=True)
+        Path(args.mutant_kill_path,"surviving_mutants").mkdir(exist_ok=True)
         Path(args.mutant_kill_path,"tracking").mkdir(exist_ok=True)
         Path(args.mutant_kill_path,"tests").mkdir(exist_ok=True)
 
@@ -180,11 +183,14 @@ def kill_by_mutant(test_queries, reliable_tests, args):
     killed_mutants : Set(int) = set()
     already_killed_by_other_tests : list(int) = []
     killed_by_this_test : list(int) = []
+    covered_but_not_killed_by_this_test : list(int) = []
 
     for mutant in args.mutant_sample:
-        
-        # Check whether mutant has already been killed or marked as survived by another process
+
         mutant_path = Path(args.mutant_kill_path,f'killed_mutants/{str(mutant)}')
+        surviving_mutant_path = Path(args.mutant_kill_path,f'surviving_mutants/{str(mutant)}')
+
+        # Check whether mutant has already been killed or marked as survived by another process
         if mutant_path.exists():
             print("Skipping mutant " + str(mutant) + " as it is noted as already killed.")
             unkilled_mutants.remove(mutant)
@@ -192,7 +198,6 @@ def kill_by_mutant(test_queries, reliable_tests, args):
             already_killed_by_other_tests.append(mutant)
             continue
 
-        surviving_mutant_path = Path(args.mutant_kill_path,f'surviving_mutants/{str(mutant)}')
         if surviving_mutant_path.exists():
             print("Skipping mutant " + str(mutant) + " as it is noted as surviving.")
             unkilled_mutants.remove(mutant)
@@ -202,24 +207,28 @@ def kill_by_mutant(test_queries, reliable_tests, args):
        
         mutation_target = args.cmd
 
-        (mutant_result, failing_tests) = kill_mutant(mutation_target, args)
+        (mutant_result, failing_tests) = kill_mutant(mutant, mutation_target, reliable_tests, args)
         print(f'Mutant result: {mutant_result}')
 
         if mutant_result == CTSKillStatus.SURVIVED or mutant_result == CTSKillStatus.TEST_TIMEOUT:
             print(f'Mutant ID {mutant} survived!')
             covered_but_not_killed_by_this_test.append(mutant)
-            with open(f"{str(args.mutant_kill_path)}/surviving_mutants.txt", 'a') as outfile:
-                outfile.write(f'{mutant}\n')
-            with open(surviving_mutant_path / "survived.txt", 'w') as outfile:
-                outfile.write(f'Survived!')
+            try:
+                surviving_mutant_path.mkdir()
+                print("Recording survival to file.")
+                with open(surviving_mutant_path / "survived.txt", 'w') as outfile:
+                    outfile.write(f'Survived!')
+            except FileExistsError:
+                print(f"Mutant {mutant} was independently discovered to have survived.")
             continue
 
-            unkilled_mutants.remove(mutant)
-            killed_mutants.add(mutant)
-            killed_by_this_test.append(mutant)
-        
         print(f"Kill! Mutants killed so far: {len(killed_mutants)}")
         print(f"Mutant killed is ID {mutant}")
+
+        unkilled_mutants.remove(mutant)
+        killed_mutants.add(mutant)
+        killed_by_this_test.append(mutant)
+        
         try:
             mutant_path.mkdir()
             print("Writing kill info to file.")
@@ -563,13 +572,15 @@ def get_reliable_tests(query : str,
 
         reliably_passing_tests = find_non_flaky_cts_tests.main(reliable_test_args)
 
+        print(f'There are {len(reliably_passing_tests)} reliably passing tests')
+
         if reliable_tests:
             with open(reliable_tests,'w') as f:
                 json.dump(reliably_passing_tests,f,indent=4)
 
     return reliably_passing_tests
 
-def kill_mutant(target, args):
+def kill_mutant(mutant, target, reliable_tests, args):
 
     if target == 'dawn':
         vk_icd = str(args.vk_icd)
@@ -592,11 +603,11 @@ def kill_mutant(target, args):
 
     shell_cmd = ' '.join(mutated_cmd)  
 
-    (mutant_result, failing_tests) = kill_mutant_cmd(shell_cmd, args)
+    (mutant_result, failing_tests) = kill_mutant_cmd(shell_cmd, env, reliable_tests)
 
     return (mutant_result, failing_tests)
    
-def kill_mutant_cmd(shell_cmd, args):
+def kill_mutant_cmd(shell_cmd, env, reliable_tests):
 
     with subprocess.Popen(shell_cmd, 
         stdout=subprocess.PIPE, 
@@ -616,7 +627,7 @@ def kill_mutant_cmd(shell_cmd, args):
             if f' - fail' in line:
                 test = line[:line.index(' ')] 
 
-                if (args.reliable_tests is None) or (test in reliable_tests):
+                if test in reliable_tests:
                     os.killpg(os.getpgid(p.pid), signal.SIGTERM)
                     mutant_result = CTSKillStatus.KILL_TEST_FAIL
                     failing_tests = test
