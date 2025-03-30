@@ -130,7 +130,6 @@ def main(raw_args = None):
     if not validate_args(args):
         exit()
     '''
-    start_logging(args.mutant_kill_path)
 
     with tempfile.TemporaryDirectory() as temp_dir_for_generated_code:
         #with Path('/data/dev/dredd-compiler-testing/dredd_test_runners/wgslsmith_runner/temp') as temp_dir_for_generated_code:
@@ -144,6 +143,18 @@ def main(raw_args = None):
         Path(args.mutant_kill_path,"surviving_mutants").mkdir(exist_ok=True)
         Path(args.mutant_kill_path,"tracking").mkdir(exist_ok=True)
         Path(args.mutant_kill_path,"tests").mkdir(exist_ok=True)
+
+        # Set up log in append mode so we can continue runs that were cancelled
+        logger = logging.getLogger(__name__)
+        log_name = Path(args.mutant_kill_path, f'info_{os.getpid()}.log')
+        logging.basicConfig(filename=log_name, 
+                format='%(asctime)s - %(message)s',
+                datefmt=('%Y-%m-%d %H:%M:%S'),
+                encoding='utf-8', 
+                filemode='a',
+                level=logging.INFO)
+
+        logging.info('Start CTS killing')
 
         test_queries = get_test_queries(args)
 
@@ -176,6 +187,7 @@ def main(raw_args = None):
 def kill_by_mutant(test_queries, reliable_tests, args):
 
     print(f'Running mutant sample of {len(args.mutant_sample)} mutants')
+    logging.info(f'Kill mutant by mutant: mutant sample of {len(args.mutant_sample)} mutants')
 
     # Mutants for killing are given by a sample input list
     # We know that these mutants are covered by the CTS
@@ -204,11 +216,21 @@ def kill_by_mutant(test_queries, reliable_tests, args):
             continue
         
         print("Trying mutant " + str(mutant))
+        logging.info("Trying mutant " + str(mutant))
        
         mutation_target = args.cmd
 
+        cts_start_time = time.time()
+
         (mutant_result, failing_tests) = kill_mutant(mutant, mutation_target, reliable_tests, args)
+
+        cts_end_time = time.time()
+
+        cts_run_time = cts_end_time - cts_start_time
+
         print(f'Mutant result: {mutant_result}')
+        logging.info(f'CTS ran for {cts_run_time // 60} minutes and {round(cts_run_time % 60,0)} seconds')
+        logging.info(f'Mutant result: {mutant_result}')
 
         if mutant_result == CTSKillStatus.SURVIVED or mutant_result == CTSKillStatus.TEST_TIMEOUT:
             print(f'Mutant ID {mutant} survived!')
@@ -224,6 +246,7 @@ def kill_by_mutant(test_queries, reliable_tests, args):
 
         print(f"Kill! Mutants killed so far: {len(killed_mutants)}")
         print(f"Mutant killed is ID {mutant}")
+        logging.info(f'Mutant killing test is: {failing_tests}')
 
         unkilled_mutants.remove(mutant)
         killed_mutants.add(mutant)
@@ -239,7 +262,6 @@ def kill_by_mutant(test_queries, reliable_tests, args):
         except FileExistsError:
             print(f"Mutant {mutant} was independently discovered to be killed.")
             continue
-
 
     all_considered_mutants = killed_by_this_test \
         + covered_but_not_killed_by_this_test \
@@ -424,7 +446,7 @@ def kill_by_test(test_queries, reliable_tests, args):
                     reliable_tests = reliably_passing_tests,
                     env=env)
             
-            #kill_gpu_processes('node')
+            #kill_gpu_processes()
 
             print(f'Mutant result: {mutant_result}')
 
@@ -492,18 +514,6 @@ def check_mutation_trees(args):
     assert mutation_tree.num_mutations == mutation_tree_for_coverage_tracking.num_mutations
     print("Check complete!")
 
-def start_logging(kill_path):
-    # Set up log in append mode so we can continue runs that were cancelled
-    logger = logging.getLogger(__name__)
-    log_name = Path(kill_path, f'info_{os.getpid()}.log')
-    logging.basicConfig(filename=log_name, 
-            format='%(asctime)s - %(message)s',
-            datefmt=('%Y-%m-%d %H:%M:%S'),
-            encoding='utf-8', 
-            filemode='a',
-            level=logging.INFO)
-
-    logging.info('Start')
 
 def validate_args(args) -> bool:
     
@@ -632,7 +642,7 @@ def kill_mutant_cmd(shell_cmd, env, reliable_tests):
                     mutant_result = CTSKillStatus.KILL_TEST_FAIL
                     failing_tests = test
     
-    kill_gpu_processes('node')
+    kill_gpu_processes()
 
     return (mutant_result, failing_tests)
 
