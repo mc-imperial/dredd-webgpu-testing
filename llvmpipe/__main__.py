@@ -77,7 +77,17 @@ def main():
     kill_with_wgslsmith.add_argument('wgslsmith',
             type=Path,
             help='Path to WGSLsmith executable')
-    kill_with_wgslsmith.add_argument('n_processes',
+    kill_with_wgslsmith.add_argument('target_mutants',
+            choices=['wgslsmith_only'],
+            help='''Set of mutants to target. Options are:
+            \twgslsmith_only - mutants touched a sample of WGSLsmith tests and uncovered by CTS''')
+    kill_with_wgslsmith.add_argument('target_mutant_file',
+            type=Path,
+            help='Path in which a list of targetted mutants will be saved')
+    kill_with_wgslsmith.add_argument('target_mutant_sample',
+            help='Number of mutants from the target set to try and kill',
+            type=int)
+    kill_with_wgslsmith.add_argument('--n_processes',
             type=int,
             help='Number of processes to run in parallel',
             default=1)
@@ -125,19 +135,21 @@ def get_mutants_to_kill(cts_tracking, wgslsmith_tracking, target_mutants, mutant
     
 def kill_mutants_with_wgslsmith(args):
 
+    print('Getting mutants to kill...')
     mutants_to_kill = get_mutants_to_kill(args.cts_tracking,
         args.wgslsmith_tracking,
-        args.target_mutant,
+        args.target_mutants,
         args.target_mutant_file,
         int(args.target_mutant_sample))
 
+    print(f'There are {len(mutants_to_kill)} mutants to kill')
     wgslsmith_args = [str(args.info_file_mutated),
                 str(args.info_file_tracked),
-                f'{str(args.wgslsmith_exe)}', # wgslsmith_root
+                f'{str(args.wgslsmith)}',
                 str(args.output),
                 '--mutants_to_kill', ','.join([str(m) for m in mutants_to_kill]),
                 'mesa',
-                str(args.dawn),
+                f'{str(args.dawn)}/out/Debug/dawn.node',
                 str(args.mutated_vk_icd),
                 str(args.tracked_vk_icd)]
 
