@@ -250,7 +250,7 @@ def kill_gpu_processes():
 def find_dawn_processes() -> int:
     list_processes = subprocess.Popen(["ps","-ef"], stdout=subprocess.PIPE)
     find_dawn = subprocess.Popen(["grep","dawn.*node.*--gpu-provider"], stdout=subprocess.PIPE, stdin=list_processes.stdout)
-    exclude_grep = subprocess.run(['grep','-v','grep'], stdin=find_dawn.stdout, capture_output=True)
+    exclude_grep = subprocess.Popen(['grep','-v','grep'], stdout=subprocess.PIPE, stdin=find_dawn.stdout)
     dawn_count = subprocess.run(['wc', '-l'], stdin=exclude_grep.stdout, capture_output=True)
     
     print(f'Number of processes that contain "dawn" is: {int(dawn_count.stdout)}') 
