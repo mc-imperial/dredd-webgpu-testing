@@ -131,6 +131,9 @@ def main(raw_args = None):
         exit()
     '''
 
+    # Kill any dawn processes left over from aborted CTS runs
+    kill_gpu_processes()
+
     with tempfile.TemporaryDirectory() as temp_dir_for_generated_code:
         #with Path('/data/dev/dredd-compiler-testing/dredd_test_runners/wgslsmith_runner/temp') as temp_dir_for_generated_code:
         dredd_covered_mutants_path: Path = Path(temp_dir_for_generated_code, '__dredd_covered_mutants')
@@ -247,6 +250,7 @@ def kill_by_mutant(test_queries, reliable_tests, args):
         print(f"Kill! Mutants killed so far: {len(killed_mutants)}")
         print(f"Mutant killed is ID {mutant}")
         logging.info(f'Mutant killing test is: {failing_tests}')
+        logging.info(f'Mutants killed so far: {len(killed_mutants)}')
 
         unkilled_mutants.remove(mutant)
         killed_mutants.add(mutant)
@@ -619,33 +623,45 @@ def kill_mutant(mutant, target, reliable_tests, args):
    
 def kill_mutant_cmd(shell_cmd, env, reliable_tests):
 
-    with subprocess.Popen(shell_cmd, 
-        stdout=subprocess.PIPE, 
-        universal_newlines=True, 
+    timeout = 60*60 # 1 hour
+
+    # Parse stdout live and kill the process if the 
+    # mutant is killed by a reliable test that fails
+    mutant_result = CTSKillStatus.SURVIVED
+    failing_tests = None
+    end_time = time.time() + timeout
+
+    process = subprocess.Popen(
+        shell_cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        universal_newlines=True,
+        text=True,
         shell=True,
-        preexec_fn=os.setsid,
-        env=env) as p:
-        
-        # Parse stdout live and kill the process if the 
-        # mutant is killed by a reliable test that fails
-        mutant_result = CTSKillStatus.SURVIVED
+        start_new_session=True,
+        preexec_fn=lambda: signal.alarm(timeout),
+        env=env
+    )
 
-        failing_tests = None
+    for line in iter(process.stdout.readline, ''):
+        print(line)
+        if f' - fail' in line:
+            test = line[:line.index(' ')] 
+            if test in reliable_tests:
+                os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+                mutant_result = CTSKillStatus.KILL_TEST_FAIL
+                failing_tests = test
+        if time.time() > end_time:
+            os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+            print('CTS timeout!')
+            mutant_result = CTSKillStatus.TEST_TIMEOUT
+            exit(1)
 
-        for line in p.stdout:
-            print(line)
-            if f' - fail' in line:
-                test = line[:line.index(' ')] 
-
-                if test in reliable_tests:
-                    os.killpg(os.getpgid(p.pid), signal.SIGTERM)
-                    mutant_result = CTSKillStatus.KILL_TEST_FAIL
-                    failing_tests = test
+    process.stdout.close()
     
     kill_gpu_processes()
 
     return (mutant_result, failing_tests)
-
 
 def comma_list(arg):
     return arg.split(',')
