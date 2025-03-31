@@ -2,7 +2,7 @@
 
 BASE=/data/dev
 
-DAWN=$BASE/dawn/out/Debug/dawn.node
+DAWN=$BASE/dawn
 OUTPUT=$BASE/dredd-webgpu-testing/llvmpipe/output/covered_by_cts
 CTS=$BASE/webgpu_cts
 
@@ -38,3 +38,4 @@ python llvmpipe \
     'cts_intersect_wgslsmith' \
     $TARGET_MUTANT_FILE \
     1000 
+
