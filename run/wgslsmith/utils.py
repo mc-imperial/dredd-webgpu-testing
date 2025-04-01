@@ -143,7 +143,6 @@ def run_wgslsmith_program(program_js : Path,
     except KeyError:
         print('DREDD_ENABLED_MUTATION not set.')
     try:
-        print(run_cmd)
         result = subprocess.run(run_cmd, cwd=working_dir, env=env, timeout=timeout, capture_output=True, text = True)
     except subprocess.TimeoutExpired:
         print('Timeout expired!')
