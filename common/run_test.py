@@ -161,7 +161,9 @@ def run_wgslsmith_test_with_mutants(mutants: List[int],
             return (KillStatus.KILL_DIFFERENT_STDOUT, mutated_result)
 
         # if stdouts differ but not for timeout or different output array reasons,
-        # then the mutant is not being killed
+        # then the mutant is not being killed - report as killed for now and manually check
+        return (KillStatus.KILL_DIFFERENT_STDOUT, mutated_result)
+
 
     if execution_result_non_mutated.stderr != mutated_result.stderr:
         return (KillStatus.KILL_DIFFERENT_STDERR, mutated_result)
