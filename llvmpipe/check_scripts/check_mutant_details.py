@@ -18,9 +18,10 @@ def main():
     mutant_file = Path(base, 'llvmpipe/output/killed_mutants_crash_snippets.txt')
 
     #mutant_killing_tests = get_mutant_killing_tests(kill_dir)
-    mutant_killing_tests = {'95847' : 'wgslsmith_3585826504'}
+    #mutant_killing_tests = {'95847' : 'wgslsmith_3585826504'}
+    mutants = ['74604','361617','404161','214418']
 
-    for mutant in mutant_killing_tests.keys():
+    for mutant in mutants:
         print(mutant)
 
         cmd = ['python',
