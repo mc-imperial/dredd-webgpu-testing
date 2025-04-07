@@ -6,32 +6,41 @@ import subprocess
 import json
 
 from run.wgslsmith.utils import get_inputs, get_mutant_killing_tests
+from common.run_test import KillStatus
 
 def main():
 
     parser = argparse.ArgumentParser()
 
     parser.add_argument("kill", choices=['crash','miscompilation'])
+    parser.add_argument("kill_dir", type=str)
+    parser.add_argument("test_dir", type=str)
 
     base=Path('/data/dev/dredd-webgpu-testing')
     reduce=Path(base,'reduce')
     out_dir=Path(reduce, 'output', 'crash')
 
-    kill_dir=Path(base, 'llvmpipe/output/killed_mutants')
-    test_dir=Path(base, 'llvmpipe/output/tests')
-
     args = parser.parse_args()
 
+    kill_dir=Path(args.kill_dir)
+    test_dir=Path(args.test_dir)
 
     if args.kill == 'miscompilation':
         interesting_test=Path(reduce, 'interestingness.sh')
-        mutant_killing_tests = get_mutant_killing_tests(kill_dir)
+        mutant_killing_tests = get_mutant_killing_tests(kill_dir, 'KillStatus.KILL_DIFFERENT_STDOUT')
         with open(Path(reduce, 'stdout_kills.json'), 'w') as f:
             json.dump(mutant_killing_tests, f, indent=4)
 
     else:
         interesting_test=Path(reduce, 'interestingness_crash.sh')
-        mutant_killing_tests = {'95847' : 'wgslsmith_3585826504'}
+        mutant_killing_tests = get_mutant_killing_tests(kill_dir, 'KillStatus.KILL_COMPILER_CRASH')
+
+        #mutants_to_reduce = ['361617','404161']
+        mutants_to_reduce = ['404161']
+        mutant_killing_tests = {k:v for (k,v) in mutant_killing_tests.items() if k in mutants_to_reduce}
+
+        print(mutant_killing_tests)
+
         with open(Path(reduce, 'crash_kills.json'), 'w') as f:
             json.dump(mutant_killing_tests, f, indent=4)
 
