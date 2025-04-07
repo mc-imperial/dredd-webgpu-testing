@@ -1,10 +1,69 @@
 import subprocess
 import os
 from pathlib import Path
+import numpy as np
+import sys
 
 from mutate_mesa import clean, get_files_for_mutation, mutate
 from run.cts.utils import run_cts
 from run.wgslsmith.utils import run_wgslsmith_program
+
+def process_test_wise_tracking(tracking_dir : Path, output_dir : Path):
+    
+    # Want to end up with a mapping of mutant : list[tests that cover that mutant]
+    # Loop through each mutant tracking file 
+        # remove duplicate mutants
+        # produce list of mutants covered by that test
+        # take the union of all mutants to get our keys
+    
+    test_to_mutant_mapping = {}
+    mutant_to_test_mapping = {}
+
+    # Get list of mutants covered by each test
+    for i,file in enumerate(tracking_dir.iterdir()):
+        
+        with open(file,'r') as f:
+            mutants = f.readlines()
+            mutants = [m.rstrip() for m in mutants]
+
+        test_to_mutant_mapping[file.stem] = list(set(mutants))
+
+    mutants = list(test_to_mutant_mapping.values())
+
+    # Flatten list of mutants
+    all_mutants = list(set([x for m in mutants for x in m]))
+
+    all_mutants.sort()
+
+    print(f'Total number of mutants: {len(all_mutants)}')
+
+    # Get list of tests that cover each mutant
+    all_mutants = all_mutants[3200:]
+    for i, mutant in enumerate(all_mutants):
+        print(f'Processing mutant number {i} with ID {mutant} of {len(all_mutants)}...')
+        mutant_file = Path(output_dir, f'mutant_{mutant}.txt')
+        tests = [test for test, mutants in test_to_mutant_mapping.items() if mutant in mutants]
+        with open(mutant_file,'w') as f:
+            f.writelines([f'{test}\n' for test in tests])
+
+
+    '''
+    # Make a mapping of tests to mutants where tests are the rows
+    # and mutants are the columns
+
+    # Test making arrays
+    mutants = np.array([1,3])
+
+    mutant_row = get_row_from_mutant_list(mutants)
+
+    print(mutant_row)
+    '''
+
+
+def get_row_from_mutant_list(mutants):
+    mask = np.zeros(mutants[-1] + 1, dtype=bool)
+    return np.array([True if i in mutants else False for i, x in enumerate(mask)])
+
 
 def track(mesa, dredd, mutation_dir, info_file, compile_commands):
 
@@ -94,7 +153,6 @@ def get_mutants(filepath : Path):
 
 if __name__=="__main__":
     base = Path('/data/dev/dredd-webgpu-testing/llvmpipe')
-    cts_tracking = Path(base,'tracking')
-    wgslsmith_tracking = Path(base, 'wgslsmith', 'tracking')
-    #track(track_cts = False, track_wgslsmith = True)
-    process_tracking(cts_tracking, wgslsmith_tracking)
+    tracking_dir = Path(base, 'output', 'covered_by_cts', 'test_wise_tracking', 'tracking_files')
+    output_dir = Path(base, 'output', 'covered_by_cts', 'test_wise_tracking', 'mutant_files')
+    process_test_wise_tracking(tracking_dir, output_dir)
