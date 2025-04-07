@@ -211,9 +211,6 @@ def get_wgslsmith_output_from_harness(stdout) -> list[int]:
     output = stdout.decode("utf-8")
 
     print(output)
-    
-    if output.find('timeout') != -1:
-        return None
 
     output_start_index = output.find('outputs') + 18
     output_end_index = output.rfind(']')
