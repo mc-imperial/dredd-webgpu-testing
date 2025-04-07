@@ -2,6 +2,7 @@ import subprocess
 import multiprocessing
 import os
 import argparse
+import pandas as pd
 from pathlib import Path
 from random import sample
 from typing import List, Set
@@ -67,9 +68,13 @@ def main():
             help='Filepath to store reliable CTS tests',
             type=Path)
     kill_with_cts.add_argument('--killing_strategy',
-            choices=['by_mutant','by_test'],
+            choices=['by_mutant','by_test','least_covered_mutants'],
             default='by_mutant',
             help='Approach to mutant killing')
+    kill_with_cts.add_argument('--tracking_dir',
+            type=Path,
+            default=None,
+            help='Tracking dir that contains mutant files for least covered mutants analysis')
  
     kill_with_wgslsmith = subparsers.add_parser('kill_with_wgslsmith', 
         help='Kill mutants with the WGSLsmith')
@@ -99,6 +104,29 @@ def main():
     
     if args.cmd == 'kill_with_cts':
         kill_mutants_with_cts(args)
+
+def get_least_covered_mutants(mutant_dir, n_sample = None) -> list[str]:
+
+    mutant_to_test_mapping = pd.DataFrame(columns=('mutant_id','test_list','n_tests'))
+    print(mutant_to_test_mapping)
+
+    for i,file in enumerate(mutant_dir.iterdir()):
+        with open(file,'r') as f:
+            data = f.readlines()
+            data = [x.rstrip() for x in data]
+        mutant = file.stem[len('mutant_'):]
+        item = pd.DataFrame([[mutant, data, len(data)]],columns=('mutant_id','test_list','n_tests'))
+        mutant_to_test_mapping = pd.concat([mutant_to_test_mapping, item])
+
+    # sort dataframe by the number of covering tests
+    mutant_to_test_mapping = mutant_to_test_mapping.sort_values('n_tests')
+
+    if n_sample == None:
+        n_sample = len(mutant_to_test_mapping)
+
+    mutant_sample = mutant_to_test_mapping.head(n_sample)
+
+    return list(mutant_sample['mutant_id'])
 
 def get_mutants_to_kill(cts_tracking, wgslsmith_tracking, target_mutants, mutant_file, n_sample=None):
 
@@ -136,11 +164,12 @@ def get_mutants_to_kill(cts_tracking, wgslsmith_tracking, target_mutants, mutant
 def kill_mutants_with_wgslsmith(args):
 
     print('Getting mutants to kill...')
+
     mutants_to_kill = get_mutants_to_kill(args.cts_tracking,
-        args.wgslsmith_tracking,
-        args.target_mutants,
-        args.target_mutant_file,
-        int(args.target_mutant_sample))
+            args.wgslsmith_tracking,
+            args.target_mutants,
+            args.target_mutant_file,
+            int(args.target_mutant_sample))
 
     print(f'There are {len(mutants_to_kill)} mutants to kill')
     wgslsmith_args = [str(args.info_file_mutated),
@@ -179,11 +208,16 @@ def kill_mutants_with_cts(args):
     else:
         reliable_tests = args.reliable_tests
 
-    mutants_to_kill = get_mutants_to_kill(args.cts_tracking,
-        args.wgslsmith_tracking,
-        args.target_mutants,
-        args.target_mutant_file,
-        int(args.target_mutant_sample))
+    if args.killing_strategy == 'by_mutant':
+        mutants_to_kill = get_mutants_to_kill(args.cts_tracking,
+            args.wgslsmith_tracking,
+            args.target_mutants,
+            args.target_mutant_file,
+            int(args.target_mutant_sample))
+
+    elif args.killing_strategy == 'least_covered_mutants':
+        mutants_to_kill = get_least_covered_mutants(args.tracking_dir,
+            int(args.target_mutant_sample))
 
     print(f'There are {len(mutants_to_kill)} mutants to kill')
     print('Here are some:')
