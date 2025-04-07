@@ -150,7 +150,7 @@ def run_wgslsmith_program(program_js : Path,
 
     return result
 
-def get_mutant_killing_tests(kill_dir : Path):
+def get_mutant_killing_tests(kill_dir : Path, kill_type : str):
 
     tests = {}
     
@@ -158,7 +158,7 @@ def get_mutant_killing_tests(kill_dir : Path):
         with open(Path(dir, 'kill_info.json'),'r') as f:
             kill_info = json.load(f)
 
-        if kill_info['kill_type'] == 'KillStatus.KILL_DIFFERENT_STDOUT':
+        if kill_info['kill_type'] == kill_type:
             tests[str(dir.stem)] = kill_info['killing_test']
 
     return tests
