@@ -3,68 +3,57 @@ import os
 from pathlib import Path
 import numpy as np
 import sys
+import json
+import pandas as pd
 
 from mutate_mesa import clean, get_files_for_mutation, mutate
 from run.cts.utils import run_cts
 from run.wgslsmith.utils import run_wgslsmith_program
 
-def process_test_wise_tracking(tracking_dir : Path, output_dir : Path):
-    
-    # Want to end up with a mapping of mutant : list[tests that cover that mutant]
-    # Loop through each mutant tracking file 
-        # remove duplicate mutants
-        # produce list of mutants covered by that test
-        # take the union of all mutants to get our keys
-    
-    test_to_mutant_mapping = {}
+class QueryList:
+    def __init__(self, queries):
+        self.queries : set[str] = queries
+        self.length : int = len(self.queries)
+
+def process_test_wise_tracking(tracking_dir : Path, output_dir : Path, query_map : Path):
+
     mutant_to_test_mapping = {}
 
-    # Get list of mutants covered by each test
+    with open(query_map,'r') as f:
+        test_to_id_map = json.load(f)
+
+
+    id_to_test_map = {v : k for k,v in test_to_id_map.items()}
+    
+    n_files = len(os.listdir(tracking_dir))
     for i,file in enumerate(tracking_dir.iterdir()):
-        
+
+        print(f'Processing file {i} of {n_files}: {file.stem}')
+
         with open(file,'r') as f:
-            mutants = f.readlines()
-            mutants = [m.rstrip() for m in mutants]
+            for line in f:
+                mutant = line.rstrip()
+                if mutant not in mutant_to_test_mapping.keys():
+                    mutant_to_test_mapping[mutant] = set()
 
-        test_to_mutant_mapping[file.stem] = list(set(mutants))
+                query = id_to_test_map[file.stem]
 
-    mutants = list(test_to_mutant_mapping.values())
+                mutant_to_test_mapping[mutant].add(query)
 
-    # Flatten list of mutants
-    all_mutants = list(set([x for m in mutants for x in m]))
+    # Convert to df
+    mutant_to_test_mapping = {mutant : ' '.join(queries) for mutant, queries in mutant_to_test_mapping.items()}
 
-    all_mutants.sort()
+    mutant_df = pd.DataFrame.from_dict(mutant_to_test_mapping, orient = 'index', columns = ['queries'])
+    print(mutant_df.head(10))
+    mutant_df['n_tests'] = mutant_df['queries'].apply(lambda x: len(str(x).split(' ')))
+    print(mutant_df.head(10))
+    mutant_df = mutant_df.sort_values(by='n_tests')
+    print(mutant_df.head(10))
 
-    print(f'Total number of mutants: {len(all_mutants)}')
-
-    # Get list of tests that cover each mutant
-    all_mutants = all_mutants[3200:]
-    for i, mutant in enumerate(all_mutants):
-        print(f'Processing mutant number {i} with ID {mutant} of {len(all_mutants)}...')
-        mutant_file = Path(output_dir, f'mutant_{mutant}.txt')
-        tests = [test for test, mutants in test_to_mutant_mapping.items() if mutant in mutants]
-        with open(mutant_file,'w') as f:
-            f.writelines([f'{test}\n' for test in tests])
+    mutant_df.to_csv(Path(output_dir,'mapping_mutant_to_query_list.csv'))
 
 
-    '''
-    # Make a mapping of tests to mutants where tests are the rows
-    # and mutants are the columns
-
-    # Test making arrays
-    mutants = np.array([1,3])
-
-    mutant_row = get_row_from_mutant_list(mutants)
-
-    print(mutant_row)
-    '''
-
-
-def get_row_from_mutant_list(mutants):
-    mask = np.zeros(mutants[-1] + 1, dtype=bool)
-    return np.array([True if i in mutants else False for i, x in enumerate(mask)])
-
-
+    
 def track(mesa, dredd, mutation_dir, info_file, compile_commands):
 
     clean(mesa)
@@ -154,5 +143,6 @@ def get_mutants(filepath : Path):
 if __name__=="__main__":
     base = Path('/data/dev/dredd-webgpu-testing/llvmpipe')
     tracking_dir = Path(base, 'output', 'covered_by_cts', 'test_wise_tracking', 'tracking_files')
-    output_dir = Path(base, 'output', 'covered_by_cts', 'test_wise_tracking', 'mutant_files')
-    process_test_wise_tracking(tracking_dir, output_dir)
+    output_dir = Path(base, 'output', 'covered_by_cts', 'test_wise_tracking')
+    mapping = Path(base, 'output', 'covered_by_cts', 'test_wise_tracking', 'mapping_test_to_id.json' )
+    process_test_wise_tracking(tracking_dir, output_dir, mapping)
