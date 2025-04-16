@@ -17,9 +17,9 @@ INFO_TRACKED=$MESA_TRACKED/mutation_info.json
 
 CTS_TRACKING=$BASE/dredd-webgpu-testing/llvmpipe/tracking
 WGSLSMITH_TRACKING=$BASE/dredd-webgpu-testing/llvmpipe/wgslsmith/tracking
-TRACKING_DIR=$OUTPUT/test_wise_tracking/mutant_files
+MUTANT_MAP=$OUTPUT/test_wise_tracking/mapping_mutant_to_query_list.csv
 
-TARGET_MUTANT_FILE=$BASE/dredd-webgpu-testing/llvmpipe/output/cts_mutant_targets.txt
+TARGET_MUTANT_FILE=$BASE/dredd-webgpu-testing/llvmpipe/output/cts_least_covered_mutant_targets.txt
 
 cd $BASE/dredd-webgpu-testing
 
@@ -38,7 +38,7 @@ python llvmpipe \
     $CTS \
     'cts_intersect_wgslsmith' \
     $TARGET_MUTANT_FILE \
-    100 \
+    10 \
     '--killing_strategy' 'least_covered_mutants' \
-    '--tracking_dir' $TRACKING_DIR
+    '--mutant_to_test_mapping' $MUTANT_MAP
 

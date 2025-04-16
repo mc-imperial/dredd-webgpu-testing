@@ -10,6 +10,7 @@ import random
 import tempfile
 import time
 import datetime
+import pandas as pd
 
 from common.constants import DEFAULT_COMPILATION_TIMEOUT, DEFAULT_RUNTIME_TIMEOUT
 from common.mutation_tree import MutationTree
@@ -41,7 +42,7 @@ def main(raw_args = None):
                         type=Path)
     parser.add_argument("killing_strategy",
                         help="Approach to mutant killing",
-                        choices=['by_mutant','by_test'])
+                        choices=['by_mutant','by_test','least_covered_mutants'])
     parser.add_argument("--query_source",
                         choices = ['file','cts_repo','arg'],
                         help="Source for CTS queries. Can be 'file' to get from file, or 'cts_repo' to  \
@@ -96,6 +97,9 @@ def main(raw_args = None):
                         type=comma_list,
                         default=None # default if nothing is provided
                         )
+    parser.add_argument("--mutant_to_test_mapping",
+                        type=Path,
+                        help="File path for mutant to test mapping csv")
 
     subparsers = parser.add_subparsers(dest="cmd")
 
@@ -125,11 +129,13 @@ def main(raw_args = None):
                         help="Path to the executable for the Mesa vk_icd instrumented to track mutants.",
                         type=Path)
 
+
     args = parser.parse_args(raw_args)
-    '''
+
+    
     if not validate_args(args):
         exit()
-    '''
+    
 
     # Kill any dawn processes left over from aborted CTS runs
     kill_gpu_processes()
@@ -159,8 +165,6 @@ def main(raw_args = None):
 
         logging.info('Start CTS killing')
 
-        test_queries = get_test_queries(args)
-
         if args.reliable_tests is not None:
 
             if args.cmd == 'dawn':
@@ -178,19 +182,20 @@ def main(raw_args = None):
                 vk_icd,
                 args.reliable_tests)
 
-            print(f'There are {len(reliable_tests)} reliable tests and the query to run is {test_queries}')
+            print(f'There are {len(reliable_tests)} reliable tests')
         
-        if args.killing_strategy == 'by_mutant':
-            kill_by_mutant(test_queries, reliable_tests, args)
+        if args.killing_strategy == 'by_mutant' or args.killing_strategy == 'least_covered_mutants':
+            kill_by_mutant(reliable_tests, args)
 
         elif args.killing_strategy == 'by_test':
-            kill_by_test(test_queries, reliable_tests, args)
+            kill_by_test(reliable_tests, args)
 
- 
-def kill_by_mutant(test_queries, reliable_tests, args):
+def kill_by_mutant(reliable_tests, args):
 
     print(f'Running mutant sample of {len(args.mutant_sample)} mutants')
     logging.info(f'Kill mutant by mutant: mutant sample of {len(args.mutant_sample)} mutants')
+
+    print(f'list of some mutants: {args.mutant_sample[:10]}')
 
     # Mutants for killing are given by a sample input list
     # We know that these mutants are covered by the CTS
@@ -200,11 +205,16 @@ def kill_by_mutant(test_queries, reliable_tests, args):
     killed_by_this_test : list(int) = []
     covered_but_not_killed_by_this_test : list(int) = []
 
+    if args.killing_strategy == 'by_mutant':
+        queries = [args.query]       
+    elif args.killing_strategy == 'least_covered_mutants':
+        mutant_to_test_mapping = pd.read_csv(args.mutant_to_test_mapping)
+
     for mutant in args.mutant_sample:
 
         mutant_path = Path(args.mutant_kill_path,f'killed_mutants/{str(mutant)}')
         surviving_mutant_path = Path(args.mutant_kill_path,f'surviving_mutants/{str(mutant)}')
-
+        
         # Check whether mutant has already been killed or marked as survived by another process
         if mutant_path.exists():
             print("Skipping mutant " + str(mutant) + " as it is noted as already killed.")
@@ -220,13 +230,17 @@ def kill_by_mutant(test_queries, reliable_tests, args):
         
         print("Trying mutant " + str(mutant))
         logging.info("Trying mutant " + str(mutant))
-       
+
+        if args.killing_strategy == 'least_covered_mutants':
+            queries = mutant_to_test_mapping.loc[mutant_to_test_mapping['mutant_id'] == int(mutant), 'queries'].iloc[0]
+            queries = queries.split(' ')
+
         mutation_target = args.cmd
 
         cts_start_time = time.time()
 
-        (mutant_result, failing_tests) = kill_mutant(mutant, mutation_target, reliable_tests, args)
-
+        (mutant_result, failing_tests) = kill_mutant(mutant, queries, mutation_target, reliable_tests, args)
+   
         cts_end_time = time.time()
 
         cts_run_time = cts_end_time - cts_start_time
@@ -594,7 +608,7 @@ def get_reliable_tests(query : str,
 
     return reliably_passing_tests
 
-def kill_mutant(mutant, target, reliable_tests, args):
+def kill_mutant(mutant, queries, target, reliable_tests, args):
 
     if target == 'dawn':
         vk_icd = str(args.vk_icd)
@@ -607,19 +621,35 @@ def kill_mutant(mutant, target, reliable_tests, args):
     env["VK_ICD_FILENAMES"] = vk_icd
     env["DREDD_ENABLED_MUTATION"] = str(mutant)
 
-    mutated_cmd = [f'{dawn}/tools/run',
-        'run-cts', 
-        '--verbose',
-        f'--bin={dawn}/out/Debug',
-        '--cts',
-        str(args.cts_repo),
-        f"'{args.query}'"]  
+    # Mark mutant as surviving until we kill it
+    # This includes mutants that are only covered by skipped tests
+    mutant_result = CTSKillStatus.SURVIVED
+    failing_tests = []
 
-    shell_cmd = ' '.join(mutated_cmd)  
+    for query in queries:
+        print(query)
 
-    (mutant_result, failing_tests) = kill_mutant_cmd(shell_cmd, env, reliable_tests)
+        if query not in reliable_tests:
+            print('Skipping: Test is not in reliable tests')
+            continue
 
-    return (mutant_result, failing_tests)
+        mutated_cmd = [f'{dawn}/tools/run',
+            'run-cts', 
+            '--verbose',
+            f'--bin={dawn}/out/Debug',
+            '--cts',
+            str(args.cts_repo),
+            f"'{query}'"]  
+
+        shell_cmd = ' '.join(mutated_cmd)  
+
+        (mutant_result, failing_tests) = kill_mutant_cmd(shell_cmd, env, reliable_tests)
+
+        # Return as soon as we find a killing test
+        if mutant_result != CTSKillStatus.SURVIVED and mutant_result != CTSKillStatus.TEST_TIMEOUT:
+            return (mutant_result, failing_tests)
+
+    return mutant_result, failing_tests
    
 def kill_mutant_cmd(shell_cmd, env, reliable_tests):
 
@@ -662,6 +692,20 @@ def kill_mutant_cmd(shell_cmd, env, reliable_tests):
     kill_gpu_processes()
 
     return (mutant_result, failing_tests)
+
+def get_covering_queries(mutant_file : Path, test_group_mapping : Path):
+
+    # Get test IDs
+    with open(mutant_file,'r') as f:
+        tests = f.readlines()
+
+    # Decode test IDs to get list of queries
+    with open(test_group_mapping,'r') as f:
+        test_groups = f.load()
+
+    queries = [query for id, query in test_groups.items()]
+
+    return queries
 
 def comma_list(arg):
     return arg.split(',')

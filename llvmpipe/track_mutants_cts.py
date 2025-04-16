@@ -22,7 +22,6 @@ def process_test_wise_tracking(tracking_dir : Path, output_dir : Path, query_map
     with open(query_map,'r') as f:
         test_to_id_map = json.load(f)
 
-
     id_to_test_map = {v : k for k,v in test_to_id_map.items()}
     
     n_files = len(os.listdir(tracking_dir))
@@ -38,19 +37,24 @@ def process_test_wise_tracking(tracking_dir : Path, output_dir : Path, query_map
 
                 query = id_to_test_map[file.stem]
 
+                # Transform query into runnable string
+                if query[-1] == ':' or query[-1] == ',':
+                    query = query + '*'
+
                 mutant_to_test_mapping[mutant].add(query)
 
     # Convert to df
     mutant_to_test_mapping = {mutant : ' '.join(queries) for mutant, queries in mutant_to_test_mapping.items()}
 
     mutant_df = pd.DataFrame.from_dict(mutant_to_test_mapping, orient = 'index', columns = ['queries'])
+    mutant_df.index.rename('mutant_id', inplace=True)
     print(mutant_df.head(10))
     mutant_df['n_tests'] = mutant_df['queries'].apply(lambda x: len(str(x).split(' ')))
     print(mutant_df.head(10))
     mutant_df = mutant_df.sort_values(by='n_tests')
     print(mutant_df.head(10))
 
-    mutant_df.to_csv(Path(output_dir,'mapping_mutant_to_query_list.csv'))
+    mutant_df.to_csv(Path(output_dir,'mapping_mutant_to_query_list.csv'), index_label='mutant_id')
 
 
     
