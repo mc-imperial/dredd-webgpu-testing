@@ -3,7 +3,7 @@
 BASE=/data/dev
 
 DAWN=$BASE/dawn
-OUTPUT=$BASE/dredd-webgpu-testing/llvmpipe/output/covered_by_cts
+OUTPUT=$BASE/dredd-webgpu-testing/llvmpipe/output/covered_by_cts/check_survivors
 CTS=$BASE/webgpu_cts
 
 MESA_MUTATED=$BASE/mesa_mutated
@@ -17,9 +17,8 @@ INFO_TRACKED=$MESA_TRACKED/mutation_info.json
 
 CTS_TRACKING=$BASE/dredd-webgpu-testing/llvmpipe/tracking
 WGSLSMITH_TRACKING=$BASE/dredd-webgpu-testing/llvmpipe/wgslsmith/tracking
-MUTANT_MAP=$OUTPUT/test_wise_tracking/mapping_mutant_to_query_list.csv
 
-TARGET_MUTANT_FILE=$BASE/dredd-webgpu-testing/llvmpipe/output/cts_least_covered_mutant_targets.txt
+TARGET_MUTANT_FILE=$BASE/dredd-webgpu-testing/llvmpipe/output/cts_mutant_targets_specific_mutants.txt
 
 cd $BASE/dredd-webgpu-testing
 
@@ -36,8 +35,7 @@ python llvmpipe \
     $DAWN \
     kill_with_cts \
     $CTS \
-    'least_covered_mutants' \
+    'mutant_list' \
     $TARGET_MUTANT_FILE \
-    10 \
-    --mutant_to_test_mapping $MUTANT_MAP
+    --mutant_ids 1984107,2098302,1983760,2098299,2098563 # we are spot checking some well-covered surviving mutants
 

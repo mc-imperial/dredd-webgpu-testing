@@ -51,15 +51,19 @@ def main():
             type=Path,
             help='Path to root of CTS')
     kill_with_cts.add_argument('target_mutants',
-            choices=['cts_intersect_wgslsmith'],
+            choices=['cts_intersect_wgslsmith',
+                    'least_covered_mutants',
+                    'mutant_list'],
             help='''Set of mutants to target. Options are:
-            \tcts_intersect_wgslsmith - mutants touched by the CTS and by a sample of WGSLsmith tests''')
+            \tcts_intersect_wgslsmith - mutants touched by the CTS and by a sample of WGSLsmith tests
+            \tmutant_list - list of specific mutants, which must also be passed as an argument''')
     kill_with_cts.add_argument('target_mutant_file',
             type=Path,
             help='Path in which a list of targetted mutants will be saved')
-    kill_with_cts.add_argument('target_mutant_sample',
+    kill_with_cts.add_argument('--target_mutant_sample',
             help='Number of mutants from the target set to try and kill',
-            type=int)
+            type=int,
+            default=None)
     kill_with_cts.add_argument('--query',
             help='CTS query',
             type=str,
@@ -68,14 +72,17 @@ def main():
             help='Filepath to store reliable CTS tests',
             type=Path)
     kill_with_cts.add_argument('--killing_strategy',
-            choices=['by_mutant','by_test','least_covered_mutants'],
+            choices=['by_mutant','by_test'],
             default='by_mutant',
             help='Approach to mutant killing')
     kill_with_cts.add_argument('--mutant_to_test_mapping',
             type=Path,
             default=None,
-            help='Tracking file that lists which tests cover which')
- 
+            help='Tracking file that lists which tests cover which'),
+    kill_with_cts.add_argument('--mutant_ids',
+            type=comma_list,
+            default=None # default if nothing is provided
+    ),
     kill_with_wgslsmith = subparsers.add_parser('kill_with_wgslsmith', 
         help='Kill mutants with the WGSLsmith')
 
@@ -210,23 +217,25 @@ def kill_mutants_with_cts(args):
     else:
         reliable_tests = args.reliable_tests
 
-    if args.killing_strategy == 'by_mutant':
+    if args.target_mutants == 'least_covered_mutants':
+        mutants_to_kill = get_least_covered_mutants(args.cts_tracking,
+            args.wgslsmith_tracking,
+            args.mutant_to_test_mapping,
+            args.target_mutant_file,
+            int(args.target_mutant_sample))
+    
+    elif args.target_mutants == 'mutant_list':
+        mutants_to_kill = args.mutant_ids
+
+    elif args.target_mutants == 'cts_intersect_wgslsmith':
         mutants_to_kill = get_mutants_to_kill(args.cts_tracking,
             args.wgslsmith_tracking,
             args.target_mutants,
             args.target_mutant_file,
             int(args.target_mutant_sample))
 
-    elif args.killing_strategy == 'least_covered_mutants':
-        mutants_to_kill = get_least_covered_mutants(args.cts_tracking,
-            args.wgslsmith_tracking,
-            args.mutant_to_test_mapping,
-            args.target_mutant_file,
-            int(args.target_mutant_sample))
-
-        print(mutants_to_kill)
-
-    print(f'There are {len(mutants_to_kill)} mutants to kill')
+    print(f'There are {len(mutants_to_kill)} mutants to kill:')
+    print(mutants_to_kill)
 
     cts_args=[str(args.info_file_mutated),
         str(args.info_file_tracked),
@@ -247,6 +256,9 @@ def kill_mutants_with_cts(args):
         ]
 
     run.cts.kill_mutants.main(cts_args)
+
+def comma_list(arg):
+    return arg.split(',')
 
 
 if __name__=="__main__":

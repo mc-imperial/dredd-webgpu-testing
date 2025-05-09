@@ -131,11 +131,9 @@ def main(raw_args = None):
 
 
     args = parser.parse_args(raw_args)
-
     
     if not validate_args(args):
-        exit()
-    
+        exit()  
 
     # Kill any dawn processes left over from aborted CTS runs
     kill_gpu_processes()
@@ -629,10 +627,11 @@ def kill_mutant(mutant, queries, target, reliable_tests, args):
     for query in queries:
         print(query)
 
+        '''
         if query not in reliable_tests:
-            print('Skipping: Test is not in reliable tests')
+            print(f'Skipping: Query {query} is not in reliable tests')
             continue
-
+        '''
         mutated_cmd = [f'{dawn}/tools/run',
             'run-cts', 
             '--verbose',

@@ -1,18 +1,17 @@
 #!/bin/sh
 
-MESA_INSTALL=/data/dev/mesa/build_sanitized/install
-#MESA_INSTALL=/data/dev/mesa_tracked/build/install
+MESA_INSTALL=/data/dev/mesa_mutated/build/install
 DAWN=/data/dev/dawn
-#export LD_LIBRARY_PATH=/usr/lib/llvm-18/lib/clang/18/lib/linux/libclang_rt.asan-x86_64.so
 export VK_ICD_FILENAMES=$MESA_INSTALL/share/vulkan/icd.d/lvp_icd.x86_64.json 
-export LD_PRELOAD=/usr/lib/llvm-18/lib/clang/18/lib/linux/libclang_rt.asan-x86_64.so
-
+#export DREDD_ENABLED_MUTATION=437417
 $DAWN/tools/run run-cts \
-    --no-cache \
     --verbose \
     --bin=$DAWN/out/Debug \
-    --cts=/data/dev/webgpu_cts \
-    'webgpu:shader,execution,flow_control,while:*'
+    --cts=/data/dev/webgpu_cts_fork \
+    'webgpu:shader,execution,expression,call,builtin,textureSampleGrad:sampled_3d_coords:stage="f";format="astc-8x5-unorm";dim="cube";filt="nearest";modeU="m";modeV="r";modeW="c";offset=false'
+    #'webgpu:shader,execution,expression,call,builtin,textureSample:sampled_1d_coords:format="r8unorm";filt="linear";modeU="c"'
+    #'webgpu:shader,execution,shadow:while:*'
+    #'webgpu:shader,execution,flow_control,while:*'
     #'webgpu:shader,execution,flow_control,loop:*'    
     #'webgpu:api,operation,command_buffer,copyTextureToTexture:*'
     #'webgpu:shader,mutate:*'
