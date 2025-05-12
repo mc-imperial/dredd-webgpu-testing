@@ -6,7 +6,7 @@ import sys
 import json
 import pandas as pd
 
-from mutate_mesa import clean, get_files_for_mutation, mutate
+from mutate.mutate_mesa import clean, get_files_for_mutation, mutate
 from run.cts.utils import run_cts
 from run.wgslsmith.utils import run_wgslsmith_program
 
@@ -14,6 +14,9 @@ class QueryList:
     def __init__(self, queries):
         self.queries : set[str] = queries
         self.length : int = len(self.queries)
+
+def map_mutants():
+    print('Not implemented yet!')
 
 def process_test_wise_tracking(tracking_dir : Path, output_dir : Path, query_map : Path):
 

@@ -4,7 +4,7 @@ import os
 from pathlib import Path 
 from collections import Counter
 
-from utils import FileInfo
+from common.utils import FileInfo
 
 def mutate(dredd : Path, 
         mutation_files : list[str],
@@ -158,7 +158,7 @@ def main():
             for file in x.mutation_files:
                 f.write(file + '\n')
 
-        mutate(dredd,
+        mutate(dredd, 
             x.mutation_files,
             x.mutant_info_file,
             x.compile_commands,
