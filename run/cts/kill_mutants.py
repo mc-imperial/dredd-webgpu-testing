@@ -18,6 +18,7 @@ from common.run_process_with_timeout import ProcessResult, run_process_with_time
 from common.run_test import run_webgpu_cts_test_with_mutants, KillStatus, CTSKillStatus
 from run.cts.utils import get_queries_from_cts, kill_gpu_processes, get_tests, get_passes, get_failures, get_unrun_tests, get_single_tests_from_stdout, get_completed_queries
 import run.cts.flaky_test_finder.find_non_flaky_cts_tests as find_non_flaky_cts_tests
+import run.wgslsmith.kill_mutants
 
 from pathlib import Path
 from typing import List, Set
@@ -40,19 +41,21 @@ def main(raw_args = None):
     parser.add_argument("mutant_kill_path",
                         help="Directory in which to record mutant kill info and mutant killing tests.",
                         type=Path)
-    parser.add_argument("killing_strategy",
+    parser.add_argument("--killing_strategy",
                         help="Approach to mutant killing",
-                        choices=['by_mutant','by_test','least_covered_mutants'])
+                        choices=['by_mutant','by_test','least_covered_mutants'],
+                        default='least_covered_mutants')
     parser.add_argument("--query_source",
                         choices = ['file','cts_repo','arg'],
                         help="Source for CTS queries. Can be 'file' to get from file, or 'cts_repo' to  \
                             retrieve from repo, or 'arg' to directly use the query passed in args.query \
-                            without finding more granular sub-queries")
+                            without finding more granular sub-queries",
+                        default='arg')
     parser.add_argument("--query_file",
                         default=None,
                         help="CTS query file")
     parser.add_argument("--cts_repo",
-                        default=None,
+                        default=Path('/data/dev/webgpu_cts'), #TODO: link to submodule
                         help="CTS repo filepath")
     parser.add_argument("--query",
                         default='webgpu:*',
@@ -100,6 +103,10 @@ def main(raw_args = None):
     parser.add_argument("--mutant_to_test_mapping",
                         type=Path,
                         help="File path for mutant to test mapping csv")
+    parser.add_argument("--wgslsmith",
+                        type=Path,
+                        help="File path to WGSLsmith",
+                        default=Path('/data/dev/wgslsmith')) # TODO: change to submodule
 
     subparsers = parser.add_subparsers(dest="cmd")
 
@@ -150,10 +157,11 @@ def main(raw_args = None):
         Path(args.mutant_kill_path,"surviving_mutants").mkdir(exist_ok=True)
         Path(args.mutant_kill_path,"tracking").mkdir(exist_ok=True)
         Path(args.mutant_kill_path,"tests").mkdir(exist_ok=True)
+        Path(args.mutant_kill_path,"logs").mkdir(exist_ok=True)
 
         # Set up log in append mode so we can continue runs that were cancelled
         logger = logging.getLogger(__name__)
-        log_name = Path(args.mutant_kill_path, f'info_{os.getpid()}.log')
+        log_name = Path(args.mutant_kill_path, 'logs', f'info_{os.getpid()}.log')
         logging.basicConfig(filename=log_name, 
                 format='%(asctime)s - %(message)s',
                 datefmt=('%Y-%m-%d %H:%M:%S'),
@@ -181,6 +189,9 @@ def main(raw_args = None):
                 args.reliable_tests)
 
             print(f'There are {len(reliable_tests)} reliable tests')
+
+        else:
+            reliable_tests = None
         
         if args.killing_strategy == 'by_mutant' or args.killing_strategy == 'least_covered_mutants':
             kill_by_mutant(reliable_tests, args)
@@ -257,6 +268,10 @@ def kill_by_mutant(reliable_tests, args):
                     outfile.write(f'Survived!')
             except FileExistsError:
                 print(f"Mutant {mutant} was independently discovered to have survived.")
+
+            # If mutant survives, try to kill with WGSLsmith
+            kill_with_wgslsmith(mutant, args)
+
             continue
 
         print(f"Kill! Mutants killed so far: {len(killed_mutants)}")
@@ -626,12 +641,6 @@ def kill_mutant(mutant, queries, target, reliable_tests, args):
 
     for query in queries:
         print(query)
-
-        '''
-        if query not in reliable_tests:
-            print(f'Skipping: Query {query} is not in reliable tests')
-            continue
-        '''
         mutated_cmd = [f'{dawn}/tools/run',
             'run-cts', 
             '--verbose',
@@ -650,7 +659,7 @@ def kill_mutant(mutant, queries, target, reliable_tests, args):
 
     return mutant_result, failing_tests
    
-def kill_mutant_cmd(shell_cmd, env, reliable_tests):
+def kill_mutant_cmd(shell_cmd, env, reliable_tests, n_tries = 3):
 
     timeout = 60*60 # 1 hour
 
@@ -676,10 +685,18 @@ def kill_mutant_cmd(shell_cmd, env, reliable_tests):
         print(line)
         if f' - fail' in line:
             test = line[:line.index(' ')] 
-            if test in reliable_tests:
+            
+            print('Repeating test to check reliability of fail result...')
+            checks = []
+            for i in range(n_tries):
+                print(f'Repeat {i}...')
+                checks[i] = check_test(test, env)
+
+            if all(checks):
                 os.killpg(os.getpgid(process.pid), signal.SIGTERM)
                 mutant_result = CTSKillStatus.KILL_TEST_FAIL
                 failing_tests = test
+        
         if time.time() > end_time:
             os.killpg(os.getpgid(process.pid), signal.SIGTERM)
             print('CTS timeout!')
@@ -687,6 +704,11 @@ def kill_mutant_cmd(shell_cmd, env, reliable_tests):
             exit(1)
 
     process.stdout.close()
+    process.wait()
+
+    if process.returncode != 0:
+        print(f'Problem! Return code is {process.returncode}')
+        exit(1)
     
     kill_gpu_processes()
 
@@ -705,6 +727,42 @@ def get_covering_queries(mutant_file : Path, test_group_mapping : Path):
     queries = [query for id, query in test_groups.items()]
 
     return queries
+
+def check_test(test, env, dawn, cts) -> bool:
+    '''
+        Returns True if the test is confirmed to fail
+        Returns False otherwise
+    '''
+    
+    mutated_cmd = [f'{dawn}/tools/run',
+    'run-cts', 
+    '--verbose',
+    f'--bin={dawn}/out/Debug',
+    '--cts',
+    str(cts),
+    f"'{test}'"]  
+
+    result = subprocess.run(mutated_cmd, env=env)
+
+    if '- fail' in result.stdout:
+        return True
+    else:
+        return False
+
+def kill_with_wgslsmith(mutant, args):
+
+    wgslsmith_args = [str(args.mutation_info_file),
+        str(args.mutation_info_file_for_mutant_coverage_tracking),
+        f'{str(args.wgslsmith)}',
+        str(args.mutant_kill_path),
+        '--mutants_to_kill', str(mutant),
+        '--total_test_time', str(10*60),
+        'mesa',
+        f'{str(args.dawn)}/out/Debug/dawn.node',
+        str(args.mutated_vk_icd),
+        str(args.tracked_vk_icd)]
+
+    run.wgslsmith.kill_mutants.main(wgslsmith_args)
 
 def comma_list(arg):
     return arg.split(',')
