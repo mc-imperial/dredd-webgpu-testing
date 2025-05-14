@@ -15,8 +15,26 @@ class QueryList:
         self.queries : set[str] = queries
         self.length : int = len(self.queries)
 
-def map_mutants():
-    print('Not implemented yet!')
+def map_mutants(cts : Path,
+    dawn : Path,
+    tracking_dir : Path,
+    output_dir : Path,
+    vk_icd : Path = None,
+    query : str = 'webgpu:*'):
+    
+    # Run CTS with tracking
+    tracking_file = Path(tracking_dir,'tracking.txt')
+    query_map_file = Path(tracking_dir,'query_map.json')
+    
+    run_cts(cts, 
+        dawn, 
+        tracking_file, 
+        query_map_file=query_map_file, 
+        vk_icd=vk_icd,
+        query=query)
+
+    # Process tracking information to produce mutant mapping files
+    process_test_wise_tracking(tracking_dir, output_dir, query_map)
 
 def process_test_wise_tracking(tracking_dir : Path, output_dir : Path, query_map : Path):
 
@@ -59,9 +77,63 @@ def process_test_wise_tracking(tracking_dir : Path, output_dir : Path, query_map
 
     mutant_df.to_csv(Path(output_dir,'mapping_mutant_to_query_list.csv'), index_label='mutant_id')
 
+def get_least_covered_mutants(mutant_to_test_mapping : Path,
+    covered_mutant_ids : Path,
+    sample : int = None,
+    cts_tracking : Path = None, 
+    wgslsmith_tracking : Path = None) -> list[str]:
+
+    if mutant_to_test_mapping.is_file():
+        mutant_to_test_mapping = pd.read_csv(mutant_to_test_mapping)
+
+    # Get mutants covered by wgslsmith also
+    if covered_mutant_ids.is_file():
+        with open(covered_mutant_ids, 'r') as f:
+            all_mutants_to_kill = [x.rstrip() for x in f.readlines()]
+    else:
+        all_mutants_to_kill = get_mutants_to_kill(cts_tracking, wgslsmith_tracking, covered_mutant_ids)
+
+    # Filter the mutants for those also covered by wgslsmith
+    mask = mutant_to_test_mapping['mutant_id'].isin([int(x) for x in all_mutants_to_kill])
+    mutant_to_test_mapping = mutant_to_test_mapping[mask] 
+
+    if sample == None:
+        sample = len(mutant_to_test_mapping)
+
+    mutant_to_test_mapping.sort_values('n_tests',ascending=True,inplace=True)
+
+    mutant_sample = mutant_to_test_mapping.head(sample)
+    
+    mutants = list(mutant_sample['mutant_id'])
+    
+    return mutants
+
+def get_mutants_to_kill(cts_tracking, wgslsmith_tracking, mutant_file, n_sample=None) -> list[str]:
+
+    coverage = process_tracking(cts_tracking, wgslsmith_tracking)
+
+    if target_mutants == 'cts_intersect_wgslsmith':
+        with open(mutant_file,'w') as f:
+            f.writelines(coverage['covered_by_both'])
+
+        mutants = coverage['covered_by_both']
+
+    elif target_mutants == 'wgslsmith_only':
+        with open(mutant_file,'w') as f:
+            f.writelines(coverage['covered_by_wgslsmith_only'])
+
+        mutants = coverage['covered_by_wgslsmith_only']
+
+    # Sample mutants if required
+    if n_sample is None:
+        return mutants
+
+    mutant_sample = sample(mutants, n_sample)
+
+    return mutant_sample
 
     
-def track(mesa, dredd, mutation_dir, info_file, compile_commands):
+def track_mesa(mesa, dredd, mutation_dir, info_file, compile_commands):
 
     clean(mesa)
 
@@ -79,7 +151,7 @@ def track(mesa, dredd, mutation_dir, info_file, compile_commands):
     build(mesa)
     install(mesa)
 
-def track(track_cts : bool = True, track_wgslsmith : bool = True):
+def track(track_cts : bool = True, track_wgslsmith : bool = True, n : int = 1):
 
     base = Path('/data/dev')
     dredd = Path(base,'dredd/third_party/clang+llvm/bin/dredd')
@@ -92,10 +164,8 @@ def track(track_cts : bool = True, track_wgslsmith : bool = True):
     dawn = Path('/data/dev/dawn')
     mesa_vk_icd = Path(mesa, 'build/install/share/vulkan/icd.d/lvp_icd.x86_64.json')
 
-    #track(mesa, dredd, mutation_dir, info_file, compile_commands)
-
     if track_cts:
-        for i in range(10):
+        for i in range(n):
             tracking_file = Path(f'tracking/tracking_file_run_{i}.txt').resolve()
             run_cts(cts, dawn, mesa_vk_icd, output_name = f'tracking/tracking_run_{i}', tracking_file = tracking_file)
 
