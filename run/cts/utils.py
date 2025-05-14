@@ -13,6 +13,34 @@ class TestStatus(Enum):
     SKIP = 3
 
 
+def run_cts(cts,
+        dawn,
+        dredd_covered_mutants_path : Path,
+        query : str = 'webgpu:*',
+        vk_icd : str = ''):
+   
+    # Run the test with mutant tracking enabled
+    print("Running CTS with mutant tracking compiler...")
+    
+    tracking_environment = os.environ.copy()
+    
+    # Set env vars depending on whether we are doing per-test coverage tracking or not
+    tracking_environment["DREDD_MUTANT_TRACKING_FILE"] = str(dredd_covered_mutants_path)
+
+    tracking_environment["VK_ICD_FILENAMES"] = f'{vk_icd}'
+
+    tracking_compile_cmd = [f'{dawn_coverage}/tools/run',
+            'run-cts', 
+            '--verbose',
+            f'--bin={dawn_coverage}/out/Debug',
+            f'--cts={cts}',
+            f"{query}"] 
+
+    # Get list of covered mutants from tracking file
+    result = subprocess.run(tracking_compile_cmd, env=tracking_environment)
+    
+    return result
+
 def get_queries_from_cts(query : str,
             cts_base : Path,
             unittests_only : bool,
@@ -108,39 +136,6 @@ def get_mutant_coverage(mutation_info_path,
 
     return (covered, uncovered)
 
-def run_cts_no_output(mutation_info_path,
-        dredd_covered_mutants_path : Path,
-        get_per_test_cts_mutant_coverage : bool,
-        dawn_coverage : Path,
-        cts_repo : Path,
-        query : str,
-        vk_icd : str = ''):
-   
-    # Run the test with mutant tracking enabled
-    print("Running CTS with mutant tracking compiler...")
-    
-    tracking_environment = os.environ.copy()
-    
-    # Set env vars depending on whether we are doing per-test coverage tracking or not
-    if get_per_test_cts_mutant_coverage:
-        tracking_environment["DREDD_MUTANT_TRACKING_PER_TEST"] = str(dredd_covered_mutants_path.parent)
-    else:
-        tracking_environment["DREDD_MUTANT_TRACKING_FILE"] = str(dredd_covered_mutants_path)
-
-    print(str(dredd_covered_mutants_path.parent) + '/')
-
-    tracking_environment["VK_ICD_FILENAMES"] = f'{vk_icd}'
-    tracking_compile_cmd = [f'{dawn_coverage}/tools/run',
-            'run-cts', 
-            '--verbose',
-            f'--bin={dawn_coverage}/out/Debug',
-            f'--cts={cts_repo}',
-            query] 
-
-    # Get list of covered mutants from tracking file
-    mutant_tracking_result = subprocess.run(tracking_compile_cmd, env=tracking_environment)
-    
-    return mutant_tracking_result
     
 def get_all_mutants(mutation_info_file : Path) -> list[int]:
     
@@ -152,7 +147,11 @@ def get_all_mutants(mutation_info_file : Path) -> list[int]:
     return all_mutants
 
 
-def run_cts(cts : Path, dawn : Path, mesa_vk_icd : Path, output_name : str = "test_output", tracking_file : str = None) -> list[str]:
+def run_cts_with_output(cts : Path, 
+    dawn : Path, 
+    mesa_vk_icd : Path, 
+    output_name : str = "test_output", 
+    tracking_file : str = None) -> list[str]:
 
     test_output = []
 
