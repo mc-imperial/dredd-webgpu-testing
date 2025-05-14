@@ -87,6 +87,9 @@ def main(raw_args=None):
     parser.add_argument("--js_wrapper",
                         default=None,
                         type=Path)
+    parser.add_argument('--killing_time',
+                        type=int,
+                        help="Killing time budget in minutes")
 
     subparsers = parser.add_subparsers(dest="cmd")
 
@@ -117,7 +120,6 @@ def main(raw_args=None):
                         type=Path)
 
     args = parser.parse_args(raw_args)
-
     
     '''
     mutant = '438114'
