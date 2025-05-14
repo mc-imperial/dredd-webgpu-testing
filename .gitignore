@@ -13,6 +13,7 @@ llvmpipe/wgslsmith
 reduce/mutant_*
 reduce/backup*
 reduce/reduce_pro*
+data/*
 
 # PyCharm
 .idea
