@@ -50,7 +50,7 @@ def main():
     for x in [mutated, tracked]:
 
         print('Cleaning {x}')
-        clean(x.src)
+        clean(x.src, args.dredd)
 
         x.mutation_files = get_files_for_mutation(x.compile_commands, 
                                 args.mutation_dir, 
