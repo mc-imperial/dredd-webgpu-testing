@@ -46,11 +46,9 @@ def main():
         track_only=True)
 
     for x in [mutated, tracked]:
-        
-        print(f'Restoring {x.src}')
-        restore(x.src)
 
-        exit()
+        print('Cleaning {x}')
+        clean(x.src)
 
         x.mutation_files = get_files_for_mutation(x.compile_commands, 
                                 args.mutation_dir, 
@@ -191,8 +189,6 @@ def restore(target : Path):
         'restore',
         'src/']
     
-    result = subprocess.run(restore_cmd, cwd = target)
-    print(f'restore result returncode: {result.returncode}')
     if result.returncode != 0:
         raise RuntimeError(f'Problem restoring {target}')
 
