@@ -189,6 +189,8 @@ def restore(target : Path):
         'restore',
         'src/']
     
+    result = subprocess.run(restore_cmd, cwd = target)
+
     if result.returncode != 0:
         raise RuntimeError(f'Problem restoring {target}')
 
