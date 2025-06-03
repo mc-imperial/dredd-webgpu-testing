@@ -162,25 +162,35 @@ def setup(target: Path, dredd: Path):
     if config_result.returncode != 0:
         raise RuntimeError(f'Problem with initial configuration of {target}')
 
-def build(target : Path, recording=False):
+def build(target : Path, dredd : Path, recording=False):
+
+    env = os.environ.copy()
+
+    env['CC']= str(dredd) + '/third_party/clang+llvm/bin/clang'
+    env['CXX']= str(dredd) + '/third_party/clang+llvm/bin/clang++'
 
     build_cmd = ['ninja',
         '-C',
         'build/']
 
-    result = subprocess.run(build_cmd, cwd = target,  capture_output=recording, text=True)
+    result = subprocess.run(build_cmd, cwd = target, env=env)
 
     if result.returncode != 0:
         raise RuntimeError(f'Problem building {target}')
 
-def install(target : Path, recording=False):
+def install(target : Path, dredd : Path, recording=False):
+
+    env = os.environ.copy()
+
+    env['CC']= str(dredd) + '/third_party/clang+llvm/bin/clang'
+    env['CXX']= str(dredd) + '/third_party/clang+llvm/bin/clang++'
 
     install_cmd = ['ninja',
         '-C',
         'build/',
         'install']
 
-    result = subprocess.run(install_cmd, cwd = target,  capture_output=recording, text=True)
+    result = subprocess.run(install_cmd, cwd = target, env=env)
 
     if result.returncode != 0:
         raise RuntimeError(f'Problem installing {target}')
@@ -196,11 +206,11 @@ def restore(target : Path):
     if result.returncode != 0:
         raise RuntimeError(f'Problem restoring {target}')
 
-def clean(target : Path):
+def clean(target : Path, dredd):
     restore(target)
-    setup(target)
-    build(target)
-    install(target)
+    setup(target, dredd)
+    build(target, dredd)
+    install(target, dredd)
     
 def get_files_for_mutation(compile_commands : Path, 
             mutation_target : Path,
