@@ -2,7 +2,7 @@
 
 MESA=$1
 
-source /data/dev/dredd-webgpu/testing/llvmpipe/mesavenv/bin/activate
+source /data/dev/dredd-webgpu-testing/llvmpipe/mesavenv/bin/activate
 
 export CC=/data/dev/dredd/third_party/clang+llvm/bin/clang
 export CXX=/data/dev/dredd/third_party/clang+llvm/bin/clang++

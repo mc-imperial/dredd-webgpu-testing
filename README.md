@@ -64,7 +64,7 @@ Run the CTS using ${DAWN_MUTANT_COVERAGE} to determine which mutants are covered
 
 ## Kill mutants
 
-The aim is to use WGLSsmith to kill mutants that are not killed by the WebGPU CTS. There are several mutant-killing workflows that can be used.
+The aim is to use WGLSsmith to kill mutants that are not killed by the WebGPU CTS. There are several mutant-killing workflows that can be used. 
 - Workflow 1: Use WGSLsmith to kill mutants that are uncovered by the CTS. Mutants that are not covered by the CTS cannot be killed by the CTS. Run WGSLsmith on the set of uncovered mutants.
 - Workflow 2: Use WGLSsmith to kill covered mutants that survive the CTS. First run the CTS on the set of covered mutants to determine which ones are killed by the CTS. The remaining mutants are said to have survived. Run WGSLsmith on the surviving mutants. This option takes longer because it is necessary to first run the WebGPU CTS exhaustively on the covered mutants.
 
