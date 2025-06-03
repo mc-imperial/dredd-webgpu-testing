@@ -5,7 +5,7 @@
 # seemingly random set of tests each time.
 # This script investigates the issue by repeatedly running the
 # CTS and recording and analysing the raw output.
-
+ 
 import subprocess
 import os
 import time
@@ -185,7 +185,6 @@ def find_flaky_tests(results : pd.DataFrame) -> pd.DataFrame:
     print(flaky_tests)
 
     return flaky_tests
-
 
 def analyse(prefix : str, 
     n_runs : int = 10, 
