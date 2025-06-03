@@ -133,8 +133,7 @@ def mutants_exist(src : Path) -> bool :
 
 def setup(target: Path):
 
-    source /data/dev/dredd-webgpu-testing/llvmpipe/mesavenv/bin/activate
-
+    print('Initial build...')
     env = os.environ.copy()
 
     env['CC']='/data/dev/dredd/third_party/clang+llvm/bin/clang'
