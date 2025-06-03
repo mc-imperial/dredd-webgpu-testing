@@ -120,6 +120,9 @@ def main(raw_args=None):
                         type=Path)
 
     args = parser.parse_args(raw_args)
+
+    print('Kill with WGSLsmith!')
+    print(f'There are {len(args.mutants_to_kill)} mutants to kill')
     
     '''
     mutant = '438114'
@@ -220,6 +223,7 @@ def main(raw_args=None):
             # Generate a WGSLsmith program
             wgslsmith_seed = random.randint(0, 2 ** 32 - 1)
             wgslsmith_test_name: str = "wgslsmith_" + str(wgslsmith_seed)
+            test_output_directory: Path = Path(args.mutant_kill_path, f'tests/{wgslsmith_test_name}')
 
             print("Generating...")
             result = gen_wgslsmith_program(wgslsmith_generated_program, wgslsmith_seed)
@@ -386,8 +390,7 @@ def main(raw_args=None):
                     print(f"Mutant {mutant} was independently discovered to be killed.")
                     continue
                 
-                # Save test after the first kill so that it is saved even if the run is interrupted
-                test_output_directory: Path = Path(args.mutant_kill_path, f'tests/{wgslsmith_test_name}')
+                # Save out test after first kill
                 try:
                     test_output_directory.mkdir()
                 except FileExistsError:
@@ -395,7 +398,7 @@ def main(raw_args=None):
                     with open(test_output_directory / "kill_log.txt", "a") as f:
                         f.write(f'{mutant}\n')
                     continue
-                
+                    
                 shutil.copy(src=wgslsmith_generated_program, dst=test_output_directory / "prog.wgsl")
                 shutil.copy(src=wgslsmith_js_program, dst=test_output_directory / "prog.js")
                 with open(test_output_directory / "kill_log.txt", "w") as f:
@@ -424,12 +427,14 @@ def main(raw_args=None):
             
             print('Saving kill summary...')
 
-            with open(test_output_directory / "kill_summary.json", "w") as outfile:
-                json.dump({"terminated_early": terminated_early,
-                           "covered_mutants": covered_by_this_test,
-                           "killed_mutants": killed_by_this_test,
-                           "skipped_mutants": already_killed_by_other_tests,
-                           "survived_mutants": covered_but_not_killed_by_this_test}, outfile)
+            # Save summary if we killed at least one mutant
+            if test_output_directory.is_dir():
+                with open(test_output_directory / "kill_summary.json", "w") as outfile:
+                    json.dump({"terminated_early": terminated_early,
+                            "covered_mutants": covered_by_this_test,
+                            "killed_mutants": killed_by_this_test,
+                            "skipped_mutants": already_killed_by_other_tests,
+                            "survived_mutants": covered_but_not_killed_by_this_test}, outfile)
 
 
 def run_wgslsmith_test(args, 
