@@ -10,3 +10,6 @@
 [submodule "external/wgslsmith"]
 	path = external/wgslsmith
 	url = https://github.com/ambergorzynski/wgslsmith.git
+[submodule "external/dredd"]
+	path = external/dredd
+	url = https://github.com/mc-imperial/dredd.git
