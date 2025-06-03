@@ -10,12 +10,12 @@ Prerequisites:
 
 Note you must clone recursively in order to get the submodules.
 ```
-git clone --recursive https://github.com/mc-imperial/dredd-webgpu-testing.git && cd dredd-webgpu-testing
+git clone --recursive --depth 1 https://github.com/mc-imperial/dredd-webgpu-testing.git && cd dredd-webgpu-testing
 ```
 
 Next, create a Python virtual environment and install the dependencies, which are listed in `pyproject.toml`.
 ```
-pip -m venv venv
+python -m venv venv
 source venv/bin/activate
 pip install . 
 ```
@@ -23,9 +23,11 @@ pip install .
 # Build Dredd
 Get Clang and LLVM:
 ```
+sudo apt install -y libzstd-dev
 cd external/dredd/third_party
 curl -Lo clang+llvm.tar.xz https://github.com/llvm/llvm-project/releases/download/llvmorg-17.0.6/clang+llvm-17.0.6-x86_64-linux-gnu-ubuntu-22.04.tar.xz
 tar xf clang+llvm.tar.xz
+rm -rf clang+llvm
 mv clang+llvm-17.0.6-x86_64-linux-gnu-ubuntu-22.04 clang+llvm
 rm clang+llvm.tar.xz
 cd ..
@@ -37,7 +39,11 @@ cmake -G Ninja .. -DCMAKE_BUILD_TYPE=Release
 cmake --build . --config Release
 cp src/dredd/dredd ../third_party/clang+llvm/bin
 ```
+Check it worked:
 
+```
+dredd/third_party/clang+llvm/bin/dredd --help
+```
 # Mutate the subject
 
 The mutation subject can be Dawn or Mesa. 
