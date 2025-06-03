@@ -1,6 +1,7 @@
 import json
 import subprocess
 import os
+import argparse
 from pathlib import Path 
 from collections import Counter
 
@@ -58,6 +59,29 @@ def mutants_exist(src : Path) -> bool :
 
     return False if (int(dredd_count.stdout)==0) else True
 
+def setup(target: Path):
+
+    source /data/dev/dredd-webgpu-testing/llvmpipe/mesavenv/bin/activate
+
+    env = os.environ.copy()
+
+    env['CC']='/data/dev/dredd/third_party/clang+llvm/bin/clang'
+    env['CXX']='/data/dev/dredd/third_party/clang+llvm/bin/clang++'
+
+    setup_cmd = ['meson', 'setup', 'build/']
+    
+    result = subprocess.run(setup_cmd, cwd = target, env=env)
+
+    configure_cmd = ['meson', 'setup', '--reconfigure',
+        f'--prefix="{target}/build/install"',
+        '-Dgallium-drivers=llvmpipe',
+        '-Dvulkan-drivers=swrast',
+        '-Dplatforms=x11',
+        '-Dincludedir=include',
+        'build/']
+
+    result = subprocess.run(configure_cmd, cwd = target, env=env)
+
 def build(target : Path, recording=False):
 
     build_cmd = ['ninja',
@@ -89,6 +113,7 @@ def restore(target : Path):
 
 def clean(target : Path):
     restore(target)
+    setup(target)
     build(target)
     install(target)
     
@@ -129,6 +154,12 @@ def run_mutation():
     track(mesa_tracked, tracked_files)
 
 def main():
+
+    args = argparse.ArgumentParser()
+
+    args.add_argument('mesa_mutated')
+    args.add_argument('mesa_tracked')
+
     
     base = Path('/data/dev')
     dredd = Path(base,'dredd/third_party/clang+llvm/bin/dredd')
@@ -136,17 +167,17 @@ def main():
     mutation_dir = Path('src')
     dredd_issues = Path(base, 'dredd-webgpu-testing','llvmpipe','dredd_issues')
 
-    mutated : FileInfo = FileInfo(Path(base, 'mesa_mutated'),
-        Path(base,'mesa_mutated','build','compile_commands.json'),
-        Path(base,'mesa_mutated','mutation_info.json'),
+    mutated : FileInfo = FileInfo(Path(args.mesa_mutated),
+        Path(args.mesa_mutated,'build','compile_commands.json'),
+        Path(args.mesa_mutated,'mutation_info.json'),
         track_only=False)
 
-    tracked : FileInfo = FileInfo(Path(base, 'mesa_tracked'),
-        Path(base,'mesa_tracked','build','compile_commands.json'),
-        Path(base,'mesa_tracked','mutation_info.json'),
+    tracked : FileInfo = FileInfo(Path(args.mesa_tracked),
+        Path(args.mesa_tracked,'build','compile_commands.json'),
+        Path(args.mesa_tracked,'mutation_info.json'),
         track_only=True)
 
-    for x in [tracked]: # [mutated, tracked]
+    for x in [mutated, tracked]:
         
         restore(x.src)
 

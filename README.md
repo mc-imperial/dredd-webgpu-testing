@@ -1,45 +1,46 @@
 # dredd-webgpu-testing
 
-Scripts to apply the Dredd mutation testing framework to the WebGPU CTS.
+Generate new tests for the WebGPU CTS using mutation testing and fuzzing.
 
 # Build 
 
-## Get and build Dredd
+Prerequisites:
+- Python 3.10
+- pip
 
-https://github.com/mc-imperial/dredd
-
-## Clone the WebGPU CTS
-
-https://github.com/gpuweb/cts
-
-## Get and build Dawn
-
-Build twice with compilation database
-- Mutated
-- Mutant coverage
-
-https://dawn.googlesource.com/
-
-## Get WGSLsmith
-Build twice linked to each Dawn version
-- Mutated
-- Mutant coverage
-
-https://github.com/ambergorzynski/wgslsmith/tree/abstract_numerics
-
-## Install the testing scripts
+Note you must clone recursively in order to get the submodules.
 
 ```
-cd ${DREDD_EXPERIMENTS_ROOT}
-git clone https://github.com/mc-imperial/dredd-webgpu-testing.git
-cd dredd-webgpu-testing
+git clone --recursive https://github.com/mc-imperial/dredd-webgpu-testing.git && cd dredd-webgpu-testing
 pip -m venv venv
 source venv/bin/activate
 pip install -e .
 ```
 
-# Run 
+# Mutate the subject
 
+The mutation subject can be Dawn or Mesa. 
+
+First, get *two* checkouts of the subject version that you want to mutate. For Mesa:
+```
+git clone https://gitlab.freedesktop.org/mesa/mesa.git mesa_mutated
+git clone https://gitlab.freedesktop.org/mesa/mesa.git mesa_tracked
+```
+
+Next, use Dredd to:
+- Inject mutants into the mutation version of the subject
+- Inject mutant coverage instrumentation into the tracking version of the subject
+
+``` 
+cd dredd-webgpu-testing
+source venv/bin/activate
+python mutate_mesa ${MESA_MUTATED} ${MESA_TRACKED}
+```
+
+
+
+# Previous - for removal
+Re-build each version of Dawn. You may encounter an error if the -Werror flag is set in the Dawn builds, which treats all warnings as errors. This is because the mutated code will cause many warnings. To fix this, find all locations in the Cmake files where the -Werror flag is set and remove it. Usually this includes `${ROOT}/CMakeLists.txt` and `${ROOT}/src/tint/CMakeLists.txt`
 TL;DR 
 
 Running options can be configured within `run/__main__.py`
