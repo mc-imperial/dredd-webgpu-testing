@@ -1,9 +1,6 @@
 [submodule "external/webgpu_cts"]
 	path = external/webgpu_cts
 	url = https://github.com/ambergorzynski/webgpu_cts.git
-[submodule "external/wgslsmith"]
-	path = external/wgslsmith
-	url = https://github.com/ambergorzynski/wgslsmith.git
 [submodule "external/dredd"]
 	path = external/dredd
 	url = https://github.com/mc-imperial/dredd.git
