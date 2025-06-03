@@ -19,4 +19,18 @@ authors = [
 description = "Runner scripts for research involving the Dredd mutation testing tool applied to WebGPU"
 readme = "README.md"
 requires-python = ">=3.10"
+dependencies = [
+  "numpy==2.2.2",
+  "pandas==2.2.3",
+  "path==17.0.0",
+  "python-dateutil==2.9.0.post0",
+  "pytz==2025.1",
+  "six==1.17.0",
+  "tzdata==2025.1",
+  "Mako==1.3.8",
+  "MarkupSafe==3.0.2",
+  "meson==1.7.0",
+  "ply==3.11",
+  "PyYAML==6.0.2",
+]
 

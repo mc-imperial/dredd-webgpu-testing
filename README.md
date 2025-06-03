@@ -9,12 +9,15 @@ Prerequisites:
 - pip
 
 Note you must clone recursively in order to get the submodules.
-
 ```
 git clone --recursive https://github.com/mc-imperial/dredd-webgpu-testing.git && cd dredd-webgpu-testing
+```
+
+Next, create a Python virtual environment and install the dependencies, which are listed in `pyproject.toml`.
+```
 pip -m venv venv
 source venv/bin/activate
-pip install -e .
+pip install . 
 ```
 
 # Mutate the subject
@@ -34,10 +37,9 @@ Next, use Dredd to:
 ``` 
 cd dredd-webgpu-testing
 source venv/bin/activate
-python mutate_mesa ${MESA_MUTATED} ${MESA_TRACKED}
+cd src
+python -m mutate --help
 ```
-
-
 
 # Previous - for removal
 Re-build each version of Dawn. You may encounter an error if the -Werror flag is set in the Dawn builds, which treats all warnings as errors. This is because the mutated code will cause many warnings. To fix this, find all locations in the Cmake files where the -Werror flag is set and remove it. Usually this includes `${ROOT}/CMakeLists.txt` and `${ROOT}/src/tint/CMakeLists.txt`

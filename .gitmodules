@@ -1,9 +1,3 @@
-[submodule "external/cts"]
-	path = external/cts
-	url = https://github.com/gpuweb/cts.git
-[submodule "external/dawn"]
-	path = external/dawn
-	url = https://dawn.googlesource.com/dawn
 [submodule "external/webgpu_cts"]
 	path = external/webgpu_cts
 	url = https://github.com/ambergorzynski/webgpu_cts.git
