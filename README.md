@@ -20,6 +20,24 @@ source venv/bin/activate
 pip install . 
 ```
 
+# Build Dredd
+Get Clang and LLVM:
+```
+cd external/dredd/third_party
+curl -Lo clang+llvm.tar.xz https://github.com/llvm/llvm-project/releases/download/llvmorg-17.0.6/clang+llvm-17.0.6-x86_64-linux-gnu-ubuntu-22.04.tar.xz
+tar xf clang+llvm.tar.xz
+mv clang+llvm-17.0.6-x86_64-linux-gnu-ubuntu-22.04 clang+llvm
+rm clang+llvm.tar.xz
+cd ..
+
+Build Dredd:
+```
+mkdir build && cd build
+cmake -G Ninja .. -DCMAKE_BUILD_TYPE=Release
+cmake --build . --config Release
+cp src/dredd/dredd ../third_party/clang+llvm/bin
+```
+
 # Mutate the subject
 
 The mutation subject can be Dawn or Mesa. 
@@ -39,6 +57,11 @@ cd dredd-webgpu-testing
 source venv/bin/activate
 cd src
 python -m mutate --help
+```
+
+For example, to mutate Mesa:
+```
+python -m mutate mesa /path/to/mesa_mutated /path/to/mesa_tracked --mutation_dir src/gallium/drivers/llvmpipe
 ```
 
 # Previous - for removal
