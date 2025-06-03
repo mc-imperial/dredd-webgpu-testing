@@ -8,9 +8,9 @@ from random import sample
 import time
 from datetime import datetime
 
-from cts.utils import get_mutant_coverage
-import wgslsmith.kill_mutants
-import cts.kill_mutants
+from run.cts.utils import get_mutant_coverage
+import run.wgslsmith.kill_mutants
+import run.cts.kill_mutants
 
 def main():
 
@@ -314,7 +314,7 @@ def get_wgslsmith_args(args, standalone : bool = True) -> list[str]:
                 '--compile_timeout', str(args.timeout),
                 '--run_timeout', str(args.timeout),
                 '--standalone',
-                '--js_wrapper', str(args.js_wrapper)
+                '--js_wrapper', str(args.js_wrapper),
                 'dawn',
                 f'{str(args.dawn_mutated)}/out/Debug/dawn.node', # mutated_exe
                 f'{str(args.dawn_coverage)}/out/Debug/dawn.node', # tracking_exe
