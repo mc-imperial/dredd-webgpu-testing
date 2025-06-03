@@ -18,7 +18,7 @@ def main():
 
     parser.add_argument('--output',
             type=Path,
-            default='data')
+            default=Path(root, 'data'))
     parser.add_argument('--dawn',
             type=Path,
             default=Path('/data/dev/dawn')) #TODO: update to external
