@@ -47,6 +47,7 @@ def main():
 
     for x in [mutated, tracked]:
         
+        print(f'Restoring {x}')
         restore(x.src)
 
         x.mutation_files = get_files_for_mutation(x.compile_commands, 
@@ -143,6 +144,9 @@ def setup(target: Path):
     
     result = subprocess.run(setup_cmd, cwd = target, env=env)
 
+    if result.returncode != 0:
+        raise RuntimeError(f'Problem with initial setup of {target}')
+
     configure_cmd = ['meson', 'setup', '--reconfigure',
         f'--prefix="{target}/build/install"',
         '-Dgallium-drivers=llvmpipe',
@@ -151,7 +155,10 @@ def setup(target: Path):
         '-Dincludedir=include',
         'build/']
 
-    result = subprocess.run(configure_cmd, cwd = target, env=env)
+    config_result = subprocess.run(configure_cmd, cwd = target, env=env)
+
+    if config_result.returncode != 0:
+        raise RuntimeError(f'Problem with initial configuration of {target}')
 
 def build(target : Path, recording=False):
 
@@ -161,7 +168,8 @@ def build(target : Path, recording=False):
 
     result = subprocess.run(build_cmd, cwd = target,  capture_output=recording, text=True)
 
-    return result
+    if result.returncode != 0:
+        raise RuntimeError(f'Problem building {target}')
 
 def install(target : Path, recording=False):
 
@@ -172,7 +180,8 @@ def install(target : Path, recording=False):
 
     result = subprocess.run(install_cmd, cwd = target,  capture_output=recording, text=True)
 
-    return result
+    if result.returncode != 0:
+        raise RuntimeError(f'Problem installing {target}')
 
 def restore(target : Path):
 
@@ -181,6 +190,9 @@ def restore(target : Path):
         'src/']
     
     result = subprocess.run(restore_cmd, cwd = target)
+
+    if result.returncode != 0:
+        raise RuntimeError(f'Problem restoring {target}')
 
 def clean(target : Path):
     restore(target)
