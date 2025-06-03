@@ -21,7 +21,7 @@ def main():
         help="Path to tracking subject root")
     args.add_argument('--dredd',
         type=Path,
-        default="../external/dredd/third_party/clang+llvm/bin/dredd", #TODO: update to external submodule
+        default="../external/dredd", #TODO: update to external submodule
         help="Path to Dredd build")
     args.add_argument('--mutation_dir',
         type=Path,
@@ -32,6 +32,8 @@ def main():
 
     if args.subject == 'dawn':
         raise NotImplementedError
+
+    dredd_exe = Path(args.dredd, '/third_party/clang+llvm/bin/dredd')
     
     #mutation_dir = Path('src/gallium/drivers/llvmpipe')
 
@@ -58,13 +60,13 @@ def main():
             for file in x.mutation_files:
                 f.write(file + '\n')
 
-        mutate(dredd, 
+        print('Mutating...')
+        mutate(dredd_exe, 
             x.mutation_files,
             x.mutant_info_file,
             x.compile_commands,
             x.src,
             x.track_only)
-        
 
         build_result = build(x.src)
 
@@ -132,13 +134,13 @@ def mutants_exist(src : Path) -> bool :
 
     return False if (int(dredd_count.stdout)==0) else True
 
-def setup(target: Path):
+def setup(target: Path, dredd: Path):
 
     print('Initial build...')
     env = os.environ.copy()
 
-    env['CC']='/data/dev/dredd/third_party/clang+llvm/bin/clang'
-    env['CXX']='/data/dev/dredd/third_party/clang+llvm/bin/clang++'
+    env['CC']= str(dredd) + '/third_party/clang+llvm/bin/clang'
+    env['CXX']= str(dredd) + '/third_party/clang+llvm/bin/clang++'
 
     setup_cmd = ['meson', 'setup', 'build/']
     
