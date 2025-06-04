@@ -192,7 +192,7 @@ def restore(target : Path):
 
     restore_cmd = ['git',
         'restore',
-        'src/']
+        '.']
     
     result = subprocess.run(restore_cmd, cwd = target)
 
