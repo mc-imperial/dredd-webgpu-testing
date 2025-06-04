@@ -275,11 +275,11 @@ def turn_off_werror(src : Path):
     with open(Path(src,'meson.build'), 'r') as f:
         build = f.readlines()
         
-    newbuild = [x.replace("'-Werror=incompatible-pointer-types'","#'-Werror=incompatible-pointer-types'") for x in build]
-    newbuild = [x.replace("'-Werror=return-type'","#'-Werror=return-type'") for x in build]
+    build = [x.replace("'-Werror=incompatible-pointer-types'","#'-Werror=incompatible-pointer-types'") for x in build]
+    build = [x.replace("'-Werror=return-type'","#'-Werror=return-type'") for x in build]
 
     with open(Path(src,'meson.build'), 'w') as f:
-        f.writelines(newbuild)
+        f.writelines(build)
 
 if __name__=="__main__":
     main()
