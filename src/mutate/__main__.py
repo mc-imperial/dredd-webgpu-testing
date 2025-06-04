@@ -123,7 +123,6 @@ def remove_flag_from_compile_commands(file : Path):
         data = f.readlines()
 
     newdata = [x.replace('-mtls-dialect=gnu2','') for x in data]
-    newdata = [x.replace('-Werror=incompatible-pointer-types','') for x in data]
     
     with open(file,'w') as f:
         f.writelines(newdata)
@@ -212,6 +211,7 @@ def restore(target : Path):
         raise RuntimeError(f'Problem restoring {target}')
 
     replace_threads_h(target)
+    turn_off_werror(target)
 
 def clean(target : Path, dredd):
     restore(target)
@@ -281,5 +281,13 @@ def replace_threads_h(src : Path):
 
     assert(int(c11_count.stdout) == 0)
 
+def turn_off_werror(src : Path):
+
+    with open(Path(src,'meson.build'), 'r') as f:
+        build = f.readlines()
+        
+    newbuild = [x.replace("'-Werror=incompatible-pointer-types'","#'-Werror=incompatible-pointer-types'") for x in data]
+    newbuild = [x.replace("'-Werror=return-type'","#'-Werror=return-type'") for x in data]
+    
 if __name__=="__main__":
     main()
