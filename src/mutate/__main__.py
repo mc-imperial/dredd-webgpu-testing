@@ -70,20 +70,9 @@ def main():
 
         build_result = build(x.src, args.dredd)
 
-        with open(f'build_result_{x}.txt','w') as f:
-            f.write(f'build returncode: {build_result.returncode}')
-
         install_result = install(x.src, args.dredd)
 
-        with open(f'install_result_{x}.txt','w') as f:
-            f.write(f'install returncode: {install_result.returncode}')
-
-        if build_result.returncode != 0 or install_result.returncode != 0:
-            print(f'Error in {x}! Stopping.')
-            exit(1)
-
-        print('Complete!')
-        exit()
+        print(f'Completed building and installing {x}')
 
 def mutate(dredd : Path, 
         mutation_files : list[str],
