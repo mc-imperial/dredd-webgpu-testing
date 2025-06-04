@@ -33,7 +33,7 @@ def main():
     if args.subject == 'dawn':
         raise NotImplementedError
 
-    dredd_exe = Path(args.dredd, '/third_party/clang+llvm/bin/dredd')
+    dredd_exe = Path(args.dredd, 'third_party/clang+llvm/bin/dredd')
     
     #mutation_dir = Path('src/gallium/drivers/llvmpipe')
 
