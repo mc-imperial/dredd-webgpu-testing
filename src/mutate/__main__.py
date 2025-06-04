@@ -208,6 +208,8 @@ def restore(target : Path):
     if result.returncode != 0:
         raise RuntimeError(f'Problem restoring {target}')
 
+    replace_threads_h(target)
+
 def clean(target : Path, dredd):
     restore(target)
     setup(target, dredd)
@@ -232,6 +234,49 @@ def get_files_for_mutation(compile_commands : Path,
     mutated = [x for x in mutated if 'build' not in x]
 
     return mutated
+
+def replace_threads_h(src : Path):
+
+    find_files_a = ['find',
+        f'{src}/src',
+        '-name',
+        '*.c*',
+        '-o',
+        '-name',
+        '*.h']
+
+    find_files_b = ['xargs',
+        'grep',
+        'c11/threads.h']
+
+    find_result = subprocess.Popen(find_files_a, stdout=subprocess.PIPE)
+    result = subprocess.run(find_files_b, stdin=find_result.stdout, capture_output = True, text = True)
+
+    files = result.stdout.split('\n')
+    files = [x[:x.find(':')] for x in files if x.find(':') > 0 ]
+
+    for file in files:
+        with open(file,'r') as f:
+            code = f.readlines()
+
+        for index, line in enumerate(code):
+            if 'c11/threads.h' in line:
+                code[index] = line.replace('c11/threads.h','threads.h')
+                code.insert(index,'#include <pthread.h>\n#include <unistd.h>\n#include<errno.h>\n#include<limits.h>\n#include<stdlib.h>\n')
+                continue
+
+       # code = [x if 'c11/threads.h' not in x else x.replace('c11/threads.h','threads.h') for x in code]
+
+        with open(file, 'w') as f:
+            f.writelines(code)
+
+    find_files = subprocess.Popen(['find',str(src),'-name','*.c*','-o','-name','*.h'], stdout=subprocess.PIPE)
+    find_c11 = subprocess.Popen(['xargs','grep','-l','c11/threads.h'], stdout=subprocess.PIPE, stdin=find_files.stdout)
+    c11_count = subprocess.run(['wc', '-l'], stdin=find_c11.stdout, capture_output=True)
+    
+    print(f'Number of files that contain "c11/threads.h" in "{src}" is: {int(c11_count.stdout)}')
+
+    assert(int(c11_count.stdout) == 0)
 
 if __name__=="__main__":
     main()
