@@ -150,7 +150,7 @@ def setup(target: Path, dredd: Path):
         raise RuntimeError(f'Problem with initial setup of {target}')
 
     configure_cmd = ['meson', 'setup', '--reconfigure',
-        f'--prefix="{target}/build/install"',
+        f'--prefix={target}/build/install',
         '-Dgallium-drivers=llvmpipe',
         '-Dvulkan-drivers=swrast',
         '-Dplatforms=x11',
