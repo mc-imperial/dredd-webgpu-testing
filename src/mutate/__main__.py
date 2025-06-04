@@ -49,7 +49,7 @@ def main():
 
     for x in [mutated, tracked]:
 
-        print('Cleaning {x}')
+        print(f'Cleaning {x}')
         clean(x.src, args.dredd)
 
         x.mutation_files = get_files_for_mutation(x.compile_commands, 
@@ -83,6 +83,7 @@ def main():
             exit(1)
 
         print('Complete!')
+        exit()
 
 def mutate(dredd : Path, 
         mutation_files : list[str],
@@ -122,7 +123,8 @@ def remove_flag_from_compile_commands(file : Path):
         data = f.readlines()
 
     newdata = [x.replace('-mtls-dialect=gnu2','') for x in data]
-
+    newdata = [x.replace('-Werror=incompatible-pointer-types','') for x in data]
+    
     with open(file,'w') as f:
         f.writelines(newdata)
 
@@ -157,6 +159,7 @@ def setup(target: Path, dredd: Path):
         '-Dvulkan-drivers=swrast',
         '-Dplatforms=x11',
         '-Dincludedir=include',
+        '-Dwarning_level=0',
         'build/']
 
     config_result = subprocess.run(configure_cmd, cwd = target, env=env)
