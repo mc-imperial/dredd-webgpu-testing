@@ -96,7 +96,7 @@ def process_tracking(cts : Path, wgslsmith : Path) -> dict[str,list[int]]:
 
 def get_mutants(filepath : Path):
         
-all_mutants = set()
+    all_mutants = set()
 
     for filename in os.listdir(filepath):
         file = os.path.join(filepath, filename)
