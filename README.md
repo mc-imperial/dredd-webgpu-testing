@@ -95,9 +95,8 @@ cd dredd-webgpu-testing
 source venv/bin/activate
 cd src
 python -m track \
-    /path/to/mesa/tracked \
+    /path/to/mesa/tracked/vk_icd \
     /path/to/cts \
     /path/to/dawn \
-    --mutant_to_test_mapping \
     --query 'webgpu:shader,execution,shadow:while:*'
 ```

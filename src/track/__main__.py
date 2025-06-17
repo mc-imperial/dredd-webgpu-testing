@@ -37,7 +37,7 @@ def main():
         args.dawn,
         tracking,
         args.output,
-        args.vk_icd,
+        args.tracked_vk_icd,
         args.query)
 
 
