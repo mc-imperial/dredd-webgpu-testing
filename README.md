@@ -83,3 +83,21 @@ python -m mutate mesa /path/to/mesa_mutated /path/to/mesa_tracked \
     --mutation_dir src/gallium/drivers/llvmpipe \
     --dredd /path/to/dredd
 ```
+
+If the mutation subject is Mesa, then in order to continue you must also build a single version of Dawn to run the CTS.
+
+# Run test-wise mutant tracking
+
+For efficient killing, we want to know which CTS tests `touch` which mutants. By `touch`, we mean that the code containing the mutant is executed during the test execution. This will allow us to target our testing later on.
+
+```
+cd dredd-webgpu-testing
+source venv/bin/activate
+cd src
+python -m track \
+    /path/to/mesa/tracked \
+    /path/to/cts \
+    /path/to/dawn \
+    --mutant_to_test_mapping \
+    --query 'webgpu:shader,execution,shadow:while:*'
+```

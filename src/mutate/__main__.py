@@ -11,6 +11,8 @@ def main():
 
     args = argparse.ArgumentParser()
 
+    root = Path(os.path.dirname(os.path.abspath(__file__))).parent.parent
+
     args.add_argument('subject',
         choices=['mesa','dawn'])
     args.add_argument('mutated',
@@ -21,7 +23,7 @@ def main():
         help="Path to tracking subject root")
     args.add_argument('--dredd',
         type=Path,
-        default="../external/dredd", #TODO: update to external submodule
+        default= Path(root,'/external/dredd'), 
         help="Path to Dredd build")
     args.add_argument('--mutation_dir',
         type=Path,
