@@ -4,6 +4,7 @@ import argparse
 from pathlib import Path
 from typing import List, Set
 
+from run.cts.map import map_mutants
 
 def main():
 
