@@ -90,13 +90,32 @@ If the mutation subject is Mesa, then in order to continue you must also build a
 
 For efficient killing, we want to know which CTS tests `touch` which mutants. By `touch`, we mean that the code containing the mutant is executed during the test execution. This will allow us to target our testing later on.
 
+For this, we need to use instrumented versions of the CTS and the Dawn harness for running the CTS, which will allow us to track precisely which test is executing code containing each mutant.
+
+The patch to instrument the CTS is here:
+#TODO
+
+And the patch to instrument Dawn is here:
+`src/track/dawn_mutant_tracking.diff`
+
+Apply the patches like this:
+```
+cd dawn
+git checkout -b tracking
+git apply /path/to/dawn_mutant_tracking.diff
+```
+
+There is no need to rebuild Dawn or the CTS. The patch is applied to a Go harness in Dawn that is not part of the build, and the CTS will re-build itself automatically upon running when it detects changes.
+
+Next, run mutant tracking:
+
 ```
 cd dredd-webgpu-testing
 source venv/bin/activate
 cd src
 python -m track \
     /path/to/mesa/tracked/vk_icd \
-    /path/to/cts \
-    /path/to/dawn \
+    /path/to/instrumented_cts \
+    /path/to/instrumented_dawn \
     --query 'webgpu:shader,execution,shadow:while:*'
 ```
