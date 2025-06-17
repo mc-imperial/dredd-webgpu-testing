@@ -108,4 +108,4 @@ def get_mutants(filepath : Path):
     return all_mutants
 
 if __name__=="__main__":
-    main():
+    main()
