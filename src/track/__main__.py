@@ -29,8 +29,6 @@ def main():
             default='webgpu:*')
 
     args = parser.parse_args()
-    print(args)
-    exit()
 
     tracking = Path(args.output, 'tracking')
     tracking.mkdir(exist_ok=True)
@@ -97,8 +95,8 @@ def process_tracking(cts : Path, wgslsmith : Path) -> dict[str,list[int]]:
     return coverage
 
 def get_mutants(filepath : Path):
-
-    all_mutants = set()
+        
+all_mutants = set()
 
     for filename in os.listdir(filepath):
         file = os.path.join(filepath, filename)
@@ -108,3 +106,6 @@ def get_mutants(filepath : Path):
         all_mutants = all_mutants.union(mutants)
 
     return all_mutants
+
+if __name__=="__main__":
+    main():
