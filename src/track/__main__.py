@@ -29,6 +29,8 @@ def main():
             default='webgpu:*')
 
     args = parser.parse_args()
+    print(args)
+    exit()
 
     tracking = Path(args.output, 'tracking')
     tracking.mkdir(exist_ok=True)
