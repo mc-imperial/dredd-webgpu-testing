@@ -92,17 +92,22 @@ For efficient killing, we want to know which CTS tests `touch` which mutants. By
 
 For this, we need to use instrumented versions of the CTS and the Dawn harness for running the CTS, which will allow us to track precisely which test is executing code containing each mutant.
 
-The patch to instrument the CTS is here:
-#TODO
+Get the instrumented CTS here:
+```
+git clone https://github.com/ambergorzynski/webgpu_cts.git
+cd webgpu_cts
+git checkout mutant_tracking
+```
 
-And the patch to instrument Dawn is here:
+The patch to instrument Dawn is here:
 `src/track/dawn_mutant_tracking.diff`
 
 Apply the patches like this:
 ```
 cd dawn
 git checkout -b tracking
-git apply /path/to/dawn_mutant_tracking.diff
+cp /path/to/dredd-webgpu-testing/src/track/dawn_mutant_tracking.diff .
+git apply dawn_mutant_tracking.diff
 ```
 
 There is no need to rebuild Dawn or the CTS. The patch is applied to a Go harness in Dawn that is not part of the build, and the CTS will re-build itself automatically upon running when it detects changes.

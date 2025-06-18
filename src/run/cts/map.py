@@ -28,7 +28,6 @@ def map_mutants(cts : Path,
     run_cts(cts, 
         dawn, 
         tracking_file, 
-        query_map_file=query_map_file, 
         vk_icd=vk_icd,
         query=query)
 

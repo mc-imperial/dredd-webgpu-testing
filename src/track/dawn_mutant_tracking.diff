@@ -1,94 +1,58 @@
 diff --git a/tools/src/cmd/run-cts/node/cmd.go b/tools/src/cmd/run-cts/node/cmd.go
-index b41c0af5dc..407151a34d 100644
+index f7fb281369..4aa3c6d94b 100644
 --- a/tools/src/cmd/run-cts/node/cmd.go
 +++ b/tools/src/cmd/run-cts/node/cmd.go
-@@ -35,6 +35,7 @@ import (
- 	"os/exec"
- 	"path/filepath"
- 	"runtime"
-+	//"strings"
- 
- 	"dawn.googlesource.com/dawn/tools/src/cmd/run-cts/common"
- 	"dawn.googlesource.com/dawn/tools/src/cov"
-@@ -61,6 +62,7 @@ type flags struct {
- 	debugCTS             bool
- 	skipVSCodeInfo       bool
- 	enforceDefaultLimits bool
-+	mutantTracking		 bool
- 	dawn                 node.Flags
- }
- 
-@@ -113,11 +115,13 @@ func (c *cmd) RegisterFlags(ctx context.Context, cfg common.Config) ([]string, e
- 	flag.BoolVar(&c.flags.debugCTS, "debug-cts", false, "enable CTS debugging option")
+@@ -115,7 +115,7 @@ func (c *cmd) RegisterFlags(ctx context.Context, cfg common.Config) ([]string, e
  	flag.BoolVar(&c.flags.skipVSCodeInfo, "skip-vs-code-info", false, "skips emitting VS Code information")
  	flag.BoolVar(&c.flags.enforceDefaultLimits, "enforce-default-limits", false, "enforce the default limits (note: powerPreference tests may fail)")
+ 	flag.BoolVar(&c.flags.blockAllFeatures, "block-all-features", false, "block all features (except 'core-features-and-limits')")
+-
 +	flag.BoolVar(&c.flags.mutantTracking, "mutant-tracking", false, "record covered mutants in tracking file")
- 
  	return []string{"[query]"}, nil
  }
  
- func (c *cmd) Run(ctx context.Context, cfg common.Config) error {
-+
- 	// Process the command line flags
- 	if err := c.processFlags(); err != nil {
- 		return err
-@@ -137,8 +141,8 @@ func (c *cmd) Run(ctx context.Context, cfg common.Config) error {
- 		return fmt.Errorf("failed to gather tests: %w", err)
+@@ -144,7 +144,7 @@ func (c *cmd) Run(ctx context.Context, cfg common.Config) error {
  	}
  	fmt.Printf("Testing %d test cases...\n", len(testCases))
--
--	var runner func(ctx context.Context, testCases []common.TestCase, results chan<- common.Result)
-+	
-+	var runner func(ctx context.Context, testCases []common.TestCase, results chan<- common.Result, tracking bool)
+ 
+-	var runner func(ctx context.Context, testCases []common.TestCase, results chan<- common.Result, fsReader oswrapper.FilesystemReader)
++	var runner func(ctx context.Context, testCases []common.TestCase, results chan<- common.Result, fsReader oswrapper.FilesystemReader, tracking bool)
  	if c.flags.isolated {
  		fmt.Println("Running in parallel isolated...")
  		runner = c.runTestCasesWithCmdline
-@@ -149,7 +153,7 @@ func (c *cmd) Run(ctx context.Context, cfg common.Config) error {
+@@ -155,7 +155,7 @@ func (c *cmd) Run(ctx context.Context, cfg common.Config) error {
  
  	resultStream := make(chan common.Result, 256)
  	go func() {
--		runner(ctx, testCases, resultStream)
-+		runner(ctx, testCases, resultStream, c.flags.mutantTracking)
+-		runner(ctx, testCases, resultStream, cfg.OsWrapper)
++		runner(ctx, testCases, resultStream, cfg.OsWrapper, c.flags.mutantTracking)
  		close(resultStream)
  	}()
  
 diff --git a/tools/src/cmd/run-cts/node/cmdline.go b/tools/src/cmd/run-cts/node/cmdline.go
-index ee9b691ac6..3810072658 100644
+index 2c4c88a224..34e2663226 100644
 --- a/tools/src/cmd/run-cts/node/cmdline.go
 +++ b/tools/src/cmd/run-cts/node/cmdline.go
-@@ -46,7 +46,7 @@ import (
- // test case in a separate process. This reduces possibility of state leakage
+@@ -50,7 +50,7 @@ import (
  // between tests.
  // Up to c.flags.numRunners tests will be run concurrently.
--func (c *cmd) runTestCasesWithCmdline(ctx context.Context, testCases []common.TestCase, results chan<- common.Result) {
-+func (c *cmd) runTestCasesWithCmdline(ctx context.Context, testCases []common.TestCase, results chan<- common.Result, tracking bool) {
+ func (c *cmd) runTestCasesWithCmdline(
+-	ctx context.Context, testCases []common.TestCase, results chan<- common.Result, fsReader oswrapper.FilesystemReader) {
++	ctx context.Context, testCases []common.TestCase, results chan<- common.Result, fsReader oswrapper.FilesystemReader, tracking bool) {
  	// Create a chan of test indices.
  	// This will be read by the test runner goroutines.
  	testCaseIndices := make(chan int, 256)
 diff --git a/tools/src/cmd/run-cts/node/server.go b/tools/src/cmd/run-cts/node/server.go
-index 915ffbb3f9..dae9e68396 100644
+index fc76412d07..e178c39ecf 100644
 --- a/tools/src/cmd/run-cts/node/server.go
 +++ b/tools/src/cmd/run-cts/node/server.go
-@@ -34,11 +34,13 @@ import (
- 	"fmt"
- 	"io"
- 	"net/http"
-+	//"maps"
- 	"os"
- 	"os/exec"
- 	"path/filepath"
- 	"strconv"
- 	"strings"
-+	//"slices"
- 	"sync"
- 	"time"
- 
-@@ -46,10 +48,63 @@ import (
+@@ -47,13 +47,68 @@ import (
  	"dawn.googlesource.com/dawn/tools/src/utils"
  )
  
-+func saveMappingToFile(filename string, testmap map[string]string) {
 +
++func saveMappingToFile(filename string, testmap map[string]string) {
++ 
 +	//TODO: Make this file write cleaner
 +
 +	f, err := os.Create(filename)
@@ -128,12 +92,16 @@ index 915ffbb3f9..dae9e68396 100644
 +	f.Sync()
 +	
 +}
++
+ // TODO(crbug.com/416755658): Add unittest coverage when there is a way to fake
+ // the node process.
  // runTestCasesWithServers spawns c.flags.NumRunners server instances to run all
  // the test cases in testCases. The results of the tests are streamed to results.
  // Blocks until all the tests have been run.
--func (c *cmd) runTestCasesWithServers(ctx context.Context, testCases []common.TestCase, results chan<- common.Result) {
-+func (c *cmd) runTestCasesWithServers(ctx context.Context, testCases []common.TestCase, results chan<- common.Result, tracking bool) {
-+
+ func (c *cmd) runTestCasesWithServers(
+-	ctx context.Context, testCases []common.TestCase, results chan<- common.Result, fsReader oswrapper.FilesystemReader) {
++	ctx context.Context, testCases []common.TestCase, results chan<- common.Result, fsReader oswrapper.FilesystemReader, tracking bool) {
++	
 +	testIDMap := make(map[string]string)
 +
 +	if (tracking) {
@@ -148,43 +116,12 @@ index 915ffbb3f9..dae9e68396 100644
  	// Create a chan of test indices.
  	// This will be read by the test runner goroutines.
  	testCaseIndices := make(chan int, 256)
-@@ -67,12 +122,13 @@ func (c *cmd) runTestCasesWithServers(ctx context.Context, testCases []common.Te
- 		wg.Add(1)
- 		go func() {
- 			defer wg.Done()
--			if err := c.runServer(ctx, id, testCases, testCaseIndices, results); err != nil {
-+			if err := c.runServer(ctx, id, testCases, testCaseIndices, results, testIDMap); err != nil {
- 				results <- common.Result{
- 					Status: common.Fail,
- 					Error:  fmt.Errorf("Test server error: %w", err),
- 				}
- 			}
-+
- 		}()
- 	}
- 
-@@ -84,12 +140,13 @@ func (c *cmd) runTestCasesWithServers(ctx context.Context, testCases []common.Te
- // The result of the test run is written to the results chan.
- // Once the testCaseIndices chan has been closed and all taken tests have been
- // completed, the server process is shutdown and runServer returns.
--func (c *cmd) runServer(
-+func (c *cmd) runServer( 
- 	ctx context.Context,
- 	id int,
- 	testCases []common.TestCase,
- 	testCaseIndices <-chan int,
--	results chan<- common.Result) error {
-+	results chan<- common.Result,
-+	testIDMap map[string]string) error {
- 
- 	var port int
- 	testCaseLog := &bytes.Buffer{}
-@@ -207,7 +264,20 @@ func (c *cmd) runServer(
+@@ -217,7 +272,20 @@ func (c *cmd) runServer(
  			CoverageData string
  			DurationMS   float32
  		}
 -		postResp, err := http.Post(fmt.Sprintf("http://localhost:%v/run?%v", port, testCases[idx]), "", &bytes.Buffer{})
-+		
++
 +		var request string
 +		if c.flags.mutantTracking {
 +			fmt.Printf("Tracking!")
