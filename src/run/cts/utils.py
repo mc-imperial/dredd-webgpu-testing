@@ -29,10 +29,10 @@ def run_cts(cts,
 
     tracking_environment["VK_ICD_FILENAMES"] = f'{vk_icd}'
 
-    tracking_compile_cmd = [f'{dawn_coverage}/tools/run',
+    tracking_compile_cmd = [f'{dawn}/tools/run',
             'run-cts', 
             '--verbose',
-            f'--bin={dawn_coverage}/out/Debug',
+            f'--bin={dawn}/out/Debug',
             f'--cts={cts}',
             f"{query}"] 
 
