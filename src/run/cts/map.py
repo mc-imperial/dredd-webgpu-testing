@@ -22,8 +22,8 @@ def map_mutants(cts : Path,
     query : str = 'webgpu:*'):
     
     # Run CTS with tracking
-    tracking_file = Path(tracking_dir,'tracking.txt')
-    query_map_file = Path(tracking_dir,'query_map.json')
+    tracking_file = Path(tracking_dir.parent,'tracking.txt')
+    query_map_file = Path(tracking_dir.parent,'mapping_test_to_id.json')
     
     run_cts(cts, 
         dawn, 
@@ -32,7 +32,7 @@ def map_mutants(cts : Path,
         query=query)
 
     # Process tracking information to produce mutant mapping files
-    process_test_wise_tracking(tracking_dir, output_dir, query_map)
+    process_test_wise_tracking(tracking_dir, output_dir, query_map_file)
 
 def process_test_wise_tracking(tracking_dir : Path, output_dir : Path, query_map : Path):
 

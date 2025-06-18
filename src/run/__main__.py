@@ -90,7 +90,7 @@ def main():
 
 def map_cts_mutants(args):
 
-    tracking = Path(args.output, 'tracking')
+    tracking = Path(args.output_files')
     tracking.mkdir(exist_ok=True)
 
     map_mutants(args.cts,
@@ -151,6 +151,5 @@ def comma_list(arg):
     return arg.split(',')
 
 if __name__=="__main__":
-
     main()
 
