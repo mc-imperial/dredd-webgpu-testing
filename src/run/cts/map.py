@@ -34,7 +34,7 @@ def map_mutants(cts : Path,
     # Process tracking information to produce mutant mapping files
     process_test_wise_tracking(tracking_dir, output_dir, query_map_file)
 
-def process_test_wise_tracking(tracking_dir : Path, output_dir : Path, query_map : Path):
+def process_test_wise_tracking(tracking_dir : Path, output_dir : Path, output_csv : str, query_map : Path):
 
     mutant_to_test_mapping = {}
 
@@ -73,7 +73,7 @@ def process_test_wise_tracking(tracking_dir : Path, output_dir : Path, query_map
     mutant_df = mutant_df.sort_values(by='n_tests')
     print(mutant_df.head(10))
 
-    mutant_df.to_csv(Path(output_dir,'mapping_mutant_to_query_list.csv'), index_label='mutant_id')
+    mutant_df.to_csv(Path(output_dir, output_csv), index_label='mutant_id')
 
 def get_least_covered_mutants(mutant_to_test_mapping : Path,
     covered_mutant_ids : Path,

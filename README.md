@@ -97,6 +97,7 @@ Get the instrumented CTS here:
 git clone https://github.com/ambergorzynski/webgpu_cts.git
 cd webgpu_cts
 git checkout mutant_tracking
+npm install
 ```
 
 The patch to instrument Dawn is here:
@@ -118,9 +119,36 @@ Next, run mutant tracking:
 cd dredd-webgpu-testing
 source venv/bin/activate
 cd src
-python -m track \
+python -m track cts \
     /path/to/mesa/tracked/vk_icd \
-    /path/to/instrumented_cts \
     /path/to/instrumented_dawn \
+    --cts /path/to/instrumented_cts \
+    --query 'webgpu:shader,execution,shadow:while:*'
+```
+
+This will save out a csv file containing a mapping from each touched mutants to a list of queries that touch it, which will enable us to target mutants efficiently in the killing steps.
+
+## Find mutants that are covered by WGSLsmith
+
+For efficiency, we do not want to use resources on mutants that WGSLsmith will not be able to eventually kill. So, we run a sample of e.g. 50 WGSLsmith tests to see which mutants they touch. This will be used to target our CTS mutant killing.
+
+First, build WGSLsmith (note just build WGSLsmith, not the harness or reducer):
+```
+git clone https://github.com/ambergorzynski/wgslsmith.git
+cd wgslsmith
+git checkout abstract_numerics
+./build.py --no-reducer --no-harness
+```
+
+Next, use WGSLsmith to generate WGSL shaders. Run them using a standalone test harness on the mutated subject (e.g. Mesa) and check which mutants are covered. We don't need a test-specific coverage here, just the aggregate coverage.
+
+```
+cd dredd-webgpu-testing
+source venv/bin/activate
+cd src
+python -m track wgslsmith \
+    /path/to/mesa/tracked/vk_icd \
+    /path/to/instrumented_dawn \
+    --wgslsmith /path/to/wgslsmith \
     --query 'webgpu:shader,execution,shadow:while:*'
 ```

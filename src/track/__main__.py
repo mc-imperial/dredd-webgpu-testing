@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import List, Set
 
 from run.cts.map import map_mutants
+from run.wgslsmith.utils import run_wgslsmith_program
 
 def main():
 
@@ -12,34 +13,67 @@ def main():
 
     parser = argparse.ArgumentParser()
     
+    parser.add_argument('tracker',
+            choices=['cts','wgslsmith'])
     parser.add_argument('tracked_vk_icd',
             type=Path,
             help = "Path to tracked_mesa vk_icd.json")
-    parser.add_argument('cts',
-            type=Path,
-            help='Path to CTS')
     parser.add_argument('dawn',
             type=Path,
             help='Path to Dawn')
+    parser.add_argument('--cts',
+            type=Path,
+            help='Path to CTS',
+            default="")
+    parser.add_argument('--wgslsmith',
+            type=Path,
+            help='Path to WGSLsmith',
+            default="")
     parser.add_argument('--output',
             type=Path,
             default=Path(root, 'data'))
     parser.add_argument('--query',
             type=str,
             default='webgpu:*')
+    parser.add_argument('--wgslsmith_sample',
+            type=int,
+            default=100)
 
     args = parser.parse_args()
 
     tracking = Path(args.output, 'tracking')
     tracking.mkdir(exist_ok=True)
 
-    map_mutants(args.cts,
-        args.dawn,
-        tracking,
-        args.output,
-        args.tracked_vk_icd,
-        args.query)
+    if args.tracker == 'cts':
+        # Get the mutant to test ID mapping so that we know 
+        # which mutants are touched by which tests
+        output_file = 'mapping_mutant_to_query_list.csv'
 
+        map_mutants(args.cts,
+            args.dawn,
+            tracking,
+            args.output,
+            output_file,
+            args.tracked_vk_icd,
+            args.query)
+
+    elif args.tracker == 'wgslsmith':
+        # Get aggregate mutant coverage of a sample of tests
+        program_dir = Path(args.output, 'wgslsmith_progs')
+        program_dir.mkdir(exist_ok=True)
+        track_wgslsmith(tracking, program_dir, args.tracked_vk_icd, args.wgslsmith_sample)
+        
+def track_wgslsmith(tracking_dir : Path, 
+    program_dir : Path, 
+    mesa_vk_icd : Path,
+    n : int = 1):
+    for i in range(n):
+        tracking_file = Path(tracking_dir, f'/tracking_file_wgslsmith_run_{i}.txt').resolve()
+        wgslsmith_program = Path(program_dir, f'wgslsmith/wgslsmith_prog_{i}.js').resolve()
+        run_wgslsmith_program(wgslsmith_program,
+            str(mesa_vk_icd),
+            generate=True,
+            tracking=tracking_file)
 
 def track(track_cts : bool = True, track_wgslsmith : bool = True, n : int = 1):
 
