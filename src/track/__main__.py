@@ -37,7 +37,7 @@ def main():
             default='webgpu:*')
     parser.add_argument('--wgslsmith_sample',
             type=int,
-            default=100)
+            default=1)
 
     args = parser.parse_args()
 
@@ -61,9 +61,10 @@ def main():
         # Get aggregate mutant coverage of a sample of tests
         program_dir = Path(args.output, 'wgslsmith_progs')
         program_dir.mkdir(exist_ok=True)
-        track_wgslsmith(tracking, program_dir, 
-            Path(args.dawn,'out','Debug','dawn.node'), 
+        track_wgslsmith(tracking, 
+            program_dir, 
             args.tracked_vk_icd, 
+            Path(args.dawn,'out','Debug','dawn.node'), 
             args.wgslsmith_sample)
         
 def track_wgslsmith(tracking_dir : Path, 
