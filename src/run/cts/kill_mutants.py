@@ -217,7 +217,7 @@ def kill_by_mutant(reliable_tests, args):
     if args.killing_strategy == 'by_mutant':
         queries = [args.query]       
     elif args.killing_strategy == 'least_covered_mutants':
-        mutant_to_test_mapping = pd.read_csv(args.mutant_to_test_mapping)
+        mutant_to_test_mapping = pd.read_csv(args.mutant_to_test_mapping, sep=' ')
 
     for mutant in args.mutant_sample:
 

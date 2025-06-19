@@ -75,7 +75,7 @@ def main():
         str(args.info_file_tracked), 
         str(args.output), # mutant_kill_path
         '--mutant_sample', f'''{','.join([str(m) for m in mutants_to_kill])}''',
-        '--mutant_to_test_mapping', str(args.mutant_to_test_mapping),
+        '--mutant_to_test_mapping', str(args.map),
         '--cts_repo', str(args.cts),
         'mesa',
         str(args.dawn),
