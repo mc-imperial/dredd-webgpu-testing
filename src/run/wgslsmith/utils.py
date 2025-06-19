@@ -6,8 +6,8 @@ import ast
 import argparse
 
 def gen_wgslsmith_program(program_path : Path,
-    #seed : int,
     recondition : bool = True, 
+    seed : int = None,
     as_js : bool = True) -> bool:
 
     input_path = f'{Path(program_path.parent, program_path.stem)}_inputs.json'
@@ -22,7 +22,8 @@ def gen_wgslsmith_program(program_path : Path,
     if recondition:
         gen_cmd.append('--recondition')
 
-    #gen_cmd.append(str(seed))
+    if seed is not None:
+        gen_cmd.append(str(seed))
 
     gen_result = subprocess.run(gen_cmd)
 
@@ -190,7 +191,7 @@ if __name__=="__main__":
 
     args = parser.parse_args()
 
-    if args.run is not "":
+    if args.run != "":
         cwd = os.getcwd
         wgslsmith_program = Path(program_dir, f'wgslsmith/wgslsmith_prog_{i}.js').resolve()
         run_wgslsmith_program(wgslsmith_program,
