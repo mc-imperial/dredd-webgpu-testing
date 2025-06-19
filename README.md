@@ -128,6 +128,17 @@ python -m track cts \
 
 This will save out a csv file containing a mapping from each touched mutants to a list of queries that touch it, which will enable us to target mutants efficiently in the killing steps.
 
+If you just want to rerun the mutant map processing (from the raw files to the summary csv):
+```
+cd dredd-webgpu-testing
+source venv/bin/activate
+cd src
+python -m track cts \
+    /path/to/mesa/tracked/vk_icd \
+    /path/to/instrumented_dawn \
+    --process_map
+```
+
 ## Find mutants that are covered by WGSLsmith
 
 For efficiency, we do not want to use resources on mutants that WGSLsmith will not be able to eventually kill. So, we run a sample of e.g. 50 WGSLsmith tests to see which mutants they touch. This will be used to target our CTS mutant killing.

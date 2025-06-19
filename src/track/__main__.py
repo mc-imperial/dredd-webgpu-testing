@@ -34,12 +34,15 @@ def main():
     parser.add_argument('--wgslsmith_sample',
             type=int,
             default=1)
-    parser.add_argument('--process_map')
+    parser.add_argument('--process_map',
+            action=argparse.BooleanOptionalAction)
 
     args = parser.parse_args()
     
     tracking_dir = Path(args.output, 'tracking_files')
-    tracking_dir.mkdir(exist_ok=False)
+    
+    if not args.process_map:
+        tracking_dir.mkdir(exist_ok=False)
 
     if args.tracker == 'cts':
         # Get the mutant to test ID mapping so that we know 
@@ -48,7 +51,7 @@ def main():
 
         if args.process_map:
             process_test_wise_tracking(tracking_dir, 
-                output_dir, 
+                args.output, 
                 output_file)
         else:
             map_mutants(args.cts,
