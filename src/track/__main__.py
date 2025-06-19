@@ -51,7 +51,7 @@ def main():
             args.output,
             output_file,
             args.tracked_vk_icd,
-            args.query)
+            args.query) 
 
     elif args.tracker == 'wgslsmith':
         # Get aggregate mutant coverage of a sample of tests

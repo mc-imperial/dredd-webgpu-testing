@@ -18,6 +18,7 @@ def map_mutants(cts : Path,
     dawn : Path,
     tracking_dir : Path,
     output_dir : Path,
+    output_file : str,
     vk_icd : Path = None,
     query : str = 'webgpu:*'):
     
@@ -32,7 +33,7 @@ def map_mutants(cts : Path,
         query=query)
 
     # Process tracking information to produce mutant mapping files
-    process_test_wise_tracking(tracking_dir, output_dir, query_map_file)
+    process_test_wise_tracking(tracking_dir, output_dir, output_file, query_map_file)
 
 def process_test_wise_tracking(tracking_dir : Path, output_dir : Path, output_csv : str, query_map : Path):
 
