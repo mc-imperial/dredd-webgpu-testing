@@ -36,9 +36,9 @@ def main():
             default=1)
 
     args = parser.parse_args()
-
-    tracking = Path(args.output, 'tracking')
-    tracking.mkdir(exist_ok=True)
+    
+    tracking_dir = Path(args.output, 'tracking_files')
+    tracking_dir.mkdir(exist_ok=False)
 
     if args.tracker == 'cts':
         # Get the mutant to test ID mapping so that we know 
@@ -47,7 +47,7 @@ def main():
 
         map_mutants(args.cts,
             args.dawn,
-            tracking,
+            tracking_dir,
             args.output,
             output_file,
             args.tracked_vk_icd,
@@ -57,11 +57,18 @@ def main():
         # Get aggregate mutant coverage of a sample of tests
         program_dir = Path(args.output, 'wgslsmith_progs')
         program_dir.mkdir(exist_ok=True)
-        track_wgslsmith(tracking, 
+        track_wgslsmith(tracking_dir, 
             program_dir, 
             args.tracked_vk_icd, 
             Path(args.dawn,'out','Debug','dawn.node'), 
             args.wgslsmith_sample)
+
+        mutants = get_mutants(tracking_dir)
+
+        output_file = 'covered_by_wgslsmith.txt'
+
+        with open(Path(args.output, output_file),'w') as f:
+            f.writelines(mutants)
         
 def track_wgslsmith(tracking_dir : Path, 
     program_dir : Path, 

@@ -142,7 +142,7 @@ export PATH=/path/to/wgslsmith/target/release:$PATH
 wgslsmith --help
 ```
 
-Next, use WGSLsmith to generate WGSL shaders. Run them using a standalone test harness on the mutated subject (e.g. Mesa) and check which mutants are covered. We don't need a test-specific coverage here, just the aggregate coverage.
+Next, use WGSLsmith to generate WGSL shaders. Run them using a standalone test harness on the mutated subject (e.g. Mesa) and check which mutants are covered. We don't need a test-specific coverage here, just the aggregate coverage. The command below will output a single file containing a list of all unique mutant IDs that were touched by at least one of the WGSLsmith tests.
 
 ```
 cd dredd-webgpu-testing
@@ -152,4 +152,22 @@ python -m track wgslsmith \
     /path/to/mesa/tracked/vk_icd \
     /path/to/instrumented_dawn \
     --wgslsmith_sample 100
+``` 
+
+# Identify mutants that are not killed by the CTS
+
+The next step is to try to kill mutants using the CTS. We choose the mutants that are:
+(a) Touched by only a small number of CTS tests. This means it is quick to determine whether the mutant can be killed by the CTS or not.
+(b) Touched by a sample of WGSLsmith tests. This ensures that when we use WGSLsmith to try and kill the mutant, we have some reasonable chance of at least touching it.
+
+```
+cd dredd-webgpu-testing
+source venv/bin/activate
+cd src
+python -m kill \
+    /path/to/mesa/tracked/vk_icd \
+    /path/to/dawn \
+    --cts /path/to/cts \
+    --map /path/to/mutant_to_test_mapping.csv \
+    --wgslsmith_touched /path/to/touched.txt
 ```
