@@ -176,9 +176,13 @@ cd dredd-webgpu-testing
 source venv/bin/activate
 cd src
 python -m kill \
+    /path/to/infofilemutated \
+    /path/to/infofiletracked \
+    /path/to/mesa/mutated/vk_icd \
     /path/to/mesa/tracked/vk_icd \
     /path/to/dawn \
     --cts /path/to/cts \
     --map /path/to/mutant_to_test_mapping.csv \
-    --wgslsmith_touched /path/to/touched.txt
+    --wgslsmith_touched /path/to/touched.txt \
+    --sample 5
 ```

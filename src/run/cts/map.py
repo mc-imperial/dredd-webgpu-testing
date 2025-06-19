@@ -85,7 +85,7 @@ def get_least_covered_mutants(mutant_to_test_mapping : Path,
     wgslsmith_tracking : Path = None) -> list[str]:
 
     if mutant_to_test_mapping.is_file():
-        mutant_to_test_mapping = pd.read_csv(mutant_to_test_mapping)
+        mutant_to_test_mapping = pd.read_csv(mutant_to_test_mapping, sep=' ')
 
     # Get mutants covered by wgslsmith also
     if covered_mutant_ids.is_file():
