@@ -25,10 +25,6 @@ def main():
             type=Path,
             help='Path to CTS',
             default="")
-    parser.add_argument('--wgslsmith',
-            type=Path,
-            help='Path to WGSLsmith',
-            default="")
     parser.add_argument('--output',
             type=Path,
             default=Path(root, 'data'))

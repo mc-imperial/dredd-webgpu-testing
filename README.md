@@ -151,5 +151,5 @@ cd src
 python -m track wgslsmith \
     /path/to/mesa/tracked/vk_icd \
     /path/to/instrumented_dawn \
-    --wgslsmith /path/to/wgslsmith
+    --wgslsmith_sample 100
 ```
