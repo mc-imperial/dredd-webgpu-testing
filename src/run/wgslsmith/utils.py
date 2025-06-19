@@ -6,7 +6,7 @@ import ast
 import argparse
 
 def gen_wgslsmith_program(program_path : Path,
-    seed : int,
+    #seed : int,
     recondition : bool = True, 
     as_js : bool = True) -> bool:
 
@@ -22,7 +22,7 @@ def gen_wgslsmith_program(program_path : Path,
     if recondition:
         gen_cmd.append('--recondition')
 
-    gen_cmd.append(str(seed))
+    #gen_cmd.append(str(seed))
 
     gen_result = subprocess.run(gen_cmd)
 
@@ -123,7 +123,7 @@ def run_wgslsmith_program(program_js : Path,
     env["VK_ICD_FILENAMES"] = str(vk_icd)
     
     if tracking is not None:
-        print(tracking)
+        print(f'Tracking file is: {tracking}')
         env["DREDD_MUTANT_TRACKING_FILE"] = str(tracking)
 
     if mutants is not None:  
@@ -183,12 +183,22 @@ def extract_output(output : str, standalone : bool = True):
 
 if __name__=="__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--program_wgsl")
-    parser.add_argument("--input_path")
+    parser.add_argument("--program_wgsl", default = "")
+    parser.add_argument("--input_path", default = "")
+    parser.add_argument("--run", default = "")
+    parser.add_argument("--mesa_vk_icd", default="")
 
     args = parser.parse_args()
 
-    inputs = get_inputs(args.program_wgsl)
+    if args.run is not "":
+        cwd = os.getcwd
+        wgslsmith_program = Path(program_dir, f'wgslsmith/wgslsmith_prog_{i}.js').resolve()
+        run_wgslsmith_program(wgslsmith_program,
+            str(mesa_vk_icd),
+            generate=True)
+        
+    else:
+        inputs = get_inputs(args.program_wgsl)
 
-    with open(args.input_path, 'w') as f:
-        json.dump(inputs, f)
+        with open(args.input_path, 'w') as f:
+            json.dump(inputs, f)

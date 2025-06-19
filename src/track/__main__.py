@@ -61,16 +61,21 @@ def main():
         # Get aggregate mutant coverage of a sample of tests
         program_dir = Path(args.output, 'wgslsmith_progs')
         program_dir.mkdir(exist_ok=True)
-        track_wgslsmith(tracking, program_dir, args.tracked_vk_icd, args.wgslsmith_sample)
+        track_wgslsmith(tracking, program_dir, 
+            Path(args.dawn,'out','Debug','dawn.node'), 
+            args.tracked_vk_icd, 
+            args.wgslsmith_sample)
         
 def track_wgslsmith(tracking_dir : Path, 
     program_dir : Path, 
     mesa_vk_icd : Path,
+    dawn_node : Path,
     n : int = 1):
     for i in range(n):
-        tracking_file = Path(tracking_dir, f'/tracking_file_wgslsmith_run_{i}.txt').resolve()
+        tracking_file = Path(tracking_dir, f'tracking_file_wgslsmith_run_{i}.txt').resolve()
         wgslsmith_program = Path(program_dir, f'wgslsmith/wgslsmith_prog_{i}.js').resolve()
         run_wgslsmith_program(wgslsmith_program,
+            str(dawn_node),
             str(mesa_vk_icd),
             generate=True,
             tracking=tracking_file)

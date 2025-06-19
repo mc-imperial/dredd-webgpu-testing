@@ -138,6 +138,8 @@ git clone https://github.com/ambergorzynski/wgslsmith.git
 cd wgslsmith
 git checkout abstract_numerics
 ./build.py --no-reducer --no-harness
+export PATH=/path/to/wgslsmith/target/release:$PATH
+wgslsmith --help
 ```
 
 Next, use WGSLsmith to generate WGSL shaders. Run them using a standalone test harness on the mutated subject (e.g. Mesa) and check which mutants are covered. We don't need a test-specific coverage here, just the aggregate coverage.
@@ -149,6 +151,5 @@ cd src
 python -m track wgslsmith \
     /path/to/mesa/tracked/vk_icd \
     /path/to/instrumented_dawn \
-    --wgslsmith /path/to/wgslsmith \
-    --query 'webgpu:shader,execution,shadow:while:*'
+    --wgslsmith /path/to/wgslsmith
 ```
