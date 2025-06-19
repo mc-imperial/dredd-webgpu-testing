@@ -34,6 +34,7 @@ def main():
     parser.add_argument('--wgslsmith_sample',
             type=int,
             default=1)
+    parser.add_argument('--process_map')
 
     args = parser.parse_args()
     
@@ -45,13 +46,18 @@ def main():
         # which mutants are touched by which tests
         output_file = 'mapping_mutant_to_query_list.csv'
 
-        map_mutants(args.cts,
-            args.dawn,
-            tracking_dir,
-            args.output,
-            output_file,
-            args.tracked_vk_icd,
-            args.query) 
+        if args.process_map:
+            process_test_wise_tracking(tracking_dir, 
+                output_dir, 
+                output_file)
+        else:
+            map_mutants(args.cts,
+                args.dawn,
+                tracking_dir,
+                args.output,
+                output_file,
+                args.tracked_vk_icd,
+                args.query) 
 
     elif args.tracker == 'wgslsmith':
         # Get aggregate mutant coverage of a sample of tests

@@ -23,8 +23,8 @@ def map_mutants(cts : Path,
     query : str = 'webgpu:*'):
     
     # Run CTS with tracking
-    tracking_file = Path(tracking_dir.parent,'tracking.txt')
-    query_map_file = Path(tracking_dir.parent,'mapping_test_to_id.json')
+    tracking_file = get_tracking_name(tracking_dir)
+    query_map_file = get_query_file_name(tracking_dir)
     
     run_cts(cts, 
         dawn, 
@@ -33,9 +33,11 @@ def map_mutants(cts : Path,
         query=query)
 
     # Process tracking information to produce mutant mapping files
-    process_test_wise_tracking(tracking_dir, output_dir, output_file, query_map_file)
+    process_test_wise_tracking(tracking_dir, output_dir, output_file)
 
-def process_test_wise_tracking(tracking_dir : Path, output_dir : Path, output_csv : str, query_map : Path):
+def process_test_wise_tracking(tracking_dir : Path, output_dir : Path, output_csv : str):
+
+    query_map_file = get_query_file_name(tracking_dir)
 
     mutant_to_test_mapping = {}
 
@@ -74,7 +76,7 @@ def process_test_wise_tracking(tracking_dir : Path, output_dir : Path, output_cs
     mutant_df = mutant_df.sort_values(by='n_tests')
     print(mutant_df.head(10))
 
-    mutant_df.to_csv(Path(output_dir, output_csv), index_label='mutant_id')
+    mutant_df.to_csv(Path(output_dir, output_csv), index_label='mutant_id', sep=' ')
 
 def get_least_covered_mutants(mutant_to_test_mapping : Path,
     covered_mutant_ids : Path,
@@ -131,3 +133,8 @@ def get_mutants_to_kill(cts_tracking, wgslsmith_tracking, mutant_file, n_sample=
 
     return mutant_sample
 
+def get_tracking_name(tracking_dir : Path):
+    return Path(tracking_dir.parent,'tracking.txt')
+
+def get_query_file_name(tracking_dir : Path):
+    return Path(tracking_dir.parent,'mapping_test_to_id.json')

@@ -1,5 +1,7 @@
 import argparse
 import pandas as pd
+from pathlib import Path
+import os
 
 from run.cts.map import get_least_covered_mutants
 import run.cts.kill_mutants
@@ -23,7 +25,7 @@ def main():
             default="")
     parser.add_argument('--output',
             type=Path,
-            default=Path(root, 'data'))
+            default=Path(root, 'data', 'mutant_killing'))
     parser.add_argument('--map',
             type=Path,
             help='Path to mutant to test mapping file',
@@ -34,11 +36,11 @@ def main():
             default='')
     parser.add_argument('--mutant_ids',
             type=comma_list,
-            help='List of specific mutant IDs to kill'
+            help='List of specific mutant IDs to kill',
             default=None)
     parser.add_argument('--sample',
             type=int,
-            help='Number of mutants to kill'
+            help='Number of mutants to kill',
             default=3)
 
     args = parser.parse_args()
@@ -53,7 +55,7 @@ def main():
         args.wgslsmith_touched,
         args.sample)
 
-    mutant_to_test_mapping = pd.read_csv(args.map)
+    mutant_to_test_mapping = pd.read_csv(args.map, sep = ' ')
 
     if len(mutants_to_kill) == 0:
         print('No mutants to kill!')
@@ -69,7 +71,7 @@ def main():
 
         print(f'Attempting mutant {mutant}, which is touched by {len(queries)} tests...')
 
-        '''
+        """
         cts_args=[str(args.info_file_mutated),
             str(args.info_file_tracked), 
             str(args.output), # mutant_kill_path
@@ -82,7 +84,7 @@ def main():
             ]
 
         run.cts.kill_mutants.main(cts_args)
-        '''
+        """
 
 def comma_list(arg):
     return arg.split(',')
