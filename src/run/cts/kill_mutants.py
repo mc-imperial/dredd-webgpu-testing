@@ -658,7 +658,7 @@ def kill_mutant(mutant, queries, target, reliable_tests, args):
         # Get mutated query results
         env["DREDD_ENABLED_MUTATION"] = str(mutant)
 
-        shell_cmd = ' '.join(mutated_cmd)  
+        shell_cmd = ' '.join(test_cmd)  
 
         (mutant_result, failing_tests) = kill_mutant_cmd(shell_cmd, env, dawn, args.cts_repo, passing_tests)
 
