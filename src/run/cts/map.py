@@ -103,10 +103,13 @@ def get_least_covered_mutants(mutant_to_test_mapping : Path,
 
     mutant_to_test_mapping.sort_values('n_tests',ascending=True,inplace=True)
 
-    mutant_sample = mutant_to_test_mapping.head(sample)
-    
+    #mutant_sample = mutant_to_test_mapping.head(sample)
+    mutant_sample = mutant_to_test_mapping 
+
     mutants = list(mutant_sample['mutant_id'])
     
+    mutants = random.sample(mutants, sample)
+
     return mutants
 
 def get_mutants_to_kill(cts_tracking, wgslsmith_tracking, mutant_file, n_sample=None) -> list[str]:
