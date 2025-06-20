@@ -651,7 +651,7 @@ def kill_mutant(mutant, queries, target, reliable_tests, args):
 
         shell_cmd = ' '.join(mutated_cmd)  
 
-        (mutant_result, failing_tests) = kill_mutant_cmd(shell_cmd, env, reliable_tests)
+        (mutant_result, failing_tests) = kill_mutant_cmd(shell_cmd, env, dawn, args.cts_repo, reliable_tests)
 
         # Return as soon as we find a killing test
         if mutant_result != CTSKillStatus.SURVIVED and mutant_result != CTSKillStatus.TEST_TIMEOUT:
@@ -659,7 +659,7 @@ def kill_mutant(mutant, queries, target, reliable_tests, args):
 
     return mutant_result, failing_tests
    
-def kill_mutant_cmd(shell_cmd, env, reliable_tests, n_tries = 3):
+def kill_mutant_cmd(shell_cmd, env, dawn, cts, reliable_tests, n_tries = 3):
 
     timeout = 60*60 # 1 hour
 
@@ -690,7 +690,7 @@ def kill_mutant_cmd(shell_cmd, env, reliable_tests, n_tries = 3):
             checks = []
             for i in range(n_tries):
                 print(f'Repeat {i}...')
-                checks[i] = check_test(test, env)
+                checks[i] = check_test(test, env, dawn, cts)
 
             if all(checks):
                 os.killpg(os.getpgid(process.pid), signal.SIGTERM)
