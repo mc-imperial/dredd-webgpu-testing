@@ -630,18 +630,19 @@ def kill_mutant(mutant, queries, target, reliable_tests, args):
         vk_icd = str(args.mutated_vk_icd)
         dawn = str(args.dawn)
 
-    env = os.environ.copy()
-    env["VK_ICD_FILENAMES"] = vk_icd
-    env["DREDD_ENABLED_MUTATION"] = str(mutant)
-
     # Mark mutant as surviving until we kill it
     # This includes mutants that are only covered by skipped tests
     mutant_result = CTSKillStatus.SURVIVED
     failing_tests = []
 
     for query in queries:
+
         print(query)
-        mutated_cmd = [f'{dawn}/tools/run',
+
+        env = os.environ.copy()
+        env["VK_ICD_FILENAMES"] = vk_icd
+
+        test_cmd = [f'{dawn}/tools/run',
             'run-cts', 
             '--verbose',
             f'--bin={dawn}/out/Debug',
@@ -649,9 +650,17 @@ def kill_mutant(mutant, queries, target, reliable_tests, args):
             str(args.cts_repo),
             f"'{query}'"]  
 
+        # Get unmutated query results 
+        unmutated_result = subprocess.run(test_cmd, env=env, capture_output=True, text=True)
+
+        passing_tests = get_passing_tests(unmutated_result.stdout)
+
+        # Get mutated query results
+        env["DREDD_ENABLED_MUTATION"] = str(mutant)
+
         shell_cmd = ' '.join(mutated_cmd)  
 
-        (mutant_result, failing_tests) = kill_mutant_cmd(shell_cmd, env, dawn, args.cts_repo, reliable_tests)
+        (mutant_result, failing_tests) = kill_mutant_cmd(shell_cmd, env, dawn, args.cts_repo, passing_tests)
 
         # Return as soon as we find a killing test
         if mutant_result != CTSKillStatus.SURVIVED and mutant_result != CTSKillStatus.TEST_TIMEOUT:
@@ -659,7 +668,7 @@ def kill_mutant(mutant, queries, target, reliable_tests, args):
 
     return mutant_result, failing_tests
    
-def kill_mutant_cmd(shell_cmd, env, dawn, cts, reliable_tests, n_tries = 3):
+def kill_mutant_cmd(shell_cmd, env, dawn, cts, passing_tests, n_tries = 3):
 
     timeout = 60*60 # 1 hour
 
@@ -685,17 +694,19 @@ def kill_mutant_cmd(shell_cmd, env, dawn, cts, reliable_tests, n_tries = 3):
         print(line)
         if f' - fail' in line:
             test = line[:line.index(' ')] 
-            
-            print('Repeating test to check reliability of fail result...')
-            checks = []
-            for i in range(n_tries):
-                print(f'Repeat {i}...')
-                checks[i] = check_test(test, env, dawn, cts)
 
-            if all(checks):
-                os.killpg(os.getpgid(process.pid), signal.SIGTERM)
-                mutant_result = CTSKillStatus.KILL_TEST_FAIL
-                failing_tests = test
+            if test in passing_tests:
+            
+                print('Repeating test to check reliability of fail result...')
+                checks = []
+                for i in range(n_tries):
+                    print(f'Repeat {i}...')
+                    checks.append(check_test(test, env, dawn, cts))
+
+                if all(checks):
+                    os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+                    mutant_result = CTSKillStatus.KILL_TEST_FAIL
+                    failing_tests = test
         
         if time.time() > end_time:
             os.killpg(os.getpgid(process.pid), signal.SIGTERM)
@@ -705,10 +716,6 @@ def kill_mutant_cmd(shell_cmd, env, dawn, cts, reliable_tests, n_tries = 3):
 
     process.stdout.close()
     process.wait()
-
-    if process.returncode != 0:
-        print(f'Problem! Return code is {process.returncode}')
-        exit(1)
     
     kill_gpu_processes()
 
@@ -733,6 +740,9 @@ def check_test(test, env, dawn, cts) -> bool:
         Returns True if the test is confirmed to fail
         Returns False otherwise
     '''
+
+    if test[-1] == ':' or test[-1] == ',':
+        test = test + '*'
     
     mutated_cmd = [f'{dawn}/tools/run',
     'run-cts', 
@@ -740,9 +750,9 @@ def check_test(test, env, dawn, cts) -> bool:
     f'--bin={dawn}/out/Debug',
     '--cts',
     str(cts),
-    f"'{test}'"]  
+    f'{test}']  
 
-    result = subprocess.run(mutated_cmd, env=env)
+    result = subprocess.run(mutated_cmd, env=env, capture_output=True, text=True)
 
     if '- fail' in result.stdout:
         return True
@@ -764,6 +774,19 @@ def kill_with_wgslsmith(mutant, args):
 
     run.wgslsmith.kill_mutants.main(wgslsmith_args)
 
+def get_passing_tests(stdout : str) -> list[str]:
+    
+    passing_tests = []
+
+    stdout = stdout.split('\n')
+
+    for line in stdout:
+        if f' - pass' in line:
+            test = line[:line.index(' ')] 
+            passing_tests.append(test)
+
+    return passing_tests
+            
 def comma_list(arg):
     return arg.split(',')
 
