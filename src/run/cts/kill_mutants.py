@@ -248,7 +248,7 @@ def kill_by_mutant(reliable_tests, args):
 
         cts_start_time = time.time()
 
-        (mutant_result, failing_tests) = kill_mutant(mutant, queries, mutation_target, reliable_tests, args)
+        (mutant_result, failing_tests, unmutated_passes, unmutated_fails) = kill_mutant(mutant, queries, mutation_target, reliable_tests, args)
    
         cts_end_time = time.time()
 
@@ -266,6 +266,12 @@ def kill_by_mutant(reliable_tests, args):
                 print("Recording survival to file.")
                 with open(surviving_mutant_path / "survived.txt", 'w') as outfile:
                     outfile.write(f'Survived!')
+                    outfile.write(f'Survived!\n')
+                    outfile.write(f'Unmutated test info:\n')
+                    outfile.write(f'Unmutated passing tests:\n')
+                    outfile.writelines(unmutated_passes)
+                    outfile.write(f'\nUnmutated failing tests:\n')
+                    outfile.writelines(unmutated_fails)
             except FileExistsError:
                 print(f"Mutant {mutant} was independently discovered to have survived.")
 
@@ -633,7 +639,8 @@ def kill_mutant(mutant, queries, target, reliable_tests, args):
     # Mark mutant as surviving until we kill it
     # This includes mutants that are only covered by skipped tests
     mutant_result = CTSKillStatus.SURVIVED
-    failing_tests = []
+    unmutated_failing_tests = []
+    unmutated_passing_tests = []
 
     for query in queries:
 
@@ -648,25 +655,31 @@ def kill_mutant(mutant, queries, target, reliable_tests, args):
             f'--bin={dawn}/out/Debug',
             '--cts',
             str(args.cts_repo),
-            f"'{query}'"]  
+            f'{query}']  
 
         # Get unmutated query results 
         unmutated_result = subprocess.run(test_cmd, env=env, capture_output=True, text=True)
 
-        passing_tests = get_passing_tests(unmutated_result.stdout)
+        (passes, fails) = get_passing_tests(unmutated_result.stdout)
+
+        unmutated_passing_tests.extend(passes)
+        unmutated_failing_tests.extend(fails)
+ 
+        if passes == []:
+            continue
 
         # Get mutated query results
         env["DREDD_ENABLED_MUTATION"] = str(mutant)
 
         shell_cmd = ' '.join(test_cmd)  
 
-        (mutant_result, failing_tests) = kill_mutant_cmd(shell_cmd, env, dawn, args.cts_repo, passing_tests)
+        (mutant_result, failing_tests) = kill_mutant_cmd(shell_cmd, env, dawn, args.cts_repo, passes)
 
         # Return as soon as we find a killing test
         if mutant_result != CTSKillStatus.SURVIVED and mutant_result != CTSKillStatus.TEST_TIMEOUT:
-            return (mutant_result, failing_tests)
+            return (mutant_result, failing_tests, unmutated_passing_tests, unmutated_failing_tests)
 
-    return mutant_result, failing_tests
+    return (mutant_result, failing_tests, unmutated_passing_tests, unmutated_failing_tests)
    
 def kill_mutant_cmd(shell_cmd, env, dawn, cts, passing_tests, n_tries = 3):
 
@@ -777,6 +790,7 @@ def kill_with_wgslsmith(mutant, args):
 def get_passing_tests(stdout : str) -> list[str]:
     
     passing_tests = []
+    failing_tests = []
 
     stdout = stdout.split('\n')
 
@@ -785,7 +799,11 @@ def get_passing_tests(stdout : str) -> list[str]:
             test = line[:line.index(' ')] 
             passing_tests.append(test)
 
-    return passing_tests
+        if f' - fail' in line:
+            test = line[:line.index(' ')] 
+            failing_tests.append(test)
+ 
+    return (passing_tests, failing_tests)
             
 def comma_list(arg):
     return arg.split(',')
