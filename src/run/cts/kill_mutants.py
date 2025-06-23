@@ -797,6 +797,7 @@ def get_passing_tests(stdout : str) -> list[str]:
     for line in stdout:
         if 'failed to gather tests:' in line:
             print('Problem running query!')
+            print(f'Line:\n\t{line}')
             exit(1)
         if ' - pass' in line:
             test = line[:line.index(' ')] 
