@@ -795,11 +795,14 @@ def get_passing_tests(stdout : str) -> list[str]:
     stdout = stdout.split('\n')
 
     for line in stdout:
-        if f' - pass' in line:
+        if 'failed to gather tests:' in line:
+            print('Problem running query!')
+            exit(1)
+        if ' - pass' in line:
             test = line[:line.index(' ')] 
             passing_tests.append(test)
 
-        if f' - fail' in line:
+        if ' - fail' in line:
             test = line[:line.index(' ')] 
             failing_tests.append(test)
  
