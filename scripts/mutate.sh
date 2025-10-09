@@ -3,11 +3,13 @@
 
 BASE=/home/ubuntu/dev
 
-export CC=$BASE/dredd-webgpu-testing/external/dredd/third_party/clang+llvm/bin/clang
-export CXX=$BASE/dredd-webgpu-testing/external/dredd/third_party/clang+llvm/bin/clang++
+DREDD=$BASE/dredd
+export CC=/usr/lib/clang-17
+export CXX=/usr/lib/clang++-17
+
 
 python -m mutate mesa \
 	$BASE/mesa_mutated \
 	$BASE/mesa_tracked \
-	--mutation_dir src \
-	--dredd $BASE/dredd-webgpu-testing/external/dredd
+	--mutation_dir src/compiler/nir \
+	--dredd $DREDD
