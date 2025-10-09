@@ -6,6 +6,7 @@ from pathlib import Path
 from collections import Counter
 
 from common.utils import FileInfo
+from mutate.reset_tracking import insert_tracking
 
 def main():
 
@@ -35,7 +36,7 @@ def main():
     if args.subject == 'dawn':
         raise NotImplementedError
 
-    dredd_exe = Path(args.dredd, 'third_party/clang+llvm/bin/dredd')
+    dredd_exe = Path(args.dredd, 'build/src/dredd/dredd')
     
     #mutation_dir = Path('src/gallium/drivers/llvmpipe')
 
@@ -89,6 +90,7 @@ def mutate(dredd : Path,
     if track_only:
         mutate_cmd = [str(dredd),
         '--only-track-mutant-coverage',
+        '--allow-reset-of-tracking-counters',
         '-p',
         str(compile_commands),
         '--mutation-info-file',
@@ -106,6 +108,10 @@ def mutate(dredd : Path,
 
     if not mutants_exist(src):
         print('No files were mutated!')
+
+    # Insert reset of tracking counters to handle_compute_shaders()
+    if track_only:
+        insert_tracking(info_file, Path(src,'src/gallium/frontends/lavapipe/lvp_execute.c'))
 
     return result
 
@@ -133,8 +139,8 @@ def setup(target: Path, dredd: Path):
     print('Initial build...')
     env = os.environ.copy()
 
-    env['CC']= str(dredd) + '/third_party/clang+llvm/bin/clang'
-    env['CXX']= str(dredd) + '/third_party/clang+llvm/bin/clang++'
+    env['CC']= '/usr/lib/clang-17'
+    env['CXX']= '/usr/lib/clang++-17'
 
     setup_cmd = ['meson', 'setup', 'build/']
     
@@ -161,8 +167,8 @@ def build(target : Path, dredd : Path, recording=False):
 
     env = os.environ.copy()
 
-    env['CC']= str(dredd) + '/third_party/clang+llvm/bin/clang'
-    env['CXX']= str(dredd) + '/third_party/clang+llvm/bin/clang++'
+    env['CC']= '/usr/lib/clang-17'
+    env['CXX']= '/usr/lib/clang++-17'
 
     build_cmd = ['ninja',
         '-C',
@@ -177,8 +183,8 @@ def install(target : Path, dredd : Path, recording=False):
 
     env = os.environ.copy()
 
-    env['CC']= str(dredd) + '/third_party/clang+llvm/bin/clang'
-    env['CXX']= str(dredd) + '/third_party/clang+llvm/bin/clang++'
+    env['CC']= '/usr/lib/clang-17'
+    env['CXX']= '/usr/lib/clang++-17'
 
     install_cmd = ['ninja',
         '-C',
