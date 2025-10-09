@@ -644,8 +644,8 @@ def kill_mutant(mutant, queries, target, reliable_tests, args):
 
     for query in queries:
 
-        print(query)
-
+        print(f'Query is: {query}')
+        query = "'" + query + "'"
         env = os.environ.copy()
         env["VK_ICD_FILENAMES"] = vk_icd
 
@@ -656,11 +656,34 @@ def kill_mutant(mutant, queries, target, reliable_tests, args):
             '--cts',
             str(args.cts_repo),
             f'{query}']  
+        
+        print(f'test_cmd is: {test_cmd}')
+
+        shell_cmd = ' '.join(test_cmd)
+        print(f'shell_cmd is: {shell_cmd}')
 
         # Get unmutated query results 
-        unmutated_result = subprocess.run(test_cmd, env=env, capture_output=True, text=True)
+        process = subprocess.Popen(shell_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            universal_newlines=True,
+            text=True,
+            shell=True,
+            start_new_session=True)
 
-        (passes, fails) = get_passing_tests(unmutated_result.stdout)
+        unmutated_stdout = []
+
+        for line in iter(process.stdout.readline, ''):
+            print(line)
+            unmutated_stdout.append(line)
+            if f'failed to gather tests' in line:
+                print('PROBLEM')
+                exit(1)
+
+        process.stdout.close()
+        process.wait()
+ 
+        (passes, fails) = get_passing_tests(unmutated_stdout)
 
         unmutated_passing_tests.extend(passes)
         unmutated_failing_tests.extend(fails)
@@ -671,7 +694,7 @@ def kill_mutant(mutant, queries, target, reliable_tests, args):
         # Get mutated query results
         env["DREDD_ENABLED_MUTATION"] = str(mutant)
 
-        shell_cmd = ' '.join(test_cmd)  
+        #shell_cmd = ' '.join(test_cmd)  
 
         (mutant_result, failing_tests) = kill_mutant_cmd(shell_cmd, env, dawn, args.cts_repo, passes)
 
@@ -787,12 +810,10 @@ def kill_with_wgslsmith(mutant, args):
 
     run.wgslsmith.kill_mutants.main(wgslsmith_args)
 
-def get_passing_tests(stdout : str) -> list[str]:
+def get_passing_tests(stdout : list[str]) -> list[str]:
     
     passing_tests = []
     failing_tests = []
-
-    stdout = stdout.split('\n')
 
     for line in stdout:
         if 'failed to gather tests:' in line:
