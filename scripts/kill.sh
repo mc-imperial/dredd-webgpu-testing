@@ -17,4 +17,4 @@ python -m kill \
     --cts $CTS \
     --map $BASE/dredd-webgpu-testing/data/mapping_mutant_to_query_list.csv \
     --wgslsmith_touched $BASE/dredd-webgpu-testing/data/covered_by_wgslsmith.txt \
-    --sample 50
+    --sample 10
