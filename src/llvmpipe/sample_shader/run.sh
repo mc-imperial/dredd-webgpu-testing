@@ -1,12 +1,9 @@
 #!/bin/bash
 
-LD_LIBRARY_PATH=/data/dev/mesa_tracked/build/install
-LIBGL_DRIVERS_PATH=/data/dev/mesa_tracked/build/install
+BASE=/home/ubuntu/dev
 
-export VK_ICD_FILENAMES="/data/dev/mesa_tracked/build/install/share/vulkan/icd.d/lvp_icd.x86_64.json" 
+export VK_ICD_FILENAMES=$BASE/mesa_tracked/build/install/share/vulkan/icd.d/lvp_icd.x86_64.json 
 
-export DREDD_MUTANT_TRACKING_FILE="/data/dev/dredd-webgpu-testing/llvmpipe/sample_shader/tracking.txt" 
+export DREDD_MUTANT_TRACKING_FILE=$BASE/dredd-webgpu-testing/src/llvmpipe/sample_shader/tracking.txt 
 
-#VK_ICD_FILENAMES="/data/dev/mesa_tracked/build/install/share/vulkan/icd.d/lvp_icd.x86_64.json" 
-
-node script.js /data/dev/dawn/out/Debug/dawn.node /data/dev/dredd-webgpu-testing/llvmpipe/sample_shader/wgslsmith.js
+node standalone.js /home/ubuntu/dev/dawn/out/Debug/dawn.node 
