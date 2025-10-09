@@ -17,7 +17,8 @@ def run_cts(cts,
         dawn,
         dredd_covered_mutants_path : Path,
         query : str = 'webgpu:*',
-        vk_icd : str = ''):
+        vk_icd : str = '',
+        tracking : bool = False):
    
     # Run the test with mutant tracking enabled
     print("Running CTS with mutant tracking compiler...")
@@ -32,13 +33,25 @@ def run_cts(cts,
     tracking_compile_cmd = [f'{dawn}/tools/run',
             'run-cts', 
             '--verbose',
-            f'--bin={dawn}/out/Debug',
-            f'--cts={cts}',
-            f"{query}"] 
+            f'--bin={dawn}/out/Debug']
 
-    # Get list of covered mutants from tracking file
+    if tracking:
+        tracking_compile_cmd.append('--mutant-tracking')
+
+    tracking_compile_cmd.extend([
+            f'--cts={cts}',
+            f"{query}"]) 
+
+    print(tracking_compile_cmd)
+
     result = subprocess.run(tracking_compile_cmd, env=tracking_environment)
     
+    if(result.returncode != 0):
+        print('Problem running tracking command!')
+        exit(1)
+    else:
+        print(f'Tracking command finished with return code {result.returncode}')
+
     return result
 
 def get_queries_from_cts(query : str,
