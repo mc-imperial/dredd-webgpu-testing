@@ -31,7 +31,8 @@ def map_mutants(cts : Path,
         dawn, 
         tracking_file, 
         vk_icd=vk_icd,
-        query=query)
+        query=query,
+        tracking=True)
 
     # Process tracking information to produce mutant mapping files
     process_test_wise_tracking(tracking_dir, output_dir, output_file)
@@ -49,7 +50,6 @@ def process_test_wise_tracking(tracking_dir : Path, output_dir : Path, output_cs
     
     n_files = len(os.listdir(tracking_dir))
     for i,file in enumerate(tracking_dir.iterdir()):
-
         print(f'Processing file {i} of {n_files}: {file.stem}')
 
         with open(file,'r') as f:
