@@ -4,7 +4,7 @@ import subprocess
 import json
 from pathlib import Path
 
-def insert_tracking_multiple_files(header: str, folder: str, fn_decorator: str):
+def insert_tracking_multiple_files(header: str, folder: str, fn_decorator: str, function_call: str):
     # find all occurences of the function decorator
     find_cmd = f"find {folder} -name '*.c' | xargs grep -nI '{fn_decorator}'"
     result = subprocess.run(
@@ -18,7 +18,7 @@ def insert_tracking_multiple_files(header: str, folder: str, fn_decorator: str):
         try:
             # Each line looks like: path:line_number:content
             file_path, line_num, content = line.split(":", 2)
-            matches.append((file_path, int(line_num), content.strip()))
+            matches.append((file_path, int(line_num)))
         except ValueError:
             continue
 
@@ -26,6 +26,51 @@ def insert_tracking_multiple_files(header: str, folder: str, fn_decorator: str):
     for match in matches:
         print(match)
 
+    files = list(set([file for (file, line) in matches]))
+    for filepath in files:
+        print(filepath)
+        git_reset(filepath)
+
+        with open(filepath, 'r') as f:
+            file = f.read()
+
+        # Insert at newline after include
+        insert_location = file.find('\n', file.find('#include '))
+        
+        # Copy the start of the file to the new file
+        new_file = file[:insert_location]
+        
+        # Drop part of file that has already been inserted
+        file = file[insert_location:]
+        
+        # Add the header to the new file
+        new_file += f'\n{header}\n'
+
+        # Next insert is first { after fn_decorator
+        insert_location = file.find('{', file.find(fn_decorator))
+        
+        while insert_location != -1:
+            # Copy the file preceeding the new insert location
+            new_file += file[:insert_location + 1]
+            
+            # Update the file to remove the part that has been inserted
+            file = file[insert_location + 1:]
+            
+            # Insert the function call
+            new_file += function_call
+            
+            # Find the next insert location
+            insert_location = file.find('{', file.find(fn_decorator))
+
+        # Copy the remainding file into the new file
+        new_file += file
+        
+        with open(filepath, 'w') as f:
+            file = f.write(new_file)
+
+        print(f'Finished {filepath}')
+        exit()
+    
 
 def insert_tracking(track_info: tuple, dest : Path):
     
@@ -66,6 +111,9 @@ def get_tracking(mutation_info):
     
     return (tracking, extern_decl, reset_fn, reset_fn_call)
 
+def git_reset(file):
+    subprocess.run(['git','restore', file],cwd='/home/ubuntu/dev/mesa_tracked')
+
 def mutate():
     mutation_info = '/home/ubuntu/dev/mesa_tracked/mutation_info.json'
 
@@ -79,11 +127,12 @@ def mutate():
 
 def track_multiple():
     base = '/home/ubuntu/dev/mesa_tracked'
-    header = base + '/src/gallium/frontends/lavapipe/dredd_reset.h'
+    header = '#include "dredd_reset.h"\nstatic int COUNTER = 0;\n'
     folder = base + '/src/gallium/frontends/lavapipe'
     fn_decorator = 'VKAPI_ATTR'
+    function_call = '\n   print_stack_trace(COUNTER++);\n'
 
-    insert_tracking_multiple_files(header, folder, fn_decorator)
+    insert_tracking_multiple_files(header, folder, fn_decorator, function_call)
 
 if __name__=="__main__":
     track_multiple()
