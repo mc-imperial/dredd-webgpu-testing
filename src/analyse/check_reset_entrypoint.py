@@ -75,6 +75,7 @@ def main():
     analyse: bool = args.analyse
     mutant_id_csv = args.output_csv
     mutant_id_short_csv = args.output_csv[:-4] + '_short.csv'
+    individual_tests_csv = args.output_csv[:-4] + '_tests.txt'
 
     base: str = '/home/ubuntu/dev'
     dredd: str = base + '/dredd_with_reset'
@@ -91,8 +92,6 @@ def main():
     output_all_tests_together = working_base + '/data/check_tracking/all_tests/tracking_files'
     output_single_tests = working_base + '/data/check_tracking/single_tests_without_reset/tracking_files'
     
-    all_individual_tests: str = base + '/dredd-webgpu-testing/data/check_tests_flow_control.txt'
-
     env = os.environ.copy()
     env['CC'] = '/usr/bin/clang-17'
     env['CXX'] = '/usr/bin/clang++-17'
@@ -132,9 +131,26 @@ def main():
                '--cts', cts,
                '--query', test_query]
 
-        result = subprocess.run(cmd, env=env)
+        process = subprocess.Popen(cmd, 
+                                  env=env,
+                                  stdout=subprocess.PIPE,
+                                  stderr=subprocess.PIPE,
+                                  text=True)
+        output_lines = []
 
-        result = subprocess.run(cmd, env=env)
+        for line in process.stdout:
+            print(line, end='')      # Show in terminal
+            output_lines.append(line)
+        
+        process.wait()
+
+        with open('output/entrypoint/stdout.txt','w') as f:
+            f.writelines(output_lines)
+
+        individual_tests = list(dict.fromkeys([get_query(x) for x in output_lines if x.startswith('webgpu:')]))
+
+        with open(individual_tests_csv, 'w') as f:
+            f.writelines(individual_tests)
 
         # Results filepaths are hard coded in cts/..../server.ts for now
         # So copy results to a separate location before proceeding
@@ -145,18 +161,14 @@ def main():
         print(f'Copied joint results from {output_temp} to {output_all_tests_together}')
         clear_folder(output_temp)
 
+    print(individual_tests)
+
     if single_tests:
         clear_folder(output_single_tests)
 
         # Run each test in a separate process using a loop
-        with open(all_individual_tests,'r') as f:
-            all_tests = f.readlines()
-
-        all_tests = [x.rstrip() for x in all_tests]
+        tests = [x.rstrip() for x in individual_tests]
         
-        # Select the tests that match our query
-        tests = [test for test in all_tests if in_query(test, test_query)]
-
         print(f'There are {len(tests)} tests')
 
         for i, test in enumerate(tests):
@@ -175,6 +187,9 @@ def main():
 
             result = subprocess.run(cmd, env=env)
             
+            if result.returncode != 0:
+                raise RuntimeError(f'Problem running individual test {test}')
+
             if os.path.exists(test_output_dir):
                 shutil.rmtree(test_output_dir)
            
@@ -396,6 +411,9 @@ def clear_folder(folder):
             raise RuntimeException(f'Failed to delete {item_path}. Reason: {e}')
 
     print(f'Folder cleared: {folder}')
+
+def get_query(line: str):
+    return line[:line.find(' ')]
 
 if __name__=="__main__":
     main()
