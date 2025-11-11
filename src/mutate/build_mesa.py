@@ -1,6 +1,7 @@
 import argparse
 import subprocess
 import os
+from pathlib import Path
 
 def main():
    
@@ -8,12 +9,16 @@ def main():
 
     root = Path(os.path.dirname(os.path.abspath(__file__))).parent.parent
 
-    args.add_argument('subject',
-        choices=['mesa','dawn'])
-    
+    args.add_argument('target',
+                      type=Path,
+                      help='Path to build target')
+    args.add_argument('--clean',
+                      action=store_true)
+ 
     args = args.parse_args()
 
-    
+    if args.clean:
+        clean(target)
 
 def setup(target: Path, dredd: Path):
 
