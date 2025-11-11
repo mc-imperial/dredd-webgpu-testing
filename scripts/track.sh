@@ -15,5 +15,5 @@ python -m track cts \
 	$VK_ICD \
 	$DAWN \
 	--cts $CTS \
-	--query 'webgpu:shader,execution,*' \
-	| tee $OUTPUT
+	--query 'webgpu:shader,execution,flow_control,*'
+#| tee $OUTPUT
