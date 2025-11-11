@@ -4,9 +4,13 @@ import subprocess
 import json
 from pathlib import Path
 
-def insert_tracking_multiple_files(header: str, folder: str, fn_decorator: str, function_call: str):
-    # find all occurences of the function decorator
-    find_cmd = f"find {folder} -name '*.c' | xargs grep -nI '{fn_decorator}'"
+def get_file_matches(folder, pattern) -> list[tuple]:
+    '''
+        Finds all occurences of the pattern in a folder
+        returns a list of tuples with (file_path, line_number)
+    '''
+
+    find_cmd = f"find {folder} -name '*.c' | xargs grep -nI '{pattern}'"
     result = subprocess.run(
             find_cmd,
             shell=True,
@@ -23,10 +27,15 @@ def insert_tracking_multiple_files(header: str, folder: str, fn_decorator: str, 
             continue
 
     print(f'Found {len(matches)} matches in {folder}')
-    for match in matches:
-        print(match)
+
+    return matches
+
+def insert_tracking_multiple_files(header: str, folder: str, fn_decorator: str, function_call: str):
+    
+    matches = get_file_matches(folder, fn_decorator)
 
     files = list(set([file for (file, line) in matches]))
+    
     for filepath in files:
         print(filepath)
         git_reset(filepath)
@@ -69,32 +78,50 @@ def insert_tracking_multiple_files(header: str, folder: str, fn_decorator: str, 
             file = f.write(new_file)
 
         print(f'Finished {filepath}')
-        exit()
-    
 
-def insert_tracking(track_info: tuple, dest : Path):
+def insert_tracking(mutation_info: Path, dest : Path):
     
-    # Unpack tracking tuple
+    git_reset(dest)
+
+    fn_names = ['lvp_CreateComputePipelines(',
+                'lvp_CreateGraphicsPipelines(']
+
+    fn_locations = []
+
+    track_info = get_tracking(mutation_info)
+
     tracking, extern_decl, reset_fn, reset_fn_call = track_info
-   
-    # Insert tracking functions into destination file
-    shutil.copy(dest, f'{dest}_backup')
+  
+    # Find insertion locations
     with open(dest, 'r') as f:
         file = f.read()
 
     decl_location = file.find('\n', file.find('#define MAX_DYNAMIC_STATES 72')) + 1
 
-    function = 'lvp_CreateComputePipelines('
-    fn_location = file.find(function)
-    fn_location = file.find('{',fn_location) + 2
-   
+    for fn in fn_names:
+        location = file.find(fn)
+        if location == -1:
+            raise RuntimeError(f'Function {fn} not found!')
+        location = file.find('{', location) +2
+        fn_locations.append(location)
+
+    # Sort fn insert locations
+    fn_locations.sort()
+
+    # Insert fn definitions in new file
     new_file = file[:decl_location]
+    curr_location = decl_location
     new_file += '\n#include<stdatomic.h>\n'
     new_file += '\n' + extern_decl + '\n'
     new_file += '\n' + reset_fn + '\n'
-    new_file += file[decl_location:fn_location] 
-    new_file += reset_fn_call
-    new_file += file[fn_location:]
+
+    # Insert reset fn calls in new file
+    for location in fn_locations:
+        new_file += file[curr_location:location]
+        new_file += reset_fn_call
+        curr_location = location
+
+    new_file += file[curr_location:]
    
     print(f'Writing to {dest}')
     with open(dest, 'w') as f:
@@ -112,27 +139,62 @@ def get_tracking(mutation_info):
     return (tracking, extern_decl, reset_fn, reset_fn_call)
 
 def git_reset(file):
-    subprocess.run(['git','restore', file],cwd='/home/ubuntu/dev/mesa_tracked')
+    result = subprocess.run(['git','restore', file],cwd='/home/ubuntu/dev/mesa_tracked')
+    if result.returncode != 0:
+        raise RuntimeError(f'Git restore failed for {file}')
 
-def mutate():
+def dredd_into_lvp_pipeline():
     mutation_info = '/home/ubuntu/dev/mesa_tracked/mutation_info.json'
-
-    track_info = get_tracking(mutation_info)
 
     dests = ['/home/ubuntu/dev/mesa_tracked/src/gallium/frontends/lavapipe/lvp_pipeline.c']
 
     for dest in dests:
         subprocess.run(['git','restore', dest],cwd='/home/ubuntu/dev/mesa_tracked')
-        insert_tracking(track_info, dest)
+        insert_tracking(mutation_info, dest)
+
+def dredd_into_vkapi_attr():
+    ''' Insert extern bool declaration and dredd_reset 
+        calls into all VKAPI_ATTR decorated functions 
+        directly (not using a dredd include)
+    '''
+    mutation_info = '/home/ubuntu/dev/mesa_tracked/mutation_info.json'
+    folder = '/home/ubuntu/dev/mesa_tracked/src/gallium/frontends/lavapipe'
+    call_location = 'VKAPI_ATTR'
+    fn_call = '\n__dredd_reset();\n'
+
+    track_info = get_tracking(mutation_info)
+
+    insert_tracking_mutliple_files(header, folder, call_location, fn_call)
+
+def track_multiple_vk():
+    ''' Insert dredd_reset and print_stack_trace 
+        calls into all VKAPI_ATTR decorated functions
+        by including a separate dredd header file
+    '''
+    base = '/home/ubuntu/dev/mesa_tracked'
+    header = '#include "dredd_reset_vulkan.h"\nstatic int COUNTER = 0;\n'
+    folder = base + '/src/vulkan/runtime'
+    fn_decorator = 'VKAPI_ATTR'
+    function_call = '\n__dredd_reset_tracking_vulkan();\n'
+
+    insert_tracking_multiple_files(header, folder, fn_decorator, function_call)
+
 
 def track_multiple():
+    ''' Insert dredd_reset and print_stack_trace 
+        calls into all VKAPI_ATTR decorated functions
+        by including a separate dredd header file
+    '''
     base = '/home/ubuntu/dev/mesa_tracked'
     header = '#include "dredd_reset.h"\nstatic int COUNTER = 0;\n'
     folder = base + '/src/gallium/frontends/lavapipe'
     fn_decorator = 'VKAPI_ATTR'
-    function_call = '\n   print_stack_trace(COUNTER++);\n'
-
+    #function_call = '\n   print_stack_trace(COUNTER);\n   COUNTER++;\n   __dredd_reset_tracking();'
+    function_call = '\n   __dredd_reset_tracking();\n'
     insert_tracking_multiple_files(header, folder, fn_decorator, function_call)
 
 if __name__=="__main__":
-    track_multiple()
+    base = '/home/ubuntu/dev/mesa_tracked'
+    mutation_info = base + '/mutation_info.json'
+    dest = base + '/src/gallium/frontends/lavapipe/lvp_pipeline.c'
+    #insert_tracking(mutation_info, dest)
