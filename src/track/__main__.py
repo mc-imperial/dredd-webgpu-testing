@@ -42,7 +42,7 @@ def main():
     tracking_dir = Path(args.output, 'tracking_files')
     
     if not args.process_map:
-        tracking_dir.mkdir(exist_ok=False)
+        tracking_dir.mkdir(parents=True,exist_ok=True)
 
     if args.tracker == 'cts':
         # Get the mutant to test ID mapping so that we know 
