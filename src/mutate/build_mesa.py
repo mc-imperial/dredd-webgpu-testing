@@ -1,5 +1,19 @@
+import argparse
 import subprocess
 import os
+
+def main():
+   
+    args = argparse.ArgumentParser()
+
+    root = Path(os.path.dirname(os.path.abspath(__file__))).parent.parent
+
+    args.add_argument('subject',
+        choices=['mesa','dawn'])
+    
+    args = args.parse_args()
+
+    
 
 def setup(target: Path, dredd: Path):
 
@@ -31,7 +45,7 @@ def setup(target: Path, dredd: Path):
         raise RuntimeError(f'Problem with initial configuration of {target}')
    
 
-def build(target : Path, dredd : Path, recording=False):
+def build(target : Path):
 
     env = os.environ.copy()
 
@@ -47,7 +61,7 @@ def build(target : Path, dredd : Path, recording=False):
     if result.returncode != 0:
         raise RuntimeError(f'Problem building {target}')
 
-def install(target : Path, dredd : Path, recording=False):
+def install(target : Path):
 
     env = os.environ.copy()
 
@@ -78,9 +92,9 @@ def restore(target : Path):
     replace_threads_h(target)
     turn_off_werror(target)
 
-def clean(target : Path, dredd):
+def clean(target : Path):
     restore(target)
-    setup(target, dredd)
-    build(target, dredd)
-    install(target, dredd)
+    setup(target)
+    build(target)
+    install(target)
  

@@ -59,7 +59,7 @@ def main():
     for x in [mutated, tracked]:
         print(f'Cleaning {x}')
         
-        clean(x.src, args.dredd)
+        clean(x.src)
 
         x.mutation_files = get_files_for_mutation(x.compile_commands, 
                                 args.mutation_dir, 
@@ -78,9 +78,9 @@ def main():
             track_only=x.track_only,
             reset=x.reset)
 
-        build_result = build(x.src, args.dredd)
+        build_result = build(x.src)
 
-        install_result = install(x.src, args.dredd)
+        install_result = install(x.src)
 
         print(f'Completed building and installing {x}')
 
