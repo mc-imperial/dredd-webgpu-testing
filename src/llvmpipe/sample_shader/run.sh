@@ -6,4 +6,4 @@ export VK_ICD_FILENAMES=$BASE/mesa_tracked/build/install/share/vulkan/icd.d/lvp_
 
 export DREDD_MUTANT_TRACKING_FILE=$BASE/dredd-webgpu-testing/src/llvmpipe/sample_shader/tracking.txt 
 
-node standalone.js /home/ubuntu/dev/dawn/out/Debug/dawn.node 
+node standalone.js $BASE/dawn/out/Debug/dawn.node 
