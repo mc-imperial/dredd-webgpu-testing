@@ -33,7 +33,8 @@ def run_cts(cts,
     tracking_compile_cmd = [f'{dawn}/tools/run',
             'run-cts', 
             '--verbose',
-            f'--bin={dawn}/out/Debug']
+            f'--bin={dawn}/out/Debug',
+            '--j', '1']
 
     if tracking:
         tracking_compile_cmd.append('--mutant-tracking')
