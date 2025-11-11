@@ -30,6 +30,9 @@ def main():
         type=Path,
         default="src",
         help="Path to directory to be mutated")
+    args.add_argument('--reset',
+        action='store_true',
+        help="Use mutant resets during tracking")
 
     args = args.parse_args()
 
@@ -43,16 +46,18 @@ def main():
     mutated : FileInfo = FileInfo(Path(args.mutated),
         Path(args.mutated,'build','compile_commands.json'),
         Path(args.mutated,'mutation_info.json'),
-        track_only=False)
+        track_only=False,
+        reset=False)
 
     tracked : FileInfo = FileInfo(Path(args.tracked),
         Path(args.tracked,'build','compile_commands.json'),
         Path(args.tracked,'mutation_info.json'),
-        track_only=True)
+        track_only=True,
+        reset=args.reset)
 
     for x in [mutated, tracked]:
-
         print(f'Cleaning {x}')
+        
         clean(x.src, args.dredd)
 
         x.mutation_files = get_files_for_mutation(x.compile_commands, 
@@ -62,14 +67,15 @@ def main():
         with open(Path(x.src,'mutated_files.txt'), 'w') as f:
             for file in x.mutation_files:
                 f.write(file + '\n')
-
+        
         print('Mutating...')
-        mutate(dredd_exe, 
-            x.mutation_files,
-            x.mutant_info_file,
-            x.compile_commands,
-            x.src,
-            x.track_only)
+        mutate(dredd=dredd_exe, 
+            mutation_files=x.mutation_files,
+            info_file=x.mutant_info_file,
+            compile_commands=x.compile_commands,
+            src=x.src,
+            track_only=x.track_only,
+            reset=x.reset)
 
         build_result = build(x.src, args.dredd)
 
@@ -83,18 +89,28 @@ def mutate(dredd : Path,
         compile_commands : Path,
         src : Path,
         track_only : bool,
-        recording : bool = False):
+        recording : bool = False,
+        reset: bool = False):
 
     remove_flag_from_compile_commands(compile_commands)
     
     if track_only:
-        mutate_cmd = [str(dredd),
-        '--only-track-mutant-coverage',
-        '--allow-reset-of-tracking-counters',
-        '-p',
-        str(compile_commands),
-        '--mutation-info-file',
-        str(info_file)]
+        if reset:
+            mutate_cmd = [str(dredd),
+                '--only-track-mutant-coverage',
+                '--allow-reset-of-tracking-counters',
+                '-p',
+                str(compile_commands),
+                '--mutation-info-file',
+                str(info_file)]
+        else:
+            mutate_cmd = [str(dredd),
+                '--only-track-mutant-coverage',
+                '-p',
+                str(compile_commands),
+                '--mutation-info-file',
+                str(info_file)]
+
     else:
         mutate_cmd = [str(dredd),
             '-p',
@@ -111,8 +127,8 @@ def mutate(dredd : Path,
 
     # Insert reset of tracking counters to handle_compute_shaders()
     if track_only:
-        insert_tracking(info_file, Path(src,'src/gallium/frontends/lavapipe/lvp_execute.c'))
-
+        insert_tracking(info_file, Path(src,'src/gallium/frontends/lavapipe/lvp_pipeline.c'))
+    
     return result
 
 def remove_flag_from_compile_commands(file : Path):
