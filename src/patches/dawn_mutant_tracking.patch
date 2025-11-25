@@ -1,0 +1,84 @@
+diff --git a/tools/src/cmd/run-cts/node/cmd.go b/tools/src/cmd/run-cts/node/cmd.go
+index <old>..<new> 100644
+--- a/tools/src/cmd/run-cts/node/cmd.go
++++ b/tools/src/cmd/run-cts/node/cmd.go
+@@ -123,7 +123,7 @@ func (c *cmd) run() error {
+        // Choose server or cmdline
+        if c.flags.UseServers {
+-           go c.runTestCasesWithServers(ctx, testCases, results, reader)
++           go c.runTestCasesWithServers(ctx, testCases, results, reader, c.flags.tracking)
+        } else {
+-           go c.runTestCasesWithCmdline(ctx, testCases, results, reader)
++           go c.runTestCasesWithCmdline(ctx, testCases, results, reader, c.flags.tracking)
+        }
+
+diff --git a/tools/src/cmd/run-cts/node/cmdline.go b/tools/src/cmd/run-cts/node/cmdline.go
+index <old>..<new> 100644
+--- a/tools/src/cmd/run-cts/node/cmdline.go
++++ b/tools/src/cmd/run-cts/node/cmdline.go
+@@ -40,7 +40,7 @@ import (
+ // test case in a separate process. This reduces possibility of state leakage
+ // between tests.
+ // Up to c.flags.numRunners tests will be run concurrently.
+-func (c *cmd) runTestCasesWithCmdline(ctx context.Context, testCases []common.TestCase, results chan<- common.Result, fsReader oswrapper.FilesystemReader) {
++func (c *cmd) runTestCasesWithCmdline(ctx context.Context, testCases []common.TestCase, results chan<- common.Result, fsReader oswrapper.FilesystemReader, tracking bool) {
+
+diff --git a/tools/src/cmd/run-cts/node/server.go b/tools/src/cmd/run-cts/node/server.go
+index <old>..<new> 100644
+--- a/tools/src/cmd/run-cts/node/server.go
++++ b/tools/src/cmd/run-cts/node/server.go
+@@ -33,7 +33,7 @@ import (
+ 
+ // runTestCasesWithServers spawns N server instances and distributes work
+ func (c *cmd) runTestCasesWithServers(
+-    ctx context.Context, testCases []common.TestCase, results chan<- common.Result, fsReader oswrapper.FilesystemReader) {
++    ctx context.Context, testCases []common.TestCase, results chan<- common.Result, fsReader oswrapper.FilesystemReader, tracking bool) {
+
+     // Create channel of test indices...
+@@ -50,7 +50,7 @@ func (c *cmd) runTestCasesWithServers(
+         wg.Add(1)
+         go func() {
+             defer wg.Done()
+-            if err := c.runServer(ctx, id, testCases, testCaseIndices, results, fsReader); err != nil {
++            if err := c.runServer(ctx, id, tracking, testCases, testCaseIndices, results, fsReader); err != nil {
+                 results <- common.Result{Status: common.Fail, Error: fmt.Errorf("Test server error: %w", err)}
+             }
+         }()
+@@ -72,7 +72,7 @@ func (c *cmd) runTestCasesWithServers(
+ // runServer starts a node server and sends test commands to it
+ func (c *cmd) runServer(
+     ctx context.Context,
+-    id int,
++    id int, tracking bool,
+     testCases []common.TestCase,
+     testCaseIndices <-chan int,
+     results chan<- common.Result,
+@@ -142,7 +142,12 @@ func (c *cmd) runServer(
+ 
+         // Load the cases
+-        postResp, postErr := http.Post(fmt.Sprintf("http://localhost:%v/load?%v", port, c.query), "", &bytes.Buffer{})
++        // Append tracking flag
++        loadQuery := c.query
++        if tracking {
++            loadQuery = loadQuery + "&tracking=true"
++        }
++        postResp, postErr := http.Post(fmt.Sprintf("http://localhost:%v/load?%v", port, loadQuery), "", &bytes.Buffer{})
+ 
+         if postErr != nil || postResp.StatusCode != http.StatusOK {
+             ...
+@@ -184,7 +189,18 @@ func (c *cmd) runServer(
+         }
+ 
+-        postResp, err := http.Post(fmt.Sprintf("http://localhost:%v/run?%v", port, testCases[idx]), "", &bytes.Buffer{})
++        // Build run query + tracking flag
++        runQuery := testCases[idx].String()
++        if tracking {
++            if strings.Contains(runQuery, "?") {
++                runQuery = runQuery + "&tracking=true"
++            } else {
++                runQuery = runQuery + "?tracking=true"
++            }
++        }
++
++        postResp, err := http.Post(fmt.Sprintf("http://localhost:%v/run?%v", port, runQuery), "", &bytes.Buffer{})
+
