@@ -21,36 +21,11 @@ pip install .
 ```
 
 # Build Dredd
-Get Clang and LLVM:
-```
-sudo apt install -y libzstd-dev
-cd external/dredd/third_party
-curl -Lo clang+llvm.tar.xz https://github.com/llvm/llvm-project/releases/download/llvmorg-17.0.6/clang+llvm-17.0.6-x86_64-linux-gnu-ubuntu-22.04.tar.xz
-tar xf clang+llvm.tar.xz
-rm -rf clang+llvm
-mv clang+llvm-17.0.6-x86_64-linux-gnu-ubuntu-22.04 clang+llvm
-rm clang+llvm.tar.xz
-cd ..
-```
+Follow the instructions to build Dredd from source [here][https://github.com/mc-imperial/dredd]
 
-Build Dredd:
-```
-mkdir build && cd build
-cmake -G Ninja .. -DCMAKE_BUILD_TYPE=Release
-cmake --build . --config Release
-cp src/dredd/dredd ../third_party/clang+llvm/bin
-```
-Check it worked:
+# Mutate Mesa
 
-```
-dredd/third_party/clang+llvm/bin/dredd --help
-```
-
-# Mutate the subject
-
-The mutation subject can be Dawn or Mesa. 
-
-First, get *two* checkouts of the subject version that you want to mutate. Build a `mutated` and `tracked` version once without any Dredd intervention in order to produce a compile commands database. For Mesa:
+First, get *two* checkouts of the Mesa version that you want to mutate. Build a `mutated` and `tracked` version once without any Dredd intervention in order to produce a compile commands database. For Mesa:
 ```
 git clone https://gitlab.freedesktop.org/mesa/mesa.git mesa_mutated
 git clone https://gitlab.freedesktop.org/mesa/mesa.git mesa_tracked
@@ -101,14 +76,13 @@ npm install
 ```
 
 The patch to instrument Dawn is here:
-`src/track/dawn_mutant_tracking.diff`
+`src/patches/dawn_tracking.diff`
 
 Apply the patches like this:
 ```
 cd dawn
 git checkout -b tracking
-cp /path/to/dredd-webgpu-testing/src/track/dawn_mutant_tracking.diff .
-git apply dawn_mutant_tracking.diff
+git apply --whitespace=fix /path/to/dawn_tracking.diff .
 ```
 
 There is no need to rebuild Dawn or the CTS. The patch is applied to a Go harness in Dawn that is not part of the build, and the CTS will re-build itself automatically upon running when it detects changes.
