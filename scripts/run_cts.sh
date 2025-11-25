@@ -4,7 +4,8 @@ BASE=/home/ubuntu/dev
 CTS=$BASE/webgpu_cts
 DAWN=$BASE/dawn
 MESA_INSTALL=$BASE/mesa/build/install
-#export VK_ICD_FILENAMES=$MESA_INSTALL/share/vulkan/icd.d/lvp_icd.x86_64.json 
+export VK_ICD_FILENAMES=$MESA_INSTALL/share/vulkan/icd.d/lvp_icd.x86_64.json 
+export MESA_DISABLE_SHADER_CACHE=true
 
 $DAWN/tools/run run-cts \
     --verbose \
