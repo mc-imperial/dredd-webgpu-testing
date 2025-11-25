@@ -135,7 +135,9 @@ def mutate(dredd : Path,
 
     # Insert reset of tracking counters to handle_compute_shaders()
     if track_only:
-        insert_tracking(info_file, Path(src,'src/gallium/frontends/lavapipe/lvp_pipeline.c'))
+        insert_tracking(info_file, 
+                        Path(src,'src/gallium/frontends/lavapipe/lvp_pipeline.c'),
+                        str(src))
     
     return result
 

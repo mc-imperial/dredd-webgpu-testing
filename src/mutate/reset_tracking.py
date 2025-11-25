@@ -79,9 +79,9 @@ def insert_tracking_multiple_files(header: str, folder: str, fn_decorator: str, 
 
         print(f'Finished {filepath}')
 
-def insert_tracking(mutation_info: Path, dest : Path):
+def insert_tracking(mutation_info: Path, dest : Path, mesa_tracked: str):
     
-    git_reset(dest)
+    git_reset(dest, mesa_tracked)
 
     fn_names = ['lvp_CreateComputePipelines(',
                 'lvp_CreateGraphicsPipelines(']
@@ -138,27 +138,27 @@ def get_tracking(mutation_info):
     
     return (tracking, extern_decl, reset_fn, reset_fn_call)
 
-def git_reset(file):
-    result = subprocess.run(['git','restore', file],cwd='/home/ubuntu/dev/mesa_tracked')
+def git_reset(file, mesa_tracked):
+    result = subprocess.run(['git','restore', file],cwd=mesa_tracked)
     if result.returncode != 0:
         raise RuntimeError(f'Git restore failed for {file}')
 
-def dredd_into_lvp_pipeline():
-    mutation_info = '/home/ubuntu/dev/mesa_tracked/mutation_info.json'
+def dredd_into_lvp_pipeline(mesa_tracked):
+    mutation_info = mesa_tracked + '/mutation_info.json'
 
-    dests = ['/home/ubuntu/dev/mesa_tracked/src/gallium/frontends/lavapipe/lvp_pipeline.c']
+    dests = [mesa_tracked + '/src/gallium/frontends/lavapipe/lvp_pipeline.c']
 
     for dest in dests:
-        subprocess.run(['git','restore', dest],cwd='/home/ubuntu/dev/mesa_tracked')
+        subprocess.run(['git','restore', dest],cwd=mesa_tracked)
         insert_tracking(mutation_info, dest)
 
-def dredd_into_vkapi_attr():
+def dredd_into_vkapi_attr(mesa_tracked):
     ''' Insert extern bool declaration and dredd_reset 
         calls into all VKAPI_ATTR decorated functions 
         directly (not using a dredd include)
     '''
-    mutation_info = '/home/ubuntu/dev/mesa_tracked/mutation_info.json'
-    folder = '/home/ubuntu/dev/mesa_tracked/src/gallium/frontends/lavapipe'
+    mutation_info = mesa_tracked + '/mutation_info.json'
+    folder = mesa_tracked + '/src/gallium/frontends/lavapipe'
     call_location = 'VKAPI_ATTR'
     fn_call = '\n__dredd_reset();\n'
 
@@ -166,12 +166,12 @@ def dredd_into_vkapi_attr():
 
     insert_tracking_mutliple_files(header, folder, call_location, fn_call)
 
-def track_multiple_vk():
+def track_multiple_vk(mesa_tracked):
     ''' Insert dredd_reset and print_stack_trace 
         calls into all VKAPI_ATTR decorated functions
         by including a separate dredd header file
     '''
-    base = '/home/ubuntu/dev/mesa_tracked'
+    base = mesa_tracked
     header = '#include "dredd_reset_vulkan.h"\nstatic int COUNTER = 0;\n'
     folder = base + '/src/vulkan/runtime'
     fn_decorator = 'VKAPI_ATTR'
@@ -180,12 +180,12 @@ def track_multiple_vk():
     insert_tracking_multiple_files(header, folder, fn_decorator, function_call)
 
 
-def track_multiple():
+def track_multiple(mesa_tracked):
     ''' Insert dredd_reset and print_stack_trace 
         calls into all VKAPI_ATTR decorated functions
         by including a separate dredd header file
     '''
-    base = '/home/ubuntu/dev/mesa_tracked'
+    base = mesa_tracked
     header = '#include "dredd_reset.h"\nstatic int COUNTER = 0;\n'
     folder = base + '/src/gallium/frontends/lavapipe'
     fn_decorator = 'VKAPI_ATTR'
