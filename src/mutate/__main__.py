@@ -34,16 +34,23 @@ def main():
     args.add_argument('--reset',
         action='store_true',
         help="Use mutant resets during tracking")
-
+    args.add_argument('--clang17',
+                      type=str,
+                      default='/usr/bin/clang-17')
+    args.add_argument('--clangpp17',
+                      type=str,
+                      default='/usr/bin/clang++-17')
+ 
     args = args.parse_args()
+
+    clang17 = args.clang17
+    clangpp17 = args.clangpp17
 
     if args.subject == 'dawn':
         raise NotImplementedError
 
     dredd_exe = Path(args.dredd, 'build/src/dredd/dredd')
     
-    #mutation_dir = Path('src/gallium/drivers/llvmpipe')
-
     mutated : FileInfo = FileInfo(Path(args.mutated),
         Path(args.mutated,'build','compile_commands.json'),
         Path(args.mutated,'mutation_info.json'),
@@ -59,7 +66,7 @@ def main():
     for x in [mutated, tracked]:
         print(f'Cleaning {x}')
         
-        clean(x.src)
+        clean(x.src, clang17, clangpp17)
 
         x.mutation_files = get_files_for_mutation(x.compile_commands, 
                                 args.mutation_dir, 
@@ -78,9 +85,9 @@ def main():
             track_only=x.track_only,
             reset=x.reset)
 
-        build_result = build(x.src)
+        build_result = build(x.src, clang17, clangpp17)
 
-        install_result = install(x.src)
+        install_result = install(x.src, clang17, clangpp17)
 
         print(f'Completed building and installing {x}')
 
