@@ -29,9 +29,6 @@ import sys
 import json
 
 from typing import Dict, Optional
-sys.path.append("/home/ubuntu/dev/dredd_with_reset/scripts")
-
-from query_mutant_info import MutantInfo, build_mutant_to_node_mapping
 
 def main():
 
@@ -62,6 +59,9 @@ def main():
     args.add_argument('--output_csv',
                       type=str,
                       default='output/mutant_ids.csv')
+    args.add_argument('--base',
+                      type=str,
+                      default="/home/ubuntu/dev")
 
     args = args.parse_args()
 
@@ -77,14 +77,17 @@ def main():
     mutant_id_short_csv = args.output_csv[:-4] + '_short.csv'
     individual_tests_csv = args.output_csv[:-4] + '_tests.txt'
 
-    base: str = '/home/ubuntu/dev'
-    dredd: str = base + '/dredd_with_reset'
+    base: str = args.base
+    dredd: str = base + '/dredd'
     mesa_mutated: str = base + '/mesa_mutated'
     mesa_tracked: str = base + '/mesa_tracked'
     dawn: str = base + '/dawn'
     cts: str = base + '/webgpu_cts'
     vk_icd: str = mesa_tracked + '/build/install/share/vulkan/icd.d/lvp_icd.x86_64.json'
     mutation_info_file: str = base + '/mesa_tracked/mutation_info.json'
+
+    sys.path.append(dredd + '/scripts')
+    from query_mutant_info import MutantInfo, build_mutant_to_node_mapping
 
     working_base = base + '/dredd-webgpu-testing'
 
