@@ -29,6 +29,8 @@ import sys
 import json
 
 from typing import Dict, Optional
+MutantInfo = None
+build_mutant_to_node_mapping = None
 
 def main():
 
@@ -86,8 +88,13 @@ def main():
     vk_icd: str = mesa_tracked + '/build/install/share/vulkan/icd.d/lvp_icd.x86_64.json'
     mutation_info_file: str = base + '/mesa_tracked/mutation_info.json'
 
+    # Import scripts from Dredd - awkward because it is not a module
     sys.path.append(dredd + '/scripts')
-    from query_mutant_info import MutantInfo, build_mutant_to_node_mapping
+    global MutantInfo, build_mutant_to_node_mapping
+    from query_mutant_info import MutantInfo as MI, build_mutant_to_node_mapping as B2N
+
+    MutantInfo = MI
+    build_mutant_to_node_mapping = B2N
 
     working_base = base + '/dredd-webgpu-testing'
 
