@@ -154,11 +154,12 @@ def main():
         
         process.wait()
 
-        with open('output/entrypoint/stdout.txt','w') as f:
-            f.writelines(output_lines)
+        #with open('output/entrypoint/stdout.txt','w') as f:
+        #    f.writelines(output_lines)
 
         individual_tests = list(dict.fromkeys([get_query(x) for x in output_lines if x.startswith('webgpu:')]))
 
+        print(f'Writing individual tests to {individual_tests_csv}...', flush=True)
         with open(individual_tests_csv, 'w') as f:
             f.writelines(individual_tests)
 
@@ -167,11 +168,10 @@ def main():
         if os.path.exists(output_all_tests_together):
             shutil.rmtree(output_all_tests_together)
 
+        print(f'Copying joint results from {output_temp} to {output_all_tests_together}...', flush=True)
         shutil.copytree(output_temp, output_all_tests_together)
-        print(f'Copied joint results from {output_temp} to {output_all_tests_together}')
+        print(f'Copied joint results from {output_temp} to {output_all_tests_together}', flush=True)
         clear_folder(output_temp)
-
-    print(individual_tests)
 
     if single_tests:
         clear_folder(output_single_tests)
