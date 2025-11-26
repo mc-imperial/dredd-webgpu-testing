@@ -28,6 +28,7 @@ import pandas as pd
 import sys
 import json
 
+from datetime import datetime
 from typing import Dict, Optional
 MutantInfo = None
 build_mutant_to_node_mapping = None
@@ -153,6 +154,8 @@ def main():
             output_lines.append(line)
         
         process.wait()
+        
+        print(f'Finished tests! At {datetime.now()}')
 
         #with open('output/entrypoint/stdout.txt','w') as f:
         #    f.writelines(output_lines)
@@ -162,6 +165,9 @@ def main():
         print(f'Writing individual tests to {individual_tests_csv}...', flush=True)
         with open(individual_tests_csv, 'w') as f:
             f.writelines(individual_tests)
+        
+        print(f'Exiting! At {datetime.now()}')
+        exit()
 
         # Results filepaths are hard coded in cts/..../server.ts for now
         # So copy results to a separate location before proceeding
