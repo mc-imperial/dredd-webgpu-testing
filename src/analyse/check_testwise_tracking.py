@@ -7,6 +7,7 @@ import argparse
 import zipfile
 import struct
 
+from collections import Counter
 from pathlib import Path
 
 def main():
@@ -69,6 +70,50 @@ def compare_compressed(compressed_dir: Path,
 
     # Process the compressed files to convert from .txt.gz to .txt
     ungzip_files(compressed_output_dir, compressed_processed_dir) 
+    
+    # Compare the mutants in each one
+    compare_mutants(uncompressed_output_dir, compressed_processed_dir)
+
+def compare_mutants(dir1: Path, dir2: Path):
+    print(f'Comparing:')
+    print(f' 1 - {dir1}')
+    print(f' 2 - {dir2}')
+    dir1_files = {x.name : x for x in dir1.rglob('*.txt')}
+    dir2_files = {x.name : x for x in dir2.rglob('*.txt')}
+
+    assert dir1_files.keys() == dir2_files.keys()
+
+    for file in dir1_files.keys():
+        with open(dir1_files[file],'r') as f:
+            mutants1 = f.readlines()
+
+        with open(dir2_files[file],'r') as f:
+            mutants2 = f.readlines()
+
+        print(f'\nOutput for {file}')
+        print(f'There are {len(mutants1)} mutants in 1')
+        print(f'There are {len(mutants2)} mutants in 2')
+    
+        if mutants1 != mutants2:
+            print(f'Mutant mismatch for file {file}!')
+
+            if Counter(mutants1) == Counter(mutants2):
+                print(f'Mutant IDs are the same but the order differs')
+
+            if set(mutants1) == set(mutants2):
+                print(f'Mutant IDs are the same but number of duplicates differs')
+
+            else:
+                print(f'Some mutants differ!')    
+                m1_minus_m2 = set(mutants1) - set(mutants2)
+                m2_minus_m1 = set(mutants2) - set(mutants1)
+
+                print(f'M1 / M2 : {len(m1_minus_m2)}')
+                print(f'  Sample: {list(m1_minus_m2)[:10]}')
+                print(f'M2 / M1 : {len(m2_minus_m1)}')
+                print(f'  Sample: {list(m2_minus_m1)[:10]}')
+        else:
+            print(f'Mutants all match for file {file}!')
 
 def extract(archive: Path, extract_dir: Path, files_to_extract: list):
     
