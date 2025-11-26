@@ -44,7 +44,6 @@ def run_cts(cts,
             f"{query}"]) 
 
     print(tracking_compile_cmd)
-
     result = subprocess.run(tracking_compile_cmd, env=tracking_environment)
     
     if(result.returncode != 0):
