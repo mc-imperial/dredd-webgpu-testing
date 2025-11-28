@@ -1,3 +1,5 @@
+import csv
+import json
 import shutil
 import gzip
 import random
@@ -6,6 +8,7 @@ import os
 import argparse
 import zipfile
 import struct
+import pandas as pd
 
 from collections import Counter
 from pathlib import Path
@@ -14,6 +17,12 @@ def main():
     args = argparse.ArgumentParser()
     
     args.add_argument('--compress',
+            action='store_true',
+            default=False)
+    args.add_argument('--map',
+            action='store_true',
+            default=False)
+    args.add_argument('--missing',
             action='store_true',
             default=False)
     args.add_argument('--base',
@@ -28,10 +37,105 @@ def main():
     output = Path(data, 'testwise_tracking_checks')
 
     compressed = Path(data, 'tracking_files_compressed_take_2.zip')
-    uncompressed = Path(data, 'tracking_files.zip') 
+    uncompressed = Path(data, 'tracking_files.zip')
+    mapping = Path(data, 'mapping_test_to_id.json')
 
     if args.compress:
         compare_compressed(compressed, uncompressed, output)
+    if args.map:
+        map_tests(compressed, mapping, output)
+    if args.missing:
+        check_missing_tests(compressed, mapping, output)
+        
+def map_tests(archive: Path, mapping_json: Path, output: Path):
+    ''' 
+    Maps test ID names to actual test names to check
+    which ones are missing
+    '''
+    
+    output_present = Path(output, 'present_tests.csv')
+    output_missing = Path(output, 'missing_tests.csv')
+    output_df = Path(output, 'mapped_tests.csv')
+
+    # Get test name to id mapping
+    with open(mapping_json, 'r') as f:
+        mapping = json.load(f)
+
+    df = pd.DataFrame(mapping.items(), columns = ["test_name","test_id"])
+    df['test_id_int'] = df['test_id'].str.removeprefix('test_id_')
+    
+    # Get tests that produced tracking files
+    with zipfile.ZipFile(archive, 'r') as z:
+        test_files = z.namelist()
+
+    present_ids = [Path(x).stem for x in test_files]
+    present_ids.remove('tracking_files')
+    
+    # Match present tests to mapping
+    df['tracking_file_exists'] = df['test_id'].isin(present_ids).astype(int)
+    df.sort_values(['test_name'], inplace=True)
+
+    # Get test subgroups
+    df['test_folder'] = df['test_name'].str.extract(r'^[^:]*:([^:]*)')
+    split_cols = df['test_folder'].str.split(',', expand=True)
+    split_cols = split_cols.add_prefix('folder_l')
+    df = df.join(split_cols)
+
+    # Show percentage of tracked files for overall tests
+    grouplist = ["folder_l0", "folder_l1"]
+    show_grouping(df, grouplist)
+
+    # Show percentage of tracked files for shader tests
+    df_shader = df[df["folder_l0"] == "shader"]
+    grouplist = ["folder_l0", "folder_l1", "folder_l2"]
+    show_grouping(df_shader, grouplist)
+
+    # Show percentage of tracked files for shader expression tests
+    df_shader_expr = df_shader[
+            (df_shader["folder_l1"] == "execution") & 
+            (df_shader["folder_l2"] == "expression")
+            ]
+    grouplist = ["folder_l0", "folder_l1", "folder_l2", "folder_l3"]
+    show_grouping(df_shader_expr, grouplist)
+
+    # Show percentage of tracked files for expr call - this is missing the most
+    df_shader_expr_call = df_shader_expr[
+            (df_shader_expr["folder_l3"] == "call") &
+            (df_shader_expr["folder_l4"] == "builtin")
+            ]
+    grouplist = ["folder_l0", "folder_l1", "folder_l2", "folder_l3", "folder_l4", "folder_l5"]
+    show_grouping(df_shader_expr_call, grouplist)
+
+def show_grouping(df: pd.DataFrame, grouplist: list):
+    grouped = df.groupby(grouplist)["tracking_file_exists"].agg(
+        percent_tracked="mean",
+        total_count="count"
+    )
+
+    grouped["percent_tracked"] = (grouped["percent_tracked"] * 100).round(2)
+    with pd.option_context("display.max_rows", None):
+        print(grouped)
+
+def check_missing_tests(test_df_path: Path):
+    
+    test_df: pd.DataFrame = pd.read_csv(teset_df_path)
+
+    shader_tests = [x for x in all_tests if 'webgpu:shader' in x]
+    present_shader_tests = [x for x in present_tests.values() if 'webgpu:shader' in x]
+    missing_shader_tests = [x for x in missing_tests.values() if 'webgpu:shader' in x]
+
+    print(f'There are a total of {len(shader_tests)} shader tests')
+    print(f'Of these, {len(missing_shader_tests)} are missing')
+    print(f'And {len(present_shader_tests)} are present')
+
+    
+
+def write_tests_csv(out: Path, data: dict):
+    sorted_dict = dict(sorted(data.items(), key=lambda item: item[0][0]))
+    with open(out, 'w', newline='') as f:
+        writer = csv.writer(f, delimiter='\t')
+        for k,v in dict(sorted(sorted_dict.items())).items():
+            writer.writerow([k,v])
 
 def compare_compressed(compressed_dir: Path, 
         uncompressed_dir: Path,
