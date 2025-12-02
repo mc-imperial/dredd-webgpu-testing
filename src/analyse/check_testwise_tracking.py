@@ -25,10 +25,14 @@ def main():
     args.add_argument('--missing',
             action='store_true',
             default=False)
+    args.add_argument('--dups',
+            action='store_true',
+            default=False,
+            help='Check duplicate mutant IDs')
     args.add_argument('--base',
             type=str,
             default='/data/dev')
-
+    
     args = args.parse_args()
 
     base = Path(args.base)
@@ -38,16 +42,67 @@ def main():
 
     compressed = Path(data, 'tracking_files_compressed_take_2.zip')
     uncompressed = Path(data, 'tracking_files.zip')
-    mapping = Path(data, 'mapping_test_to_id.json')
+    mapping = Path(data, 'mapping_test_to_id_compressed_take_2.json')
+    stdout = Path(data, 'full_cts_stdout.txt')
 
     if args.compress:
         compare_compressed(compressed, uncompressed, output)
     if args.map:
-        map_tests(compressed, mapping, output)
+        tests = map_stdout_results(stdout, output)
+        map_tests(compressed, mapping, tests, output)
     if args.missing:
         check_missing_tests(compressed, mapping, output)
+    if args.dups:
+        get_duplicates(compressed, output / 'dups_compressed', compressed=True)
+        get_duplicates(uncompressed, output / 'dups_uncompressed', compressed=False)
+
+def get_duplicates(folder: Path, out_dir: Path, compressed: bool = False, sample_size=10):
+    ''' 
+        Gets a list of files that contain duplicate mutant IDs
+        Just look at a random sample rather than every file
+    '''
+    with zipfile.ZipFile(folder, 'r') as z:
+        files = z.namelist()
+
+    print(f'There are {len(files)} files')
+
+    sample = random.sample(files, sample_size)
+
+    extract(folder, out_dir, sample)
+
+    if compressed:
+        ungzip_files(out_dir, out_dir) 
+    
+def map_stdout_results(stdout: Path, output: Path):
+    '''
+    Read stdout to record which tests passed, failed, and were skipped
+    '''
+    with open(stdout, 'r') as f:
+        lines = f.readlines()
+
+    tests = [x for x in lines if x.startswith('webgpu:')]
+
+    tests = [get_result(x) for x in tests]
+
+    return dict(tests)
+
+def get_result(line: str):
+    results = {' - pass' : 'pass',
+               ' - fail' : 'fail',
+               ' - skip' : 'skip'
+               }
+
+    for result, clean_result in results.items():
+        if result in line:
+            test = line[:line.find(result)]
+            return (test, clean_result)
         
-def map_tests(archive: Path, mapping_json: Path, output: Path):
+
+    # If we reach the end of the loop, it means
+    # we didn't match the line!
+    raise RuntimeError(f'Problem with line:\n{line}')
+
+def map_tests(archive: Path, mapping_json: Path, test_outcomes: dict, output: Path):
     ''' 
     Maps test ID names to actual test names to check
     which ones are missing
@@ -75,11 +130,19 @@ def map_tests(archive: Path, mapping_json: Path, output: Path):
     df['tracking_file_exists'] = df['test_id'].isin(present_ids).astype(int)
     df.sort_values(['test_name'], inplace=True)
 
+    # Match test outcome to test
+    df['outcome'] = df['test_name'].map(test_outcomes)
+    num_nans = df['outcome'].isna().sum()
+    if num_nans > 0:
+        raise RuntimeError(f'{num_nans} tests do not have outcomes!')
+
     # Get test subgroups
     df['test_folder'] = df['test_name'].str.extract(r'^[^:]*:([^:]*)')
     split_cols = df['test_folder'].str.split(',', expand=True)
     split_cols = split_cols.add_prefix('folder_l')
     df = df.join(split_cols)
+
+    df = df[df['outcome'] == 'pass']
 
     # Show percentage of tracked files for overall tests
     grouplist = ["folder_l0", "folder_l1"]
@@ -127,8 +190,6 @@ def check_missing_tests(test_df_path: Path):
     print(f'There are a total of {len(shader_tests)} shader tests')
     print(f'Of these, {len(missing_shader_tests)} are missing')
     print(f'And {len(present_shader_tests)} are present')
-
-    
 
 def write_tests_csv(out: Path, data: dict):
     sorted_dict = dict(sorted(data.items(), key=lambda item: item[0][0]))
@@ -237,7 +298,10 @@ def extract(archive: Path, extract_dir: Path, files_to_extract: list):
     print('Extraction completed successfully')
 
 def clear_dir(folder: Path):
-    shutil.rmtree(folder)
+    if folder.exists() and folder.is_dir():
+        shutil.rmtree(folder)
+
+    folder.mkdir(parents=True, exist_ok=True)
 
 def ungzip_files(folder: Path, dest: Path):
     dest.mkdir(parents=True, exist_ok=True)
