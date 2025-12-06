@@ -34,9 +34,6 @@ def map_mutants(cts : Path,
         query=query,
         tracking=True)
 
-    # Process tracking information to produce mutant mapping files
-    process_test_wise_tracking(tracking_dir, output_dir, output_file)
-
 def process_test_wise_tracking(tracking_dir : Path, output_dir : Path, output_csv : str):
 
     query_map = get_query_file_name(tracking_dir)
