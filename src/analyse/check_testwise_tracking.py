@@ -1,3 +1,4 @@
+import tempfile
 import csv
 import json
 import shutil
@@ -29,6 +30,10 @@ def main():
             action='store_true',
             default=False,
             help='Check duplicate mutant IDs')
+    args.add_argument('--rerun',
+            action='store_true',
+            default=False,
+            help='Rerun some tests in isolation')
     args.add_argument('--base',
             type=str,
             default='/data/dev')
@@ -40,10 +45,9 @@ def main():
     data = Path(working, 'data')
     output = Path(data, 'testwise_tracking_checks')
 
-    compressed = Path(data, 'tracking_files_compressed_take_2.zip')
-    uncompressed = Path(data, 'tracking_files.zip')
-    mapping = Path(data, 'mapping_test_to_id_compressed_take_2.json')
-    stdout = Path(data, 'full_cts_stdout.txt')
+    tracking_files = Path(data, 'tracking_files_full_cts_031225.zip')
+    mapping = Path(data, 'mapping_test_to_id_031225.json')
+    stdout = Path(data, 'full_cts_stdout_031225.txt')
 
     if args.compress:
         compare_compressed(compressed, uncompressed, output)
@@ -53,10 +57,44 @@ def main():
     if args.missing:
         check_missing_tests(compressed, mapping, output)
     if args.dups:
-        get_duplicates(compressed, output / 'dups_compressed', compressed=True)
-        get_duplicates(uncompressed, output / 'dups_uncompressed', compressed=False)
+        get_duplicates(tracking_files, output / 'dups', mapping, compressed=False)
+    if args.rerun:
+        run_isolated_tests(output)
 
-def get_duplicates(folder: Path, out_dir: Path, compressed: bool = False, sample_size=10):
+def run_isolated_test(output: Path, test: str):
+   
+    env = os.environ.copy()
+    env["MESA_SHADER_CACHE_DISABLE"]="true"
+    
+    pwd = '/data/dev/dredd-webgpu-testing/src'
+
+    cmd = ['python', 
+           'analyse/check_reset_entrypoint.py',
+           '--query', test,
+           '--base', '/data/dev',
+           '--run_joint']
+
+    result = subprocess.run(cmd, env=env, cwd=pwd)
+    
+    if result.returncode != 0:
+        exit()
+
+def get_dupes_from_file(file: Path) -> dict:
+    with open(file, 'r') as f:
+        lst = f.readlines()
+
+    counter = Counter(lst)
+    dupes = {item: count for item, count in counter.items() if count > 1}
+    
+    if len(dupes) > 0:
+        print(f'File {file.stem} contains {len(dupes)} duplicates!')
+        print(f'  Distribution of duplicates:\n  {Counter(dupes.values())}')
+    else:
+        print(f'File {file.stem} contains 0 duplicates')
+
+    return dupes
+
+def get_duplicates(folder: Path, out_dir: Path, mapping_json: Path, compressed: bool = False, sample_size=10):
     ''' 
         Gets a list of files that contain duplicate mutant IDs
         Just look at a random sample rather than every file
@@ -65,14 +103,61 @@ def get_duplicates(folder: Path, out_dir: Path, compressed: bool = False, sample
         files = z.namelist()
 
     print(f'There are {len(files)} files')
-
+    
     sample = random.sample(files, sample_size)
 
     extract(folder, out_dir, sample)
-
-    if compressed:
-        ungzip_files(out_dir, out_dir) 
     
+    if compressed:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            shutil.copytree(out_dir, tmp_path / out_dir.name)
+            ungzip_files(tmp_path, out_dir) 
+
+    print(f'\n========== Duplicate check ==========')
+
+    tests_with_dup = []
+
+    for file in out_dir.rglob('*.txt'):
+        dupes = get_dupes_from_file(file)
+        if len(dupes) > 0:
+            tests_with_dup.append(file.stem)
+
+    print(f'========== End duplicate check ==========\n')
+
+
+    id_to_name = get_mapping(mapping_json)
+    
+    test_names = {id_to_name[x] : x for x in tests_with_dup}
+
+    id_to_dupes = {}
+
+    for name, test_id in test_names.items():
+        isolated_output = out_dir / test_id 
+        run_isolated_test(isolated_output, name)
+        
+        # Tracking file is output to /data/tracking_files
+        for out_file in Path('/data/dev/dredd-webgpu-testing/data/tracking_files').rglob('*.txt'):
+            dupes = get_dupes_from_file(out_file)
+            id_to_dupes[test_id] = dupes
+
+    print(f'\n========== Duplicate check ==========')
+
+    tests_with_dup = []
+
+    for file in out_dir.rglob('*.txt'):
+        dupes = get_dupes_from_file(file)
+        if len(dupes) > 0:
+            tests_with_dup.append(file.stem)
+
+    print(f'========== End duplicate check ==========\n')
+
+
+    for test_id, dupes in id_to_dupes.items():
+        print(f'\nTest id: {test_id}')
+        print(f'Test name: {id_to_name[test_id]}')
+        print(f'Duplicates:\n {len(dupes)}')
+
 def map_stdout_results(stdout: Path, output: Path):
     '''
     Read stdout to record which tests passed, failed, and were skipped
@@ -101,6 +186,14 @@ def get_result(line: str):
     # If we reach the end of the loop, it means
     # we didn't match the line!
     raise RuntimeError(f'Problem with line:\n{line}')
+
+def get_mapping(mapping_json: Path) -> dict:
+    with open(mapping_json, 'r') as f:
+        mapping = json.load(f)
+
+    inverse_map = {v: k for k, v in mapping.items()}
+ 
+    return inverse_map
 
 def map_tests(archive: Path, mapping_json: Path, test_outcomes: dict, output: Path):
     ''' 
@@ -289,7 +382,10 @@ def extract(archive: Path, extract_dir: Path, files_to_extract: list):
     try:
         with zipfile.ZipFile(archive, 'r') as z:
             for file in files_to_extract:
-                z.extract(file, path=extract_dir)
+                try:
+                    z.extract(file, path=extract_dir)
+                except Exception as e:
+                    print(f'Problem with file {file}')
     except Exception as e:
         print('Problem with extraction!')
         print(e)
