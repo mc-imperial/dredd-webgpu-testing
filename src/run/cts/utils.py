@@ -44,10 +44,11 @@ def run_cts(cts,
             f"{query}"]) 
 
     print(tracking_compile_cmd)
-    result = subprocess.run(tracking_compile_cmd, env=tracking_environment)
-    
+    result = subprocess.run(tracking_compile_cmd, 
+                            env=tracking_environment)
+
     if(result.returncode != 0):
-        print('Problem running tracking command!')
+        print(f'Problem running tracking command!: \n{result.stderr}')
         exit(1)
     else:
         print(f'Tracking command finished with return code {result.returncode}')
