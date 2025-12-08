@@ -15,6 +15,7 @@ class TestPaths:
     cts: Path
     test_output_dir: Path
     cwd: Path
+    map_temp: Path
 
 def main():
     base = Path('/data/dev/')
@@ -48,17 +49,19 @@ def main():
         dawn = base / 'dawn',
         cts = base / 'webgpu_cts',
         test_output_dir = test_output_dir,
-        cwd = base / 'dredd-webgpu-testing/src')
+        cwd = base / 'dredd-webgpu-testing/src',
+        map_temp = data / 'mapping_test_to_id.json')
     
     for i, (query, group) in enumerate(runnable_queries):
         # Run in isolation and record tracked IDs
-        output_dir = isolated_output / 'filter_test_{i}'
+        output_dir = isolated_output / f'filter_test_{i}'
         run_test(query, test_paths, output_dir, env)
+        
 
         # Run as part of a group and record tracked IDs
-        output_dir = group_output / 'filter_test_{i}'
+        output_dir = group_output / f'filter_test_{i}'
         run_test(group, test_paths, output_dir, env)
-
+        
         exit()
 
 def sample_queries(queries, per_group=1, seed=None):
@@ -106,6 +109,7 @@ def run_test(test, test_paths, output_dir, env):
     cts = test_paths.cts
     test_output_dir = test_paths.test_output_dir
     cwd = test_paths.cwd
+    map_temp = test_paths.map_temp
 
     clear_folder(output_temp)
 
@@ -128,6 +132,8 @@ def run_test(test, test_paths, output_dir, env):
     print(f'Copied from {output_temp} to {output_dir}')
     clear_folder(output_temp)
 
+    # Copy the test id to test name mapping into the output folder
+    shutil.copy(map_temp, output_dir / 'mapping_test_to_id.json')
 
 def clear_folder(folder):
     for item in os.listdir(folder):
