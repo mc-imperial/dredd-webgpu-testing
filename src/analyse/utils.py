@@ -12,10 +12,11 @@ def main():
     stdout = Path(data, 'full_cts_stdout_031225.txt')
     tracking_files = Path(data, 'tracking_files_full_cts_031225.zip')
     test_to_id_json = Path(data, 'mapping_test_to_id_031225.json')
-    output = Path(data, 'tests_with_results_031225.json')
-    
+    results_output = Path(data, 'tests_with_results_031225.json')
+    tracked_output = Path(data, 'tests_with_tracking_flag_031225.json')
+
     print(f'Getting test results...')
-    test_result_dict = get_tests_with_results(stdout, output)
+    test_result_dict = get_tests_with_results(stdout, results_output)
 
     print('Loading test to ID map...')
     with open(test_to_id_json, 'r') as f:
@@ -36,6 +37,17 @@ def main():
     print(counts)
 
     assert len(tracked_tests) == counts.get(1, 0), f"Expected {len(tracked_tests)}"
+
+    df_subset = df[['test_name', 'tracked']]
+
+    # Convert to dictionary: key = test_name, value = tracked flag
+    test_tracked_dict = dict(zip(df_subset['test_name'], df_subset['tracked']))
+
+    # Write to JSON
+    with open(tracked_output, 'w') as f:
+        json.dump(test_tracked_dict, f, indent=2)
+
+    print(f"Wrote {len(test_tracked_dict)} entries to {tracked_output}")
 
 def make_test_df(test_result_dict, tracked_tests):
     # Convert test_result_dict to DataFrame
