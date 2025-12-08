@@ -1,3 +1,4 @@
+import csv
 import shutil
 import os
 import subprocess
@@ -55,42 +56,46 @@ def main():
         cwd = base / 'dredd-webgpu-testing/src',
         map_temp = data / 'mapping_test_to_id.json')
     
-    rows = []
+    # Open CSV once, write header
+    with open(isolated_mutant_csv, 'w', newline='') as f:
+        fieldnames = [
+            "query", "group", "n_isolated_mutants",
+            "n_group_mutants", "n_isolated_only", "isolated_only_ids"
+        ]
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+    
+        for i, (query, group) in enumerate(runnable_queries):
+            print(f'Processing test {i}')
 
-    for i, (query, group) in enumerate(runnable_queries):
-        print(f'Processing test {i}')
+            # Run in isolation and record tracked IDs
+            iso_output_dir = isolated_output / f'filter_test_{i}'
+            run_test(query, test_paths, iso_output_dir, env)
 
-        # Run in isolation and record tracked IDs
-        iso_output_dir = isolated_output / f'filter_test_{i}'
-        run_test(query, test_paths, iso_output_dir, env)
+            # Run as part of a group and record tracked IDs
+            group_output_dir = group_output / f'filter_test_{i}'
+            run_test(group, test_paths, group_output_dir, env)
 
-        # Run as part of a group and record tracked IDs
-        group_output_dir = group_output / f'filter_test_{i}'
-        run_test(group, test_paths, group_output_dir, env)
+            # Get the matching test output from the group run
+            assert len(list(iso_output_dir.rglob('*.txt'))) == 1
+            individual_mutants = get_mutants(iso_output_dir / 'test_id_0.txt')
+            group_mutants = get_mutants(get_mutant_file(query, group_output_dir))
 
-        # Get the matching test output from the group run
-        assert len(list(iso_output_dir.rglob('*.txt'))) == 1
-        individual_mutants = get_mutants(iso_output_dir / 'test_id_0.txt')
-        group_mutants = get_mutants(get_mutant_file(query, group_output_dir))
+            individual_only_mutants = sorted(set(individual_mutants) - set(group_mutants))
 
-        individual_only_mutants = sorted(set(individual_mutants) - set(group_mutants))
+            # Store row data
+            writer.writerow({
+                "query": query,
+                "group": group,
+                "n_isolated_mutants": len(individual_mutants),
+                "n_group_mutants": len(group_mutants),
+                "n_isolated_only": len(individual_only_mutants),
+                "isolated_only_ids": individual_only_mutants
+            })
 
-        # Store row data
-        rows.append({
-            "query": query,
-            "group": group,
-            "n_isolated_mutants": len(individual_mutants),
-            "n_group_mutants": len(group_mutants),
-            "n_isolated_only": len(individual_only_mutants),
-            "isolated_only_ids": individual_only_mutants
-        })
+            if i > 1:
+                break
 
-        if i > 2:
-            break
-
-    # Convert to DataFrame
-    df = pd.DataFrame(rows)
-    df.to_csv(isolated_mutant_csv)
 
 def get_mutant_file(query: str, folder: Path):
     with open(folder / 'mapping_test_to_id.json') as f:
@@ -101,8 +106,13 @@ def get_mutant_file(query: str, folder: Path):
     return folder / f'{test_id}.txt'
 
 def get_mutants(file: Path):
-    with open(file, 'r') as f:
-        mutants = f.readlines()
+    
+    try:
+        with open(file, 'r') as f:
+            mutants = f.readlines()
+    except FileNotFoundError:
+        print('Problem with file')
+        mutants = []
 
     unique_mutants = list(sorted({int(m.strip()) for m in mutants}))
 
