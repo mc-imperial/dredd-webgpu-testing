@@ -6,6 +6,7 @@ import json
 import random
 import argparse
 import pandas as pd
+import matplotlib.pyplot as plt
 from pathlib import Path
 from collections import defaultdict
 from dataclasses import dataclass
@@ -31,22 +32,26 @@ def main():
     args.add_argument('--get-data',
             action='store_true',
             default=False)
+    args.add_argument('--analyse',
+            action='store_true',
+            default=False)
     args.add_argument('--base',
             type=str,
             default='/data/dev')
     
     args = args.parse_args()
 
-    base = args.base
+    base = Path(args.base)
  
     data = Path(base, 'dredd-webgpu-testing/data')
-    
+    test_output_dir = Path(data, 'filter_analysis')
+
     test_paths: TestPaths = TestPaths(
         output_temp = data / 'tracking_files', 
         vk_icd = base / 'mesa_tracked/build/install/share/vulkan/icd.d/lvp_icd.x86_64.json',
         dawn = base / 'dawn',
         cts = base / 'webgpu_cts',
-        test_output_dir = Path(data, 'filter_analysis'),
+        test_output_dir = test_output_dir,
         cwd = base / 'dredd-webgpu-testing/src',
         map_temp = data / 'mapping_test_to_id.json',
         query_json = Path(data, 'tests_with_results_031225.json'),
@@ -60,10 +65,29 @@ def main():
     if args.analyse:
         analyse(test_paths)
    
-def analyse(test_paths, isolated_output, group_output):
-    pass
+def analyse(test_paths):
+    output_dir = test_paths.test_output_dir 
+    isolated_mutant_csv = test_paths.isolated_mutant_csv
 
-def get_data(test_paths, isolated_output, group_output):
+    print(f'Loading data...')
+    df = pd.read_csv(isolated_mutant_csv)
+
+    df.drop(columns=['isolated_only_ids'])
+
+    zero_tests_df = df[df["n_isolated_only"] == 0][["query", "group"]]
+    zero_tests_df.to_csv(Path(output_dir, "tests_with_zero_isolated_only.csv"), index=False)
+    
+    exit()
+
+    print(f'Making plots...')
+    plt.figure(figsize=(10, 6))
+    plt.hist(df["n_isolated_only"], bins=50)
+    plt.xlabel("Number of isolated-only mutants")
+    plt.ylabel("Number of queries")
+    plt.title("Distribution of isolated-only mutants per query")
+    plt.show()
+
+def get_data(test_path):
 
     isolated_mutant_csv = test_paths.isolated_mutant_csv
     isolated_output = test_paths.isolated_output
