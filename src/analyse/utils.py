@@ -9,6 +9,38 @@ pd.set_option("display.max_colwidth", None)  # None means unlimited width
 
 def main():
     data = Path('/data/dev/dredd-webgpu-testing/data')
+    remove_group_files(data)
+
+def remove_group_files(data: Path):
+    individual_folder = data / 'filter_analysis' / 'isolated_output'
+    group_folder = data / 'filter_analysis' / 'group_output'
+
+    for folder in individual_folder.iterdir():
+        
+        print(f'Processing folder {folder.stem}')
+
+        # Get individual query
+        with open(folder / 'mapping_test_to_id.json', 'r') as f:
+            iso_map_dict = json.load(f)
+
+        queries = list(iso_map_dict.keys())
+        assert len(queries) == 1
+        query = queries[0]
+
+        # Find individual query in group
+        group_query_folder = group_folder / folder.name
+        group_map = group_query_folder / 'mapping_test_to_id.json'
+        with open(group_map, 'r') as f:
+            group_map_dict = json.load(f)
+
+        query_file_name = group_map_dict[query]
+        
+        # Delete all files that are not our individual query
+        for item in group_query_folder.rglob('*.txt'):
+            if item.is_file() and item.stem != query_file_name:
+                item.unlink()
+
+def write_output_to_file(data: Path):
     stdout = Path(data, 'full_cts_stdout_031225.txt')
     tracking_files = Path(data, 'tracking_files_full_cts_031225.zip')
     test_to_id_json = Path(data, 'mapping_test_to_id_031225.json')
