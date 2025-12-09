@@ -45,7 +45,7 @@ def main():
     env = os.environ.copy()
     env['CC'] = '/usr/bin/clang-17'
     env['CXX'] = '/usr/bin/clang++-17'
-    env['MESA_DISABLE_SHADER_CACHE'] = 'true'
+    env['MESA_SHADER_CACHE_DISABLE'] = 'true'
 
     test_paths: TestPaths = TestPaths(
         output_temp = data / 'tracking_files', 
@@ -93,9 +93,7 @@ def main():
                 "isolated_only_ids": individual_only_mutants
             })
 
-            if i > 1:
-                break
-
+    print(f'Finished!')
 
 def get_mutant_file(query: str, folder: Path):
     with open(folder / 'mapping_test_to_id.json') as f:
