@@ -4,6 +4,7 @@ import os
 import subprocess
 import json
 import random
+import argparse
 import pandas as pd
 from pathlib import Path
 from collections import defaultdict
@@ -18,18 +19,57 @@ class TestPaths:
     test_output_dir: Path
     cwd: Path
     map_temp: Path
+    query_json: Path
+    tracked_json: Path
+    isolated_output: Path
+    group_output: Path
+    isolated_mutant_csv: Path
 
 def main():
-    base = Path('/data/dev/')
+    args = argparse.ArgumentParser()
+    
+    args.add_argument('--get-data',
+            action='store_true',
+            default=False)
+    args.add_argument('--base',
+            type=str,
+            default='/data/dev')
+    
+    args = args.parse_args()
+
+    base = args.base
+ 
     data = Path(base, 'dredd-webgpu-testing/data')
-    test_output_dir = Path(data, 'filter_analysis')
-    query_json = Path(data, 'tests_with_results_031225.json')
-    tracked_json = Path(data, 'tests_with_tracking_flag_031225.json')
-    isolated_mutant_csv = Path(test_output_dir, 'isolated_only_mutants.csv')
+    
+    test_paths: TestPaths = TestPaths(
+        output_temp = data / 'tracking_files', 
+        vk_icd = base / 'mesa_tracked/build/install/share/vulkan/icd.d/lvp_icd.x86_64.json',
+        dawn = base / 'dawn',
+        cts = base / 'webgpu_cts',
+        test_output_dir = Path(data, 'filter_analysis'),
+        cwd = base / 'dredd-webgpu-testing/src',
+        map_temp = data / 'mapping_test_to_id.json',
+        query_json = Path(data, 'tests_with_results_031225.json'),
+        tracked_json = Path(data, 'tests_with_tracking_flag_031225.json'),
+        isolated_output = Path(test_output_dir, 'isolated_output'),
+        group_output = Path(test_output_dir, 'group_output'),
+        isolated_mutant_csv = Path(test_output_dir, 'isolated_only_mutants.csv'))
+    
+    if args.get_data:
+        get_data(test_paths)
+    if args.analyse:
+        analyse(test_paths)
+   
+def analyse(test_paths, isolated_output, group_output):
+    pass
 
-    isolated_output = Path(test_output_dir, 'isolated_output')
-    group_output = Path(test_output_dir, 'group_output')
+def get_data(test_paths, isolated_output, group_output):
 
+    isolated_mutant_csv = test_paths.isolated_mutant_csv
+    isolated_output = test_paths.isolated_output
+    group_output = test_paths.group_output
+    tracked_json = test_paths.tracked_json
+    query_json = test_paths.query_json
 
     with open(tracked_json) as f:
         query_dict = json.load(f)
@@ -47,15 +87,6 @@ def main():
     env['CXX'] = '/usr/bin/clang++-17'
     env['MESA_SHADER_CACHE_DISABLE'] = 'true'
 
-    test_paths: TestPaths = TestPaths(
-        output_temp = data / 'tracking_files', 
-        vk_icd = base / 'mesa_tracked/build/install/share/vulkan/icd.d/lvp_icd.x86_64.json',
-        dawn = base / 'dawn',
-        cts = base / 'webgpu_cts',
-        test_output_dir = test_output_dir,
-        cwd = base / 'dredd-webgpu-testing/src',
-        map_temp = data / 'mapping_test_to_id.json')
-    
     # Open CSV once, write header
     with open(isolated_mutant_csv, 'w', newline='') as f:
         fieldnames = [
