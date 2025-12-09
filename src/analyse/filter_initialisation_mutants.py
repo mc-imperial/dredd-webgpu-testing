@@ -74,7 +74,7 @@ def main():
 
             # Run as part of a group and record tracked IDs
             group_output_dir = group_output / f'filter_test_{i}'
-            run_test(group, test_paths, group_output_dir, env)
+            run_test(group, test_paths, group_output_dir, env, keep_query=query)
 
             # Get the matching test output from the group run
             assert len(list(iso_output_dir.rglob('*.txt'))) == 1
