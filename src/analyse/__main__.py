@@ -1,6 +1,9 @@
+import os
 import subprocess
 import argparse
+import time
 
+from typing import Sequence, Tuple
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -8,16 +11,25 @@ from pathlib import Path
 class FilePaths:
     base: Path
     output: Path
+    cts: Path
+    dawn: Path
+    mesa: Path
+    mesa_tracked: Path
+    mesa_mutated: Path
+    dredd: Path
+    vk_icd: Path
 
 def main():
  
     args = argparse.ArgumentParser()
 
     args.add_argument('analysis',
-            choices=['all',''])
+            choices=['all',
+                     'cts-runtime'
+                     ])
     args.add_argument('--base',
             type=str,
-            default='/data/dev/dredd-webgpu-testing')
+            default='/data/dev')
     args.add_argument('--output',
             type=str,
             default='/data/dev/dredd-webgpu-testing/data/icst_output')
@@ -29,21 +41,71 @@ def main():
 
     paths : FilePaths = FilePaths(
             base = base,
-            output = output
+            output = output,
+            cts = base / 'webgpu_cts',
+            dawn = base / 'dawn',
+            mesa = base / 'mesa',
+            mesa_tracked = base / 'mesa_tracked',
+            mesa_mutated = base / 'mesa_mutated',
+            vk_icd = Path('build/install/share/vulkan/icd.d/lvp_icd.x86_64.json'),
+            dredd = base / 'dredd'
             )
 
     if args.analysis == 'all':
         run_all(paths)
-   
-def run_all(paths : FilePaths):
-    pass
+    if args.analysis == 'cts-runtime':
+        get_cts_runtime(paths)
 
-def get_cts_runtime():
+
+def run_all(paths : FilePaths):
+    raise NotImplementedError
+
+def get_cts_runtime(paths: FilePaths) -> float:
     '''
     Calculates the full CTS runtime without instrumentation
     and with instrumentation
     '''
-    raise NotImplementedError
+
+    outfile = paths.output / 'full_cts_runtime.txt'
+    
+    start_time = time.perf_counter()
+    
+    run_cts(dawn = paths.dawn,
+            cts = paths.cts,
+            mesa = paths.mesa,
+            vk_icd = paths.vk_icd,
+            cache_enabled=True)
+
+    elapsed_seconds = time.perf_counter() - start_time
+    
+    with open(outfile, 'w') as f:
+        f.write('The full CTS runtime is: {elapsed_seconds} seconds\n')
+        f.write('This is {int(elapsed_seconds) // 60} minutes and int(total_seconds % 60} seconds')
+
+    return elapsed_seconds   
+
+
+def run_cts(dawn: Path, cts: Path, mesa: Path, vk_icd: str, cache_enabled: bool = False):
+    
+    env = os.environ.copy()
+    env['VK_ICD_FILENAMES'] = f'{str(mesa)}/{vk_icd}'
+
+    if not cache_enabled:
+        env['MESA_DISABLE_SHADER_CACHE']='true'
+
+    cmd = [f'{str(dawn)}/tools/run',
+           'run-cts',
+           f'--bin={dawn}/out/Debug',
+           f'--cts={str(cts)}',
+           'webgpu:*'
+           ]
+
+    result = subprocess.run(
+        cmd,
+        text=True,
+        check=False,
+        env=env
+    )
 
 def get_single_test_runtime():
     '''
