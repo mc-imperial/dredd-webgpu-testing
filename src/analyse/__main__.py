@@ -1,9 +1,10 @@
-from datetime import datetime
+import re
 import os
 import subprocess
 import argparse
 import time
 
+from datetime import datetime
 from typing import Sequence, Tuple
 from dataclasses import dataclass
 from pathlib import Path
@@ -92,10 +93,10 @@ def get_full_cts_stats(paths: FilePaths) -> Path:
         f.write(f'The full CTS runtime is: {elapsed_seconds} seconds\n')
         f.write(f'This is {int(elapsed_seconds) // 60} minutes and {int(total_seconds % 60)} seconds')
 
-    stats_dict : dict = get_cts_size_stats(paths, stdout)
+    stats_dict : dict = get_cts_size_stats(stdout)
 
     with open(outfile, 'w') as f:
-        for k, v in stats_dict:
+        for k, v in stats_dict.items():
             f.write(f'{k} : {v}\n')
 
 def run_cts(dawn: Path, 
@@ -140,23 +141,18 @@ def run_cts(dawn: Path,
 
     return elapsed_seconds
 
-def get_cts_size_stats(paths: FilePaths, cts_stdout: Path):
+def get_cts_size_stats(cts_stdout: Path):
     '''
     Statistics on the number of tests in the  CTS
     '''
-
-    outfile = paths.output / 'cts_size_stats_{paths.runid}.txt'
     
-    with open(cts_stdout, 'r') as f:
-        lines = f.readlines()
-
     completed_re = re.compile(r"Completed in (.+)")
     result_re = re.compile(r"(PASS|FAIL|SKIP):\s+(\d+)")
 
-    passed = failed = skipped = None
+    passed = failed = skipped = 0
     runtime = None
 
-    with open(path, "r", encoding="utf-8") as f:
+    with open(cts_stdout, "r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
 
@@ -180,7 +176,7 @@ def get_cts_size_stats(paths: FilePaths, cts_stdout: Path):
     if runtime is None:
         raise ValueError("Could not find 'Completed in ...' line")
 
-    if any(v is None for v in (passed, failed, skipped)):
+    if all(v is None for v in (passed, failed, skipped)):
         raise ValueError("Missing PASS / FAIL / SKIP counts")
 
     total_tests = passed + failed + skipped
@@ -225,6 +221,11 @@ def analyse_startup_costs(paths):
     time = get_single_test_runtime(paths, query, stdout)
 
     print(f'Test time is: {time}')
+
+    stats = get_cts_size_stats(stdout)
+
+    for k, v in stats.items():
+        print(f'{k} : {v}')
 
 def get_single_test_runtime(paths: FilePaths, query: str, stdout: Path):
     '''
