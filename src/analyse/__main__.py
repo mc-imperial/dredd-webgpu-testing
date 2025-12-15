@@ -57,7 +57,9 @@ def main():
     if args.analysis == 'all':
         run_all(paths)
     if args.analysis == 'cts-stats':
-        stdout : Path = get_cts_runtime(paths)
+        #stdout : Path = get_cts_runtime(paths)
+        with open (output / 'stdout.txt', 'r') as f:
+            stdout = f.readlines()
         get_cts_size_stats(paths, stdout)
 
 
@@ -74,6 +76,8 @@ def get_cts_runtime(paths: FilePaths) -> Path:
     outfile = paths.output / 'full_cts_runtime_{paths.runid}.txt'
     stdout = paths.output / f'full_cts_stdout_{paths.runid}.txt'
 
+    query = 'webgpu:*'
+
     start_time = time.perf_counter()
     
     run_cts(dawn = paths.dawn,
@@ -81,13 +85,14 @@ def get_cts_runtime(paths: FilePaths) -> Path:
             mesa = paths.mesa,
             vk_icd = paths.vk_icd,
             stdout = stdout,
+            query = query,
             cache_enabled=True)
 
     elapsed_seconds = time.perf_counter() - start_time
     
     with open(outfile, 'w') as f:
-        f.write('The full CTS runtime is: {elapsed_seconds} seconds\n')
-        f.write('This is {int(elapsed_seconds) // 60} minutes and int(total_seconds % 60} seconds')
+        f.write(f'The full CTS runtime is: {elapsed_seconds} seconds\n')
+        f.write(f'This is {int(elapsed_seconds) // 60} minutes and int(total_seconds % 60} seconds')
 
     return elapsed_seconds   
 
@@ -97,6 +102,7 @@ def run_cts(dawn: Path,
             mesa: Path, 
             vk_icd: str, 
             stdout: Path,
+            query: str,
             cache_enabled: bool = False):
     
     env = os.environ.copy()
@@ -109,7 +115,7 @@ def run_cts(dawn: Path,
            'run-cts',
            f'--bin={dawn}/out/Debug',
            f'--cts={str(cts)}',
-           'webgpu:*'
+           query
            ]
     
     with open(stdout, 'w', encoding='utf-8') as f:
