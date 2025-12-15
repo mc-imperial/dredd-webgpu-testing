@@ -73,8 +73,7 @@ def main():
     if args.analysis == 'startup-costs':
         analyse_startup_costs(paths, individual = True, grouped = False)
     if args.analysis == 'n-mutants':
-        count_mutants(paths)
-
+        n_mutants = count_mutants(paths)
 
 def run_all(paths : FilePaths):
     raise NotImplementedError
@@ -100,8 +99,6 @@ def count_mutants(paths: FilePaths):
 
     with open(outfile, 'w') as f:
         f.write(output_str)
-
-    
 
 def get_full_cts_stats(paths: FilePaths) -> Path:
     '''
@@ -226,19 +223,6 @@ def get_cts_size_stats(cts_stdout: Path):
     }
 
     return stats_dict
-
-
-def get_number_of_mutant_stats(paths: FilePaths):
-    '''
-    Statistics on the number of mutants in our SUT
-    '''
-    raise NotImplementedError
-
-def calculate_mutant_matrix_time():
-    '''
-    Calculates the cost of running the full CTS on all mutants
-    '''
-    raise NotImplementedError
 
 def analyse_startup_costs(paths: FilePaths, individual: bool = True, grouped: bool = True):
     '''
