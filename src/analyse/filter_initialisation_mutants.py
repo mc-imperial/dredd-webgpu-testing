@@ -3,12 +3,13 @@ import shutil
 import os
 import subprocess
 import json
+import ast
 import random
 import argparse
 import pandas as pd
 import matplotlib.pyplot as plt
 from pathlib import Path
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 
 @dataclass
@@ -72,19 +73,70 @@ def analyse(test_paths):
     print(f'Loading data...')
     df = pd.read_csv(isolated_mutant_csv)
 
-    df.drop(columns=['isolated_only_ids'])
+    histogram_of_n_isolated(df, output_dir)
+    histogram_of_isolated_ids(df, output_dir)
+    
 
+def histogram_of_n_isolated(df, output_dir):
     zero_tests_df = df[df["n_isolated_only"] == 0][["query", "group"]]
     zero_tests_df.to_csv(Path(output_dir, "tests_with_zero_isolated_only.csv"), index=False)
     
-    exit()
-
     print(f'Making plots...')
     plt.figure(figsize=(10, 6))
     plt.hist(df["n_isolated_only"], bins=50)
     plt.xlabel("Number of isolated-only mutants")
     plt.ylabel("Number of queries")
     plt.title("Distribution of isolated-only mutants per query")
+    plt.show()
+
+def histogram_of_isolated_ids(df, output_dir):
+
+    # Convert string representation of list to actual list if needed
+    df['isolated_only_ids'] = df['isolated_only_ids'].apply(ast.literal_eval)
+
+    # Flatten all IDs and count frequency
+    all_ids = [id_ for row in df['isolated_only_ids'] for id_ in row]
+    id_counts = Counter(all_ids)
+
+    # Convert to DataFrame
+    id_counts_df = pd.DataFrame.from_dict(id_counts, orient='index', columns=['count'])
+    id_counts_df = id_counts_df.reset_index().rename(columns={'index': 'id'})
+    id_counts_df = id_counts_df.sort_values(by=['count','id'], ascending=False)
+    print(id_counts_df.head(20))  # top 20 most frequent IDs
+
+    # Save counts to CSV
+    output_path = output_dir / "isolated_only_id_counts.csv"
+    id_counts_df.to_csv(output_path, index=False)
+
+    # Plot histogram of ID frequency distribution
+    plt.figure(figsize=(10,6))
+    plt.hist(list(id_counts.values()), bins=50)
+    plt.xlabel("Number of queries an ID appears in")
+    plt.ylabel("Number of IDs")
+    plt.title("Distribution of isolated-only IDs across queries")
+    plt.show()
+
+    # Set threshold
+    X = 50 # only include IDs appearing more than X times
+    filtered_df = id_counts_df[id_counts_df['count'] > X]
+
+    # Plot histogram for IDs above threshold
+    plt.figure(figsize=(10,6))
+    plt.hist(filtered_df['count'], bins=20)
+    plt.xlabel("Number of queries an ID appears in")
+    plt.ylabel("Number of IDs")
+    plt.title(f"Distribution of isolated-only IDs appearing more than {X} times")
+    plt.show()
+    
+    # IDs and their counts
+    ids = list(id_counts.keys())
+    counts = list(id_counts.values())
+
+    plt.figure(figsize=(12,6))
+    plt.scatter(ids, counts, alpha=0.5)
+    plt.xlabel("Mutant ID")
+    plt.ylabel("Number of queries it appears in")
+    plt.title("Scatter of mutant ID vs frequency")
     plt.show()
 
 def get_data(test_path):
