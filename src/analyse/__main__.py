@@ -3,6 +3,7 @@ import os
 import subprocess
 import argparse
 import time
+import pandas as pd
 
 from datetime import datetime
 from typing import Sequence, Tuple
@@ -214,6 +215,7 @@ def analyse_startup_costs(paths):
     granularity and the total test suite runtime.
     '''
 
+    '''
     query = 'webgpu:shader,execution,flow_control,call:*'
 
     stdout = paths.output / f'single_test_stdout_{paths.runid}.txt'
@@ -226,6 +228,104 @@ def analyse_startup_costs(paths):
 
     for k, v in stats.items():
         print(f'{k} : {v}')
+    '''
+
+    stdout = paths.base / 'dredd-webgpu-testing/data/full_cts_stdout_031225.txt' 
+
+    # Get different testing levels
+    test_dict = get_queries(stdout)
+    tests = list(test_dict.keys())
+    level_prefix = 'folder_l'
+
+    df = pd.DataFrame({'test_name' : tests})
+    df['test_folder'] = df['test_name'].str.extract(r'^[^:]*:([^:]*)')
+    split_cols = df['test_folder'].str.split(',', expand=True)
+    split_cols = split_cols.add_prefix(level_prefix)
+    df = df.join(split_cols)
+
+
+    folder_cols = [col for col in df.columns if col.startswith("folder_l")]
+
+    # Compute the deepest non-null level per test
+    df['max_level'] = df[folder_cols].notna().sum(axis=1) - 1
+
+    # Top-level query
+    query_sets = [["webgpu:*"]]
+
+    max_depth = df['max_level'].max()
+
+    for level in range(max_depth + 1):
+        print(f'Processing level {level}...')
+        # Build queries up to this level
+        # Fill NaNs with empty string so join works
+        prefixes = (
+            df[folder_cols[:level+1]]
+            .fillna("")
+            .agg(",".join, axis=1)
+            .str.rstrip(",")
+        )
+
+        queries = set(prefixes.unique())
+        
+        # Add tests that don't reach this level: use their deepest available prefix
+        shallow_tests = df['max_level'] < level
+        if shallow_tests.any():
+            shallow_prefixes = df.loc[shallow_tests, folder_cols].apply(
+                lambda row: ",".join([v for v in row if pd.notna(v)]), axis=1
+            )
+            queries.update(shallow_prefixes.unique())
+        
+        # Determine whether this level is the deepest for each row
+        is_leaf = df["max_level"] == level
+        
+        # Convert logical queries to runnable CTS queries
+        runnable = (
+            "webgpu:"
+            + prefixes
+            + is_leaf.map({True: ":*", False: ",*"})
+            )
+
+        query_sets.append(sorted(set(runnable)))        
+
+    for qs in query_sets:
+        print(f'query set has {len(qs)} queries')
+        if len(qs) < 50:
+           for i in qs:
+               print(i)
+
+        else:
+            for i in qs[:20]:
+                print(i)
+
+        print('\n')
+
+    # For each, get n tests, total time, time per test
+
+    # Full CTS 
+    # File 1 level CTS 
+    # File 2 level CTS
+    # File 3 level CTS
+    # Sample of file level CTS
+    # Sample of parameterised level CTS
+
+def query_up_to_level(row, folder_cols, level):
+    """
+    Returns the query string up to the given level for a test.
+    """
+    parts = [row[col] for col in folder_cols[:level+1] if pd.notna(row[col])]
+    return ','.join(parts)
+
+
+def get_queries(stdout) -> dict:
+     with open(stdout, 'r') as f:
+         lines = f.readlines()
+
+     tests = [x for x in lines if x.startswith('webgpu:')]
+
+     tests = [get_result(x) for x in tests]
+
+     return dict(tests)
+
 
 def get_single_test_runtime(paths: FilePaths, query: str, stdout: Path):
     '''
@@ -282,6 +382,20 @@ def analyse_initialisation_mutants():
     '''
     raise NotImplementedError
 
+def get_result(line: str):
+    results = {
+        ' - pass': 'pass',
+        ' - fail': 'fail',
+        ' - skip': 'skip'
+    }
+
+    for result, clean_result in results.items():
+        if result in line:
+            test = line[:line.find(result)]
+            return test, clean_result
+
+    # If we reach the end of the loop, it means we didn't match the line
+    raise RuntimeError(f'Problem with line:\n{line}')
 
 def timestamp_string() -> str:
     return datetime.now().strftime("%Y%m%d_%H%M%S")
