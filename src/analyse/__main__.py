@@ -27,7 +27,7 @@ def main():
     base = Path(args.base)
     output = Path(args.output)
 
-    paths : FilePaths(
+    paths : FilePaths = FilePaths(
             base = base,
             output = output
             )
