@@ -25,7 +25,7 @@ def main():
 
     args.add_argument('analysis',
             choices=['all',
-                     'cts-runtime'
+                     'cts-stats'
                      ])
     args.add_argument('--base',
             type=str,
@@ -53,21 +53,24 @@ def main():
 
     if args.analysis == 'all':
         run_all(paths)
-    if args.analysis == 'cts-runtime':
-        get_cts_runtime(paths)
+    if args.analysis == 'cts-stats':
+        stdout : Path = get_cts_runtime(paths)
+        get_cts_size_stats(paths, stdout)
 
 
 def run_all(paths : FilePaths):
     raise NotImplementedError
 
-def get_cts_runtime(paths: FilePaths) -> float:
+def get_cts_runtime(paths: FilePaths) -> Path:
     '''
     Calculates the full CTS runtime without instrumentation
-    and with instrumentation
+    and with instrumentation.
+    Returns path to which stdout was written
     '''
 
     outfile = paths.output / 'full_cts_runtime.txt'
-    
+    stdout = paths.output / f'full_cts_stdout_{}.txt'
+
     start_time = time.perf_counter()
     
     run_cts(dawn = paths.dawn,
@@ -107,6 +110,8 @@ def run_cts(dawn: Path, cts: Path, mesa: Path, vk_icd: str, cache_enabled: bool 
         env=env
     )
 
+    #TODO: Save stdout to file so we can read the number of tests that were run
+
 def get_single_test_runtime():
     '''
     Calculates the typical runtime of a single test in isolation
@@ -115,9 +120,67 @@ def get_single_test_runtime():
     '''
     raise NotImplementedError
 
-def get_cts_size_stats():
+def get_cts_size_stats(paths: FilePaths, cts_stdout: Path):
     '''
     Statistics on the number of tests in the  CTS
+    '''
+
+    outfile = paths.output / 'cts_size_stats.txt'
+    
+    with open(cts_stdout, 'r') as f:
+        lines = f.readlines()
+
+    completed_re = re.compile(r"Completed in (.+)")
+    result_re = re.compile(r"(PASS|FAIL|SKIP):\s+(\d+)")
+
+    passed = failed = skipped = None
+    runtime = None
+
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+
+            # Runtime
+            m = completed_re.search(line)
+            if m:
+                runtime = m.group(1)
+                continue
+
+            # PASS / FAIL / SKIP counts
+            m = result_re.search(line)
+            if m:
+                label, count = m.group(1), int(m.group(2))
+                if label == "PASS":
+                    passed = count
+                elif label == "FAIL":
+                    failed = count
+                elif label == "SKIP":
+                    skipped = count
+
+    if runtime is None:
+        raise ValueError("Could not find 'Completed in ...' line")
+
+    if any(v is None for v in (passed, failed, skipped)):
+        raise ValueError("Missing PASS / FAIL / SKIP counts")
+
+    total_tests = passed + failed + skipped
+
+    stats_dict = {
+        "total_tests": total_tests,
+        "passed": passed,
+        "failed": failed,
+        "skipped": skipped,
+        "runtime": runtime,
+    }
+
+    with open(outfile, 'w') as f:
+        for k, v in stats_dict:
+            f.write(f'{k} : {v}\n')
+
+
+def get_number_of_mutant_stats(paths: FilePaths):
+    '''
+    Statistics on the number of mutants in our SUT
     '''
     raise NotImplementedError
 
