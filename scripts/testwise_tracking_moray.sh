@@ -10,6 +10,6 @@ cd '/data/dev/dredd-webgpu-testing/src'
 python analyse/check_reset_entrypoint.py \
 	--query "$QUERY" \
     --base $BASE \
-	--run_joint 
+    --run_joint 
 
 

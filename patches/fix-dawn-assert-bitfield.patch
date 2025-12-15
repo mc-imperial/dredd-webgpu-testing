@@ -1,0 +1,13 @@
+diff --git a/src/dawn/common/Assert.h b/src/dawn/common/Assert.h
+index 000000000..000000000 100644
+--- a/src/dawn/common/Assert.h
++++ b/src/dawn/common/Assert.h
+@@ -88,7 +88,7 @@
+ #else  // DAWN_COMPILER_IS(*)
+ #define DAWN_ASSERT_CALLSITE_HELPER(file, func, line, condition) \
+     do {                                                         \
+-        [[maybe_unused]] auto unused = sizeof(condition);        \
++        [[maybe_unused]] bool unused = static_cast<bool>(condition); \
+     } while (DAWN_ASSERT_LOOP_CONDITION)
+ #endif  // DAWN_COMPILER_IS(*)
+ 
