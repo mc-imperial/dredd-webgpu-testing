@@ -1,3 +1,4 @@
+import datetime
 import os
 import subprocess
 import argparse
@@ -18,6 +19,7 @@ class FilePaths:
     mesa_mutated: Path
     dredd: Path
     vk_icd: Path
+    runid: str
 
 def main():
  
@@ -48,7 +50,8 @@ def main():
             mesa_tracked = base / 'mesa_tracked',
             mesa_mutated = base / 'mesa_mutated',
             vk_icd = Path('build/install/share/vulkan/icd.d/lvp_icd.x86_64.json'),
-            dredd = base / 'dredd'
+            dredd = base / 'dredd',
+            runid = timestamp_string()
             )
 
     if args.analysis == 'all':
@@ -68,8 +71,8 @@ def get_cts_runtime(paths: FilePaths) -> Path:
     Returns path to which stdout was written
     '''
 
-    outfile = paths.output / 'full_cts_runtime.txt'
-    stdout = paths.output / f'full_cts_stdout_{}.txt'
+    outfile = paths.output / 'full_cts_runtime_{paths.runid}.txt'
+    stdout = paths.output / f'full_cts_stdout_{paths.runid}.txt'
 
     start_time = time.perf_counter()
     
@@ -77,6 +80,7 @@ def get_cts_runtime(paths: FilePaths) -> Path:
             cts = paths.cts,
             mesa = paths.mesa,
             vk_icd = paths.vk_icd,
+            stdout = stdout,
             cache_enabled=True)
 
     elapsed_seconds = time.perf_counter() - start_time
@@ -88,7 +92,12 @@ def get_cts_runtime(paths: FilePaths) -> Path:
     return elapsed_seconds   
 
 
-def run_cts(dawn: Path, cts: Path, mesa: Path, vk_icd: str, cache_enabled: bool = False):
+def run_cts(dawn: Path, 
+            cts: Path, 
+            mesa: Path, 
+            vk_icd: str, 
+            stdout: Path,
+            cache_enabled: bool = False):
     
     env = os.environ.copy()
     env['VK_ICD_FILENAMES'] = f'{str(mesa)}/{vk_icd}'
@@ -102,15 +111,17 @@ def run_cts(dawn: Path, cts: Path, mesa: Path, vk_icd: str, cache_enabled: bool 
            f'--cts={str(cts)}',
            'webgpu:*'
            ]
+    
+    with open(stdout, 'w', encoding='utf-8') as f:
+        result = subprocess.run(
+            cmd,
+            stdout=f,
+            stderr.subprocess.STDOUT,
+            text=True,
+            check=False,
+            env=env
+        )
 
-    result = subprocess.run(
-        cmd,
-        text=True,
-        check=False,
-        env=env
-    )
-
-    #TODO: Save stdout to file so we can read the number of tests that were run
 
 def get_single_test_runtime():
     '''
@@ -125,7 +136,7 @@ def get_cts_size_stats(paths: FilePaths, cts_stdout: Path):
     Statistics on the number of tests in the  CTS
     '''
 
-    outfile = paths.output / 'cts_size_stats.txt'
+    outfile = paths.output / 'cts_size_stats_{paths.runid}.txt'
     
     with open(cts_stdout, 'r') as f:
         lines = f.readlines()
@@ -240,6 +251,9 @@ def analyse_initialisation_mutants():
     '''
     raise NotImplementedError
 
+
+def timestamp_string() -> str:
+    return datetime.now().strftime("%Y%m%d_%H%M%S")
 
 if __name__=="__main__":
     main()
