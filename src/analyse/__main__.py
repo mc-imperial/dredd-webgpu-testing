@@ -1,16 +1,22 @@
+import json
 import random
 import re
 import os
 import subprocess
 import argparse
 import time
+import math
 import pandas as pd
 
+from statistics import mean, stdev
+from scipy.stats import t
 from datetime import datetime
 from typing import Sequence, Tuple
 from dataclasses import dataclass
 from pathlib import Path
 from collections import Counter, defaultdict
+
+CONFIDENCE = 0.95 # 95% CI
 
 @dataclass
 class FilePaths:
@@ -64,7 +70,7 @@ def main():
     if args.analysis == 'cts-stats':
         get_full_cts_stats(paths)
     if args.analysis == 'startup-costs':
-        analyse_startup_costs(paths)
+        analyse_startup_costs(paths, individual = True, grouped = False)
 
 def run_all(paths : FilePaths):
     raise NotImplementedError
@@ -207,7 +213,7 @@ def calculate_mutant_matrix_time():
     '''
     raise NotImplementedError
 
-def analyse_startup_costs(paths):
+def analyse_startup_costs(paths: FilePaths, individual: bool = True, grouped: bool = True):
     '''
     Analysis of the difference in time required to run single tests
     vs run all tests. Runs tests at increasing levels of granularity
@@ -215,21 +221,6 @@ def analyse_startup_costs(paths):
     individual test level).
     Outputs visualisations to show the relationship between 
     granularity and the total test suite runtime.
-    '''
-
-    '''
-    query = 'webgpu:shader,execution,flow_control,call:*'
-
-    stdout = paths.output / f'single_test_stdout_{paths.runid}.txt'
-
-    time = get_single_test_runtime(paths, query, stdout)
-
-    print(f'Test time is: {time}')
-
-    stats = get_cts_size_stats(stdout)
-
-    for k, v in stats.items():
-        print(f'{k} : {v}')
     '''
 
     stdout = paths.base / 'dredd-webgpu-testing/data/full_cts_stdout_031225.txt' 
@@ -245,25 +236,115 @@ def analyse_startup_costs(paths):
     split_cols = split_cols.add_prefix(level_prefix)
     df = df.join(split_cols)
 
-    # Get a list of query sets where the union of the sets
-    # comprises the complete CTS at different levels of granularity
-    query_sets : list[set] = get_query_levels_for_startup_analysis(df)
+    
+    if grouped:
+        # Get a list of query sets where the union of the sets
+        # comprises the complete CTS at different levels of granularity
+        query_sets : list[set] = get_query_levels_for_startup_analysis(df)
 
-    # Get a sample of individual level tests. The union of these
-    # tests do NOT equate to the complete CTS, they are just a sample
-    # and the runtimes need to be scaled up to estimate the runtime
-    # of the full CTS if it were run on an individual test level
-    individual_test_sample : list = get_individual_test_sample(df)
+        #TODO: run grouped queries and record times
+        raise NotImplementedError
+    
+    if individual:
+        # Get a sample of individual level tests. The union of these
+        # tests do NOT equate to the complete CTS, they are just a sample
+        # and the runtimes need to be scaled up to estimate the runtime
+        # of the full CTS if it were run on an individual test level
+        output_file = paths.output / f'individual_test_runtime_summary_{paths.runid}.txt'
 
-    print(f'There are {len(individual_test_sample)} samples')
-    for i in individual_test_sample[:20]:
-        print(i)
+        individual_test_sample : list = get_individual_test_sample(df)
+
+        results = time_individual_tests(paths, individual_test_sample)    
+
+        times_s = list(results.values())
+
+        n_tests = len(df['test_name'])
+        n_samples = len(individual_test_sample)
+
+        mean_hms, low_hms, high_hms = sample_stats(times_s, total_tests = n_tests)
+
+         # Output to console
+        output_str = (
+            f"Sample of {n_samples} run.\n"
+            f"Estimated TOTAL runtime for {n_tests} tests:\n"
+            f"{mean_hms[0]}h {mean_hms[1]}m {mean_hms[2]}s "
+            f"(95% CI: {low_hms[0]}h {low_hms[1]}m {low_hms[2]}s "
+            f"– {high_hms[0]}h {high_hms[1]}m {high_hms[2]}s)"
+        )
+        print(output_str)
+
+        # Write to file if requested
+        if output_file is not None:
+            with open(output_file, "w") as f:
+                f.write(output_str + "\n")
+                # Also save numeric values for later processing
+                f.write(
+                    f"Total mean (s): {total_mean_s}, "
+                    f"CI low (s): {total_ci_low_s}, "
+                    f"CI high (s): {total_ci_high_s}\n"
+                )
+              
+
+def time_individual_tests(paths: FilePaths, tests: list[str]):
+
+    individual_output = paths.output / 'individual_output'
+
+    individual_output.mkdir(exist_ok=True)
+
+    outfile = paths.output / f'individual_test_times_{paths.runid}.json'
+
+    results = {}
+
+    for i, test in enumerate(tests):
+        stdout = individual_output / f'test_i_stdout_{paths.runid}.txt'
+        time = get_single_test_runtime(paths, test, stdout)
+        results[test] = time
+
+    with open(outfile, 'w') as f:
+        json.dump(results, f, indent=2)
+
+    return results
+
+def sample_stats(times_s: float, total_tests: int):
+    n = len(times_s)
+
+    mean_test_s = mean(times_s)
+    std_test_s = stdev(times_s)
+
+    # Standard error of the mean
+    sem_test_s = std_test_s / math.sqrt(n)
+
+    # t critical value
+    alpha = 1 - CONFIDENCE
+    t_crit = t.ppf(1 - alpha / 2, df=n - 1)
+
+    # Confidence interval on mean per test
+    mean_test_ci_low = mean_test_s - t_crit * sem_test_s
+    mean_test_ci_high = mean_test_s + t_crit * sem_test_s
+
+    # ---- Scale to TOTAL runtime ----
+    total_mean_s = mean_test_s * total_tests
+    total_ci_low_s = mean_test_ci_low * total_tests
+    total_ci_high_s = mean_test_ci_high * total_tests
+
+    # Convert to h:m:s
+    mean_hms = ms_to_hms(total_mean_s)
+    low_hms = ms_to_hms(total_ci_low_s)
+    high_hms = ms_to_hms(total_ci_high_s)
+
+    return (mean_hms, low_hms, high_hms)
+
+def ms_to_hms(seconds: float) -> tuple[int, int, int]:
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    seconds = int(seconds % 60)
+    return hours, minutes, seconds
 
 def get_individual_test_sample(df) -> list:
 
-    queries = df['test_name']
+    queries = list(df['test_name'])
 
-    sample = sample_queries(queries)
+    sample = sample_queries(queries, by_group=False)
 
     return sample
 
@@ -311,15 +392,6 @@ def get_query_levels_for_startup_analysis(df) -> list[set]:
             )
 
         query_sets.append(sorted(set(runnable)))        
-
-    # For each, get n tests, total time, time per test
-
-    # Full CTS 
-    # File 1 level CTS 
-    # File 2 level CTS
-    # File 3 level CTS
-    # Sample of file level CTS
-    # Sample of parameterised level CTS
 
 def query_up_to_level(row, folder_cols, level):
     """
@@ -413,7 +485,7 @@ def get_result(line: str):
 def timestamp_string() -> str:
     return datetime.now().strftime("%Y%m%d_%H%M%S")
 
-def sample_queries(queries, per_group=1, seed=None, exclude_first=False) -> list:
+def sample_queries(queries, by_group:bool= False, proportion= 0.1, per_group=1, seed=None, exclude_first=False) -> list:
     """
     Sample queries, optionally excluding the first in each group 
 
@@ -423,6 +495,13 @@ def sample_queries(queries, per_group=1, seed=None, exclude_first=False) -> list
     """
     if seed is not None:
         random.seed(seed)
+
+    # If we are not trying to sample evenly across groups,
+    # then simply randomly sample across all queries
+    if not by_group:
+        n = int(len(queries) * proportion) 
+        selected = random.sample(queries, n)
+        return selected
 
     # Group queries by prefix (everything before the last colon)
     groups = defaultdict(list)
