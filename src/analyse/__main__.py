@@ -1,3 +1,4 @@
+import random
 import re
 import os
 import subprocess
@@ -9,6 +10,7 @@ from datetime import datetime
 from typing import Sequence, Tuple
 from dataclasses import dataclass
 from pathlib import Path
+from collections import Counter, defaultdict
 
 @dataclass
 class FilePaths:
@@ -243,6 +245,29 @@ def analyse_startup_costs(paths):
     split_cols = split_cols.add_prefix(level_prefix)
     df = df.join(split_cols)
 
+    # Get a list of query sets where the union of the sets
+    # comprises the complete CTS at different levels of granularity
+    query_sets : list[set] = get_query_levels_for_startup_analysis(df)
+
+    # Get a sample of individual level tests. The union of these
+    # tests do NOT equate to the complete CTS, they are just a sample
+    # and the runtimes need to be scaled up to estimate the runtime
+    # of the full CTS if it were run on an individual test level
+    individual_test_sample : list = get_individual_test_sample(df)
+
+    print(f'There are {len(individual_test_sample)} samples')
+    for i in individual_test_sample[:20]:
+        print(i)
+
+def get_individual_test_sample(df) -> list:
+
+    queries = df['test_name']
+
+    sample = sample_queries(queries)
+
+    return sample
+
+def get_query_levels_for_startup_analysis(df) -> list[set]:
 
     folder_cols = [col for col in df.columns if col.startswith("folder_l")]
 
@@ -286,18 +311,6 @@ def analyse_startup_costs(paths):
             )
 
         query_sets.append(sorted(set(runnable)))        
-
-    for qs in query_sets:
-        print(f'query set has {len(qs)} queries')
-        if len(qs) < 50:
-           for i in qs:
-               print(i)
-
-        else:
-            for i in qs[:20]:
-                print(i)
-
-        print('\n')
 
     # For each, get n tests, total time, time per test
 
@@ -399,6 +412,49 @@ def get_result(line: str):
 
 def timestamp_string() -> str:
     return datetime.now().strftime("%Y%m%d_%H%M%S")
+
+def sample_queries(queries, per_group=1, seed=None, exclude_first=False) -> list:
+    """
+    Sample queries, optionally excluding the first in each group 
+
+    queries: list of query strings
+    per_group: how many queries to select per group
+    seed: optional random seed
+    """
+    if seed is not None:
+        random.seed(seed)
+
+    # Group queries by prefix (everything before the last colon)
+    groups = defaultdict(list)
+
+    for q in queries:
+        # Split on colon; take first two parts as the group prefix
+        parts = q.split(':')
+        if len(parts) < 2:
+            continue  # skip malformed queries
+        prefix = ':'.join(parts[:2])
+        groups[prefix].append(q)
+
+    sampled = []
+
+    for prefix, qs in groups.items():
+        if exclude_first:
+            if len(qs) <= 1:
+                continue  # skip group with only the first query
+            # skip the first query in the group
+            candidates = qs[1:]
+        else:
+            candidates = qs
+        # sample up to per_group queries
+        n = min(per_group, len(candidates))
+        selected = random.sample(candidates, n)
+        # store tuples (query, group)
+        #sampled.extend([(q, prefix) for q in selected])
+        sampled.extend(selected)
+
+    return sampled
+
+
 
 if __name__=="__main__":
     main()
