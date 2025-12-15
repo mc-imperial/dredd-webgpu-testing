@@ -1,4 +1,4 @@
-import datetime
+from datetime import datetime
 import os
 import subprocess
 import argparse
@@ -27,7 +27,8 @@ def main():
 
     args.add_argument('analysis',
             choices=['all',
-                     'cts-stats'
+                     'cts-stats',
+                     'startup-costs'
                      ])
     args.add_argument('--base',
             type=str,
@@ -58,7 +59,8 @@ def main():
         run_all(paths)
     if args.analysis == 'cts-stats':
         get_full_cts_stats(paths)
-
+    if args.analysis == 'startup-costs':
+        analyse_startup_costs(paths)
 
 def run_all(paths : FilePaths):
     raise NotImplementedError
@@ -85,11 +87,10 @@ def get_full_cts_stats(paths: FilePaths) -> Path:
             stdout = stdout,
             query = query,
             cache_enabled=True)
-
     
     with open(outfile, 'w') as f:
         f.write(f'The full CTS runtime is: {elapsed_seconds} seconds\n')
-        f.write(f'This is {int(elapsed_seconds) // 60} minutes and int(total_seconds % 60} seconds')
+        f.write(f'This is {int(elapsed_seconds) // 60} minutes and {int(total_seconds % 60)} seconds')
 
     stats_dict : dict = get_cts_size_stats(paths, stdout)
 
@@ -119,28 +120,25 @@ def run_cts(dawn: Path,
            ]
     
     start_time = time.perf_counter()
-    
-    with open(stdout, 'w', encoding='utf-8') as f:
-        result = subprocess.run(
+
+    with stdout.open('w', encoding='utf-8') as f:
+
+        process = subprocess.Popen(
             cmd,
-            stdout=f,
-            stderr.subprocess.STDOUT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
             text=True,
-            check=False,
-            env=env
-        )
+            env=env)
+
+        for line in process.stdout:
+            print(line, end="")
+            f.write(line)
+
+        return_code = process.wait()
 
     elapsed_seconds = time.perf_counter() - start_time
 
     return elapsed_seconds
-
-def get_single_test_runtime():
-    '''
-    Calculates the typical runtime of a single test in isolation
-    Uses a sample of tests (since they may have different runtimes)
-    For measurement of startup costs
-    '''
-    raise NotImplementedError
 
 def get_cts_size_stats(paths: FilePaths, cts_stdout: Path):
     '''
@@ -210,7 +208,7 @@ def calculate_mutant_matrix_time():
     '''
     raise NotImplementedError
 
-def analyse_startup_costs():
+def analyse_startup_costs(paths):
     '''
     Analysis of the difference in time required to run single tests
     vs run all tests. Runs tests at increasing levels of granularity
@@ -219,8 +217,31 @@ def analyse_startup_costs():
     Outputs visualisations to show the relationship between 
     granularity and the total test suite runtime.
     '''
-    get_single_test_runtime()
-    raise NotImplementedError
+
+    query = 'webgpu:shader,execution,flow_control,call:*'
+
+    stdout = paths.output / f'single_test_stdout_{paths.runid}.txt'
+
+    time = get_single_test_runtime(paths, query, stdout)
+
+    print(f'Test time is: {time}')
+
+def get_single_test_runtime(paths: FilePaths, query: str, stdout: Path):
+    '''
+    Calculates the typical runtime of a single test in isolation
+    Uses a sample of tests (since they may have different runtimes)
+    For measurement of startup costs
+    '''
+ 
+    elapsed_seconds = run_cts(dawn = paths.dawn,
+            cts = paths.cts,
+            mesa = paths.mesa,
+            vk_icd = paths.vk_icd,
+            stdout = stdout,
+            query = query,
+            cache_enabled=True)
+
+    return elapsed_seconds 
 
 def analyse_mutant_recording_slowdown():
     '''
