@@ -57,30 +57,28 @@ def main():
     if args.analysis == 'all':
         run_all(paths)
     if args.analysis == 'cts-stats':
-        #stdout : Path = get_cts_runtime(paths)
-        with open (output / 'stdout.txt', 'r') as f:
-            stdout = f.readlines()
-        get_cts_size_stats(paths, stdout)
+        get_full_cts_stats(paths)
 
 
 def run_all(paths : FilePaths):
     raise NotImplementedError
 
-def get_cts_runtime(paths: FilePaths) -> Path:
+
+def get_full_cts_stats(paths: FilePaths) -> Path:
     '''
     Calculates the full CTS runtime without instrumentation
     and with instrumentation.
     Returns path to which stdout was written
     '''
 
-    outfile = paths.output / 'full_cts_runtime_{paths.runid}.txt'
+    out_time = paths.output / f'full_cts_runtime_{paths.runid}.txt'
     stdout = paths.output / f'full_cts_stdout_{paths.runid}.txt'
+    out_size = paths.output / f'full_cts_size_{paths.runid}.txt'
 
     query = 'webgpu:*'
 
-    start_time = time.perf_counter()
     
-    run_cts(dawn = paths.dawn,
+    elapsed_seconds = run_cts(dawn = paths.dawn,
             cts = paths.cts,
             mesa = paths.mesa,
             vk_icd = paths.vk_icd,
@@ -88,14 +86,16 @@ def get_cts_runtime(paths: FilePaths) -> Path:
             query = query,
             cache_enabled=True)
 
-    elapsed_seconds = time.perf_counter() - start_time
     
     with open(outfile, 'w') as f:
         f.write(f'The full CTS runtime is: {elapsed_seconds} seconds\n')
         f.write(f'This is {int(elapsed_seconds) // 60} minutes and int(total_seconds % 60} seconds')
 
-    return elapsed_seconds   
+    stats_dict : dict = get_cts_size_stats(paths, stdout)
 
+    with open(outfile, 'w') as f:
+        for k, v in stats_dict:
+            f.write(f'{k} : {v}\n')
 
 def run_cts(dawn: Path, 
             cts: Path, 
@@ -103,7 +103,7 @@ def run_cts(dawn: Path,
             vk_icd: str, 
             stdout: Path,
             query: str,
-            cache_enabled: bool = False):
+            cache_enabled: bool = False) -> float:
     
     env = os.environ.copy()
     env['VK_ICD_FILENAMES'] = f'{str(mesa)}/{vk_icd}'
@@ -118,6 +118,8 @@ def run_cts(dawn: Path,
            query
            ]
     
+    start_time = time.perf_counter()
+    
     with open(stdout, 'w', encoding='utf-8') as f:
         result = subprocess.run(
             cmd,
@@ -128,6 +130,9 @@ def run_cts(dawn: Path,
             env=env
         )
 
+    elapsed_seconds = time.perf_counter() - start_time
+
+    return elapsed_seconds
 
 def get_single_test_runtime():
     '''
@@ -190,9 +195,7 @@ def get_cts_size_stats(paths: FilePaths, cts_stdout: Path):
         "runtime": runtime,
     }
 
-    with open(outfile, 'w') as f:
-        for k, v in stats_dict:
-            f.write(f'{k} : {v}\n')
+    return stats_dict
 
 
 def get_number_of_mutant_stats(paths: FilePaths):
