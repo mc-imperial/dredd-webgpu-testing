@@ -38,7 +38,8 @@ def main():
     args.add_argument('analysis',
             choices=['all',
                      'cts-stats',
-                     'startup-costs'
+                     'startup-costs',
+                     'n-mutants'
                      ])
     args.add_argument('--base',
             type=str,
@@ -71,10 +72,36 @@ def main():
         get_full_cts_stats(paths)
     if args.analysis == 'startup-costs':
         analyse_startup_costs(paths, individual = True, grouped = False)
+    if args.analysis == 'n-mutants':
+        count_mutants(paths)
+
 
 def run_all(paths : FilePaths):
     raise NotImplementedError
 
+def count_mutants(paths: FilePaths):
+    '''
+    Counts the number of mutants in the mutated Mesa code
+    '''
+
+    outfile = paths.output / f'n_mutants_in_mesa_{paths.runid}.txt'
+
+    cmd = [f'{str(paths.dredd)}/scripts/query_mutant_info.py',
+            '--largest-mutant-id',
+            f'{str(paths.mesa_tracked)}/mutation_info.json']
+
+    result = subprocess.run(cmd, capture_output=True, text=True)
+
+    n_mutants = result.stdout
+
+    output_str = f'There are a total of {n_mutants} mutants in {paths.mesa_tracked}'
+
+    print(output_str)
+
+    with open(outfile, 'w') as f:
+        f.write(output_str)
+
+    
 
 def get_full_cts_stats(paths: FilePaths) -> Path:
     '''
