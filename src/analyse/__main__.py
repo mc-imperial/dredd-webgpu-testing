@@ -1,3 +1,4 @@
+import csv
 import json
 import random
 import re
@@ -302,17 +303,21 @@ def time_individual_tests(paths: FilePaths, tests: list[str]):
 
     individual_output.mkdir(exist_ok=True)
 
-    outfile = paths.output / f'individual_test_times_{paths.runid}.json'
+    outfile = paths.output / f'individual_test_times_{paths.runid}.csv'
 
-    results = {}
+    # Open the CSV file once, write header
+    with open(outfile, "w", newline="") as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(["test_name", "runtime_s"])  # header
 
-    for i, test in enumerate(tests):
-        stdout = individual_output / f'test_i_stdout_{paths.runid}.txt'
-        time = get_single_test_runtime(paths, test, stdout)
-        results[test] = time
+        for i, test in enumerate(tests):
+            print(f'Test {i} out of {len(tests)}')
 
-    with open(outfile, 'w') as f:
-        json.dump(results, f, indent=2)
+            stdout_file = individual_output / f"test_{i}_stdout_{paths.runid}.txt"
+            runtime = get_single_test_runtime(paths, test, stdout_file)
+
+            # Write each test result immediately
+            writer.writerow([test, runtime])
 
     return results
 
