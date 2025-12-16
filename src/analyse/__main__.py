@@ -72,19 +72,48 @@ def main():
     if args.analysis == 'cts-stats':
         get_full_cts_stats(paths)
     if args.analysis == 'startup-costs':
-        analyse_startup_costs(paths, individual = True, grouped = False)
+        if args.individual:
+            analyse_startup_costs(paths, individual=True, group=False)
+        elif args.group:
+            analyse_startup_costs(paths, individual=False, group=True)
+        else:
+            analyse_startup_costs(paths, individual=True, group=True)
     if args.analysis == 'n-mutants':
         n_mutants = count_mutants(paths)
+        mesa_loc = get_loc(paths)
+
+
 
 def run_all(paths : FilePaths):
     raise NotImplementedError
+
+
+def get_loc(paths: FilePaths):
+    
+    outfile = paths.output / f'loc_in_mesa_src_compiler_nir.txt'
+
+    folder = paths.mesa / 'src/compiler/nir'
+
+    cmd = ['cloc',
+           str(folder),
+           '--include-lang=C'
+           ]
+
+    result = subprocess.run(cmd, capture_output=True, text=True)
+
+    output_str = f'There are {result.stdout} lines of C code in {folder}'
+
+    print(output_str)
+
+    with open(outfile, 'w') as f:
+        f.write(output_str)
 
 def count_mutants(paths: FilePaths):
     '''
     Counts the number of mutants in the mutated Mesa code
     '''
 
-    outfile = paths.output / f'n_mutants_in_mesa_{paths.runid}.txt'
+    outfile = paths.output / f'n_mutants_in_mesa.txt'
 
     cmd = [f'{str(paths.dredd)}/scripts/query_mutant_info.py',
             '--largest-mutant-id',
@@ -225,7 +254,7 @@ def get_cts_size_stats(cts_stdout: Path):
 
     return stats_dict
 
-def analyse_startup_costs(paths: FilePaths, individual: bool = True, grouped: bool = True):
+def analyse_startup_costs(paths: FilePaths, individual: bool, group: bool):
     '''
     Analysis of the difference in time required to run single tests
     vs run all tests. Runs tests at increasing levels of granularity
@@ -248,16 +277,14 @@ def analyse_startup_costs(paths: FilePaths, individual: bool = True, grouped: bo
     split_cols = split_cols.add_prefix(level_prefix)
     df = df.join(split_cols)
 
-    
-    if grouped:
-        # Get a list of query sets where the union of the sets
-        # comprises the complete CTS at different levels of granularity
-        query_sets : list[set] = get_query_levels_for_startup_analysis(df)
-
-        #TODO: run grouped queries and record times
-        raise NotImplementedError
-    
+       
     if individual:
+        startup_costs_individual(paths, df)
+    if group:
+        startup_costs_groups(paths, df)
+
+
+def startup_costs_individual(paths: FilePaths, df: pd.DataFrame):
         # Get a sample of individual level tests. The union of these
         # tests do NOT equate to the complete CTS, they are just a sample
         # and the runtimes need to be scaled up to estimate the runtime
@@ -295,7 +322,15 @@ def analyse_startup_costs(paths: FilePaths, individual: bool = True, grouped: bo
                     f"CI low (s): {total_ci_low_s}, "
                     f"CI high (s): {total_ci_high_s}\n"
                 )
-              
+     
+def startup_costs_groups(paths: FilePaths, df: pd.DataFrame):
+    # Get a list of query sets where the union of the sets
+    # comprises the complete CTS at different levels of granularity
+    query_sets : list[set] = get_query_levels_for_startup_analysis(df)
+
+    #TODO: run grouped queries and record times
+    raise NotImplementedError
+      
 
 def time_individual_tests(paths: FilePaths, tests: list[str]):
 
