@@ -113,10 +113,16 @@ def analyse_n_tests(paths: FilePaths):
 
     df = get_test_info_from_stdout(paths.default_stdout) 
 
-    print(df.head())
+    api_count = (df['folder_l0'] == 'api').sum()
+    shader_count = (df['folder_l0'] == 'shader').sum()
 
-    print(df.columns)
+    output_str = f'Number of tests under webgpu:api,* is {api_count}\n'
+    output_str += f'Number of tests under webgpu:shader,* is {shader_count}\n'
 
+    print(output_str)
+
+    with open(outfile, 'w') as f:
+        f.write(output_str)
 
 def get_loc(paths: FilePaths):
     
@@ -420,7 +426,7 @@ def startup_costs_groups(paths: FilePaths, df: pd.DataFrame):
         # Iterate through query levels
         for name, queries in named_sets.items():
             # Skip level 0 since we run that separately
-            if name == 'level_0' or name == 'level_7':
+            if name != 'level_7':
                 print(f'Skipping {name}')
                 continue
 
