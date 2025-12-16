@@ -48,6 +48,15 @@ def main():
     args.add_argument('--output',
             type=str,
             default='/data/dev/dredd-webgpu-testing/data/icst_output')
+    args.add_argument('--data',
+            type=str,
+            default=None)
+    args.add_argument('--individual',
+            action='store_true',
+            default=False)
+    args.add_argument('--group',
+            action='store_true',
+            default=False)
 
     args = args.parse_args()
 
@@ -73,7 +82,7 @@ def main():
         get_full_cts_stats(paths)
     if args.analysis == 'startup-costs':
         if args.individual:
-            analyse_startup_costs(paths, individual=True, group=False)
+            analyse_startup_costs(paths, individual=True, group=False, datafile=args.data)
         elif args.group:
             analyse_startup_costs(paths, individual=False, group=True)
         else:
@@ -254,7 +263,7 @@ def get_cts_size_stats(cts_stdout: Path):
 
     return stats_dict
 
-def analyse_startup_costs(paths: FilePaths, individual: bool, group: bool):
+def analyse_startup_costs(paths: FilePaths, individual: bool, group: bool, datafile: Path = None):
     '''
     Analysis of the difference in time required to run single tests
     vs run all tests. Runs tests at increasing levels of granularity
@@ -276,53 +285,76 @@ def analyse_startup_costs(paths: FilePaths, individual: bool, group: bool):
     split_cols = df['test_folder'].str.split(',', expand=True)
     split_cols = split_cols.add_prefix(level_prefix)
     df = df.join(split_cols)
-
        
     if individual:
-        startup_costs_individual(paths, df)
+        startup_costs_individual(paths, df, datafile)
     if group:
         startup_costs_groups(paths, df)
 
 
-def startup_costs_individual(paths: FilePaths, df: pd.DataFrame):
+def startup_costs_individual(paths: FilePaths, df: pd.DataFrame, datafile: Path = None):
         # Get a sample of individual level tests. The union of these
         # tests do NOT equate to the complete CTS, they are just a sample
         # and the runtimes need to be scaled up to estimate the runtime
         # of the full CTS if it were run on an individual test level
-        output_file = paths.output / f'individual_test_runtime_summary_{paths.runid}.txt'
 
-        individual_test_sample : list = get_individual_test_sample(df)
+        
+        if datafile is None:
 
-        results = time_individual_tests(paths, individual_test_sample)    
+            output_file = paths.output / f'individual_test_runtime_summary_{paths.runid}.txt'
+            
+            individual_test_sample : list = get_individual_test_sample(df)
 
-        times_s = list(results.values())
+            results = time_individual_tests(paths, individual_test_sample)    
+
+        else:
+ 
+            match = re.search(r"(\d{8}_\d{6})", Path(datafile).name)
+            
+            timestamp = match.group(1) if match else None
+            
+            output_file = paths.output / f'individual_test_runtime_summary_{timestamp}.txt'
+            
+            results = pd.read_csv(datafile)
+
+
+        times_s = list(results['runtime_s'])
 
         n_tests = len(df['test_name'])
-        n_samples = len(individual_test_sample)
+        n_samples = len(times_s)
 
-        mean_hms, low_hms, high_hms = sample_stats(times_s, total_tests = n_tests)
+        time_results = sample_stats(times_s, total_tests=n_tests)
 
-         # Output to console
+        mean_h, mean_m, mean_s = time_results["total_mean_hms"]
+        low_h, low_m, low_s = time_results["total_ci_low_hms"]
+        high_h, high_m, high_s = time_results["total_ci_high_hms"]
+
+        # Per-test stats (seconds)
+        mean_test = time_results["mean_test_s"]
+        low_test = time_results["mean_test_ci_low_s"]
+        high_test = time_results["mean_test_ci_high_s"]
+
+        # Output to console
         output_str = (
-            f"Sample of {n_samples} run.\n"
+            f"Sample of {n_samples} tests run.\n"
+            f"\n"
+            f"Per-test runtime (seconds):\n"
+            f"  Mean: {mean_test:.6f}s "
+            f"(95% CI: {low_test:.6f}s – {high_test:.6f}s)\n"
+            f"\n"
             f"Estimated TOTAL runtime for {n_tests} tests:\n"
-            f"{mean_hms[0]}h {mean_hms[1]}m {mean_hms[2]}s "
-            f"(95% CI: {low_hms[0]}h {low_hms[1]}m {low_hms[2]}s "
-            f"– {high_hms[0]}h {high_hms[1]}m {high_hms[2]}s)"
+            f"  {mean_h}h {mean_m}m {mean_s}s "
+            f"(95% CI: {low_h}h {low_m}m {low_s}s "
+            f"– {high_h}h {high_m}m {high_s}s)"
         )
+
         print(output_str)
 
         # Write to file if requested
         if output_file is not None:
             with open(output_file, "w") as f:
                 f.write(output_str + "\n")
-                # Also save numeric values for later processing
-                f.write(
-                    f"Total mean (s): {total_mean_s}, "
-                    f"CI low (s): {total_ci_low_s}, "
-                    f"CI high (s): {total_ci_high_s}\n"
-                )
-     
+
 def startup_costs_groups(paths: FilePaths, df: pd.DataFrame):
     # Get a list of query sets where the union of the sets
     # comprises the complete CTS at different levels of granularity
@@ -332,7 +364,7 @@ def startup_costs_groups(paths: FilePaths, df: pd.DataFrame):
     raise NotImplementedError
       
 
-def time_individual_tests(paths: FilePaths, tests: list[str]):
+def time_individual_tests(paths: FilePaths, tests: list[str]) -> pd.DataFrame:
 
     individual_output = paths.output / 'individual_output'
 
@@ -354,9 +386,13 @@ def time_individual_tests(paths: FilePaths, tests: list[str]):
             # Write each test result immediately
             writer.writerow([test, runtime])
 
+    # Read results back - do this so we don't have to store all results in memory
+    # while we're computing them
+    results = pd.read_csv(outfile)
+
     return results
 
-def sample_stats(times_s: float, total_tests: int):
+def sample_stats(times_s: list[float], total_tests: int) -> dict:
     n = len(times_s)
 
     mean_test_s = mean(times_s)
@@ -378,12 +414,26 @@ def sample_stats(times_s: float, total_tests: int):
     total_ci_low_s = mean_test_ci_low * total_tests
     total_ci_high_s = mean_test_ci_high * total_tests
 
-    # Convert to h:m:s
-    mean_hms = ms_to_hms(total_mean_s)
-    low_hms = ms_to_hms(total_ci_low_s)
-    high_hms = ms_to_hms(total_ci_high_s)
+    return {
+        "sample_size": n,
+        "total_tests": total_tests,
 
-    return (mean_hms, low_hms, high_hms)
+        # Per-test statistics (seconds)
+        "mean_test_s": mean_test_s,
+        "mean_test_ci_low_s": mean_test_ci_low,
+        "mean_test_ci_high_s": mean_test_ci_high,
+
+        # Total runtime statistics (seconds)
+        "total_mean_s": total_mean_s,
+        "total_ci_low_s": total_ci_low_s,
+        "total_ci_high_s": total_ci_high_s,
+
+        # Human-readable total runtime
+        "total_mean_hms": ms_to_hms(total_mean_s),
+        "total_ci_low_hms": ms_to_hms(total_ci_low_s),
+        "total_ci_high_hms": ms_to_hms(total_ci_high_s),
+    }
+
 
 def ms_to_hms(seconds: float) -> tuple[int, int, int]:
     hours = int(seconds // 3600)
