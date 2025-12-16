@@ -157,8 +157,8 @@ def get_full_cts_stats(paths: FilePaths) -> Path:
             cts = paths.cts,
             mesa = paths.mesa,
             vk_icd = paths.vk_icd,
-            stdout = stdout,
             query = query,
+            stdout = stdout,
             cache_enabled=True)
     
     with open(outfile, 'w') as f:
@@ -175,8 +175,8 @@ def run_cts(dawn: Path,
             cts: Path, 
             mesa: Path, 
             vk_icd: str, 
-            stdout: Path,
             query: str,
+            stdout: Path | None = None,
             cache_enabled: bool = False) -> float:
     
     env = os.environ.copy()
@@ -192,25 +192,34 @@ def run_cts(dawn: Path,
            query
            ]
     
-    start_time = time.perf_counter()
+    # Open the file only if stdout path is provided
+    f_handle = stdout.open('w', encoding='utf-8') if stdout else None
 
-    with stdout.open('w', encoding='utf-8') as f:
-
+    try:
+        
+        start_time = time.perf_counter()
+        
         process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
-            env=env)
+            env=env
+        )
 
         for line in process.stdout:
             print(line, end="")
-            f.write(line)
+            if f_handle:
+                f_handle.write(line)
 
         return_code = process.wait()
 
-    elapsed_seconds = time.perf_counter() - start_time
-
+        elapsed_seconds = time.perf_counter() - start_time
+    
+    finally:
+        if f_handle:
+            f_handle.close()
+    
     return elapsed_seconds
 
 def get_cts_size_stats(cts_stdout: Path):
@@ -360,9 +369,69 @@ def startup_costs_groups(paths: FilePaths, df: pd.DataFrame):
     # comprises the complete CTS at different levels of granularity
     query_sets : list[set] = get_query_levels_for_startup_analysis(df)
 
-    #TODO: run grouped queries and record times
-    raise NotImplementedError
-      
+    query_outfile_summary = paths.output / 'group_query_summary.txt'
+    query_outfile_detail = paths.output / 'group_query_detail.json'
+    query_outfile_times = paths.output / f'group_query_{paths.runid}'
+    query_outfile_times_csv = paths.output / f'group_query_runtimes_{paths.runid}.csv'
+
+    with open(query_outfile_summary, 'w') as f:
+        for i, q in enumerate(query_sets):
+            out_str = f'Level {i} queries: {len(q)}'
+            print(out_str)
+            f.write(out_str + '\n')
+
+    named_sets = {f"level_{i}": sorted(s) for i, s in enumerate(query_sets)}
+
+    with open(query_outfile_detail, 'w') as f:
+        json.dump(named_sets, f, indent=2)
+    
+    # Open once, write header
+    with open(query_outfile_times_csv, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=["name", "n_queries", "seconds"])
+        writer.writeheader()
+
+        # Iterate through query levels
+        for name, queries in named_sets.items():
+            # Skip level 0 since we run that separately
+            if name == 'level_0':
+                print(f'Skipping {name}')
+                continue
+
+            print(f'Running {name}')
+            # Run the timing function
+            seconds = time_group_tests(paths, query_outfile_times, name, queries)
+
+            # Write row immediately
+            writer.writerow({
+                "name": name,
+                "n_queries": len(queries),
+                "seconds": seconds
+            })
+            f.flush()  # ensure data is written to disk
+    
+def time_group_tests(paths: FilePaths, outdir: Path, name: str, tests:list[str]) -> float:
+
+    group_output = outdir / f'group_{name}_runtime.txt'
+
+    group_output.mkdir(exist_ok=True, parents=True)
+
+    total_seconds = 0
+
+    for test in tests: 
+        elapsed_seconds = run_cts(dawn = paths.dawn,
+                cts = paths.cts,
+                mesa = paths.mesa,
+                vk_icd = paths.vk_icd,
+                query = test,
+                cache_enabled=True)
+        
+        total_seconds += elapsed_seconds
+
+    with open(outfile, 'w') as f:
+        f.write(f'The runtime for query {name} with {len(tests)} queries is: {elapsed_seconds} seconds\n')
+        f.write(f'This is {int(elapsed_seconds) // 60} minutes and {int(total_seconds % 60)} seconds')
+   
+    return total_seconds
 
 def time_individual_tests(paths: FilePaths, tests: list[str]) -> pd.DataFrame:
 
@@ -494,6 +563,8 @@ def get_query_levels_for_startup_analysis(df) -> list[set]:
 
         query_sets.append(sorted(set(runnable)))        
 
+    return query_sets
+
 def query_up_to_level(row, folder_cols, level):
     """
     Returns the query string up to the given level for a test.
@@ -524,8 +595,8 @@ def get_single_test_runtime(paths: FilePaths, query: str, stdout: Path):
             cts = paths.cts,
             mesa = paths.mesa,
             vk_icd = paths.vk_icd,
-            stdout = stdout,
             query = query,
+            stdout = stdout,
             cache_enabled=True)
 
     return elapsed_seconds 
