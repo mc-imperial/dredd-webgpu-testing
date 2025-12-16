@@ -387,13 +387,13 @@ def startup_costs_groups(paths: FilePaths, df: pd.DataFrame):
     
     # Open once, write header
     with open(query_outfile_times_csv, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["name", "n_queries", "seconds"])
+        writer = csv.DictWriter(f, fieldnames=["name", "n_queries", "total_in_seconds", "total_in_minutes"])
         writer.writeheader()
 
         # Iterate through query levels
         for name, queries in named_sets.items():
             # Skip level 0 since we run that separately
-            if name == 'level_0':
+            if name == 'level_0' or name == 'level_7':
                 print(f'Skipping {name}')
                 continue
 
@@ -405,7 +405,8 @@ def startup_costs_groups(paths: FilePaths, df: pd.DataFrame):
             writer.writerow({
                 "name": name,
                 "n_queries": len(queries),
-                "seconds": seconds
+                "total_in_seconds": round(seconds,2),
+                "total_in_minutes": round(seconds / 60, 2)
             })
             f.flush()  # ensure data is written to disk
     
