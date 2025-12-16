@@ -411,9 +411,9 @@ def startup_costs_groups(paths: FilePaths, df: pd.DataFrame):
     
 def time_group_tests(paths: FilePaths, outdir: Path, name: str, tests:list[str]) -> float:
 
-    group_output = outdir / f'group_{name}_runtime.txt'
-
-    group_output.mkdir(exist_ok=True, parents=True)
+    outdir.mkdir(exist_ok=True, parents=True)
+    
+    group_outfile = outdir / f'group_{name}_runtime.txt'
 
     total_seconds = 0
 
@@ -427,10 +427,14 @@ def time_group_tests(paths: FilePaths, outdir: Path, name: str, tests:list[str])
         
         total_seconds += elapsed_seconds
 
-    with open(outfile, 'w') as f:
-        f.write(f'The runtime for query {name} with {len(tests)} queries is: {elapsed_seconds} seconds\n')
-        f.write(f'This is {int(elapsed_seconds) // 60} minutes and {int(total_seconds % 60)} seconds')
-   
+    out_str = f'The runtime for query {name} with {len(tests)} queries is: {total_seconds} seconds\n'
+    out_str += f'This is {int(total_seconds) // 60} minutes and {int(total_seconds % 60)} seconds'
+    
+    print(out_str)
+
+    with open(group_outfile, 'w') as f:
+        f.write(out_str)
+
     return total_seconds
 
 def time_individual_tests(paths: FilePaths, tests: list[str]) -> pd.DataFrame:
