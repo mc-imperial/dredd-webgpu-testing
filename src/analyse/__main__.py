@@ -31,6 +31,7 @@ class FilePaths:
     dredd: Path
     vk_icd: Path
     runid: str
+    default_stdout: Path
 
 def main():
  
@@ -40,7 +41,8 @@ def main():
             choices=['all',
                      'cts-stats',
                      'startup-costs',
-                     'n-mutants'
+                     'n-mutants',
+                     'n-tests'
                      ])
     args.add_argument('--base',
             type=str,
@@ -57,6 +59,9 @@ def main():
     args.add_argument('--group',
             action='store_true',
             default=False)
+    args.add_argument('--full-stdout',
+            type=str,
+            default='/data/dev/dredd-webgpu-testing/data/full_cts_stdout_031225.txt')
 
     args = args.parse_args()
 
@@ -73,7 +78,8 @@ def main():
             mesa_mutated = base / 'mesa_mutated',
             vk_icd = Path('build/install/share/vulkan/icd.d/lvp_icd.x86_64.json'),
             dredd = base / 'dredd',
-            runid = timestamp_string()
+            runid = timestamp_string(),
+            default_stdout = Path(args.full_stdout)
             )
 
     if args.analysis == 'all':
@@ -90,11 +96,26 @@ def main():
     if args.analysis == 'n-mutants':
         n_mutants = count_mutants(paths)
         mesa_loc = get_loc(paths)
-
+    if args.analysis == 'n-tests':
+        analyse_n_tests(paths)
 
 
 def run_all(paths : FilePaths):
     raise NotImplementedError
+
+
+def analyse_n_tests(paths: FilePaths):
+
+    outfile = paths.output / f'n_tests_analysis.txt'
+
+    if paths.default_stdout is None:
+        raise ValueError('You must supply a default stdout file to read data from')
+
+    df = get_test_info_from_stdout(paths.default_stdout) 
+
+    print(df.head())
+
+    print(df.columns)
 
 
 def get_loc(paths: FilePaths):
@@ -272,17 +293,7 @@ def get_cts_size_stats(cts_stdout: Path):
 
     return stats_dict
 
-def analyse_startup_costs(paths: FilePaths, individual: bool, group: bool, datafile: Path = None):
-    '''
-    Analysis of the difference in time required to run single tests
-    vs run all tests. Runs tests at increasing levels of granularity
-    (all, first file level, second file level... samples at the
-    individual test level).
-    Outputs visualisations to show the relationship between 
-    granularity and the total test suite runtime.
-    '''
-
-    stdout = paths.base / 'dredd-webgpu-testing/data/full_cts_stdout_031225.txt' 
+def get_test_info_from_stdout(stdout: Path) -> pd.DataFrame:
 
     # Get different testing levels
     test_dict = get_queries(stdout)
@@ -294,7 +305,23 @@ def analyse_startup_costs(paths: FilePaths, individual: bool, group: bool, dataf
     split_cols = df['test_folder'].str.split(',', expand=True)
     split_cols = split_cols.add_prefix(level_prefix)
     df = df.join(split_cols)
-       
+
+    return df
+ 
+
+def analyse_startup_costs(paths: FilePaths, individual: bool, group: bool, datafile: Path = None):
+    '''
+    Analysis of the difference in time required to run single tests
+    vs run all tests. Runs tests at increasing levels of granularity
+    (all, first file level, second file level... samples at the
+    individual test level).
+    Outputs visualisations to show the relationship between 
+    granularity and the total test suite runtime.
+    '''
+
+
+    df = get_test_info_from_stdout(paths.default_stdout)
+
     if individual:
         startup_costs_individual(paths, df, datafile)
     if group:
