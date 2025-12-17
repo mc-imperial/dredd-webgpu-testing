@@ -1,5 +1,6 @@
 import csv
 import json
+import zipfile
 import random
 import re
 import os
@@ -33,6 +34,7 @@ class FilePaths:
     runid: str
     default_stdout: Path
     tracking_archive: Path
+    test_to_id_json: Path
 
 def main():
  
@@ -43,7 +45,7 @@ def main():
                      'cts-stats',
                      'startup-costs',
                      'n-mutants',
-                     'n-tests'.
+                     'n-tests',
                      'mutant-touching'
                      ])
     args.add_argument('--base',
@@ -70,7 +72,9 @@ def main():
     args.add_argument('--full-tracking-archive',
             type=str,
             default='/data/dev/dredd-webgpu-testing/data/tracking_files_full_cts_031225.zip')
-
+    args.add_argument('--test-to-id-json',
+            type=str,
+            default='/data/dev/dredd-webgpu-testing/data/mapping_test_to_id_031225.json')
     args = args.parse_args()
 
     base = Path(args.base)
@@ -87,8 +91,9 @@ def main():
             vk_icd = Path('build/install/share/vulkan/icd.d/lvp_icd.x86_64.json'),
             dredd = base / 'dredd',
             runid = timestamp_string(),
-            default_stdout = Path(args.full_stdout)
-            tracking_archive = Paths(args.full_tracking_archive)
+            default_stdout = Path(args.full_stdout),
+            tracking_archive = Path(args.full_tracking_archive),
+            test_to_id_json = Path(args.test_to_id_json)
             )
 
     if args.analysis == 'all':
@@ -110,7 +115,7 @@ def main():
     if args.analysis == 'n-tests':
         analyse_n_tests(paths)
     if args.analysis == 'mutant-touching':
-        analyse_persistency_effect_on_mutant_touching(paths)
+        analyse_persistency_effect_on_mutant_touches(paths)
 
 def run_all(paths : FilePaths):
     raise NotImplementedError
@@ -682,15 +687,14 @@ def analyse_mutant_recording_slowdown():
     '''
     raise NotImplementedError
 
-def analyse_persistency_effect_on_mutant_touches():
+def analyse_persistency_effect_on_mutant_touches(paths: FilePaths):
     '''
     Analysis of the effect of shared resources on the test-mutant
     relationship.
     Runs tests in isolation and in groups to identify shared resources.
     '''
-    analyse_device_sharing_effect_on_mutant_touches()
-    analyse_caching_effect_on_mutant_touches()
-    raise NotImplementedError
+    analyse_device_sharing_effect_on_mutant_touches(paths)
+    #analyse_caching_effect_on_mutant_touches()
 
 def analyse_device_sharing_effect_on_mutant_touches(paths: FilePaths):
     '''
@@ -699,6 +703,7 @@ def analyse_device_sharing_effect_on_mutant_touches(paths: FilePaths):
     Caching is turned OFF for this.
     '''
 
+    '''
     # Devices are shared when tests are run in groups
     # Devices are most shared when the full CTS is run --> 
     # full CTS tracking results show us mutants touched
@@ -728,6 +733,33 @@ def analyse_device_sharing_effect_on_mutant_touches(paths: FilePaths):
     # Sample tests to choose? Choose a random selection
     # from the subset of tests that track *any* mutants
     # when run in the full CTS.
+    '''
+
+    # Get list of tracked files, from which we will sample
+    # tests to run in isolated processes
+
+    with zipfile.ZipFile(paths.tracking_archive, 'r') as z:
+        tracked_files = z.infolist()
+
+    tracked_tests = [Path(x.filename).stem for x in tracked_files if not x.is_dir()]
+
+    id_to_name = get_mapping(paths.test_to_id_json)
+
+    test_names = {id_to_name[x] : x for x in tracked_tests}
+
+
+
+def get_mapping(mapping_json: Path) -> dict:
+    with open(mapping_json, 'r') as f:
+        mapping = json.load(f)
+
+    inverse_map = {v: k for k, v in mapping.items()}
+
+    return inverse_map
+
+
+
+
 
     
 
