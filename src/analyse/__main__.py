@@ -9,8 +9,12 @@ import subprocess
 import argparse
 import time
 import math
-import pandas as pd
 
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+from matplotlib.ticker import FuncFormatter
 from statistics import mean, stdev
 from scipy.stats import t
 from datetime import datetime
@@ -38,7 +42,7 @@ class FilePaths:
     test_to_id_json: Path
     output_temp: Path
     sample_size: int = 100
-    isolated_runid: str = '20251217_122122'
+    isolated_runid: str = '20251217_135018'
 
 def main():
  
@@ -124,7 +128,7 @@ def main():
     if args.analysis == 'n-tests':
         analyse_n_tests(paths)
     if args.analysis == 'mutant-touching':
-        analyse_device_sharing_effect_on_mutant_touches(paths, paths.sample_size)
+        analyse_device_sharing_effect_on_mutant_touches(paths, paths.sample_size, get_data=False)
 
 def run_all(paths : FilePaths):
     raise NotImplementedError
@@ -760,18 +764,218 @@ def analyse_device_sharing_effect_on_mutant_touches(paths: FilePaths, sample_siz
 
     # Get data if we haven't already
     if get_data:
-        get_tracking_sample(test_names, output_isolated_tests)
+        get_tracking_sample(paths, test_names, sample_size, output_isolated_tests)
 
-    # Load data
-
+    # Load isolated data
     isolated_df = load_isolated_tests(output_isolated_tests)
+    isolated_df = isolated_df.rename(columns={'single_id' : 'isolated_id'})
 
-    print(isolated_df.head(10))
+    # Load grouped data for the relevant tests
+
+    test_names = [f'tracking_files/test_id_{x}.txt' for x in isolated_df['test_id']]
+
+    grouped_df = extract_to_dataframe(paths.tracking_archive, test_names)
+
+    prefix = 'tracking_files/test_id_'
+    suffix = '.txt'
+
+    grouped_df['test_id'] = grouped_df['name'].str.removeprefix(prefix).str.removesuffix(suffix).astype(int)
+    grouped_df['grouped'] = grouped_df['values'].apply(len)
+    grouped_df = grouped_df.rename(columns={'values': 'grouped_id'})
+    grouped_df = grouped_df.drop(columns='name')
+
+    # Merge data together
+    merged_df = pd.merge(
+        isolated_df,
+        grouped_df,
+        on="test_id",
+        how="outer",  # keep all rows
+        indicator=True  # adds a column showing merge status
+    )
+
+    # Check for any non-matching rows
+    non_matching = merged_df[merged_df["_merge"] != "both"]
+    if not non_matching.empty:
+        raise ValueError(f"Some test_id rows do not match between isolated and group dataframes:\n{non_matching}")
+
+    # Keep only the matched rows
+    merged_df = merged_df[merged_df["_merge"] == "both"].drop(columns="_merge")
+
+    print(merged_df.head())
+
+    # Compare the number of mutant IDs in isolation vs in a group
+    merged_df["isolated_id"] = merged_df["isolated_id"].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) else x)
+    merged_df["grouped_id"] = merged_df["grouped_id"].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) else x)
+
+    # Compute counts
+    merged_df["n_isolated_only"] = merged_df.apply(
+        lambda row: len(set(row["isolated_id"]) - set(row["grouped_id"])),
+        axis=1
+    )
+
+    merged_df["n_group_only"] = merged_df.apply(
+        lambda row: len(set(row["grouped_id"]) - set(row["isolated_id"])),
+        axis=1
+    )
+    
+    merged_df["n_total_unique"] = merged_df.apply(
+        lambda row: len(set(row["isolated_id"]) | set(row["grouped_id"])),
+        axis=1
+    )
+    
+    merged_df["n_intersection"] = merged_df.apply(
+    lambda row: len(set(row["isolated_id"]) & set(row["grouped_id"])),
+    axis=1
+    )
+
+    print(merged_df.head)
+
+    # Save the results as a table
+
+    # Plot the results
+    df = merged_df[['test_id','n_isolated_only','n_group_only','n_intersection']]
+    plot_stacked_bar(df)
+    
+    #plot_isolation_vs_group_histograms(df)
+
+def plot_stacked_bar(merged_df: pd.DataFrame):
+    # Example DataFrame
+    # merged_df should have columns: test_id, n_intersection, n_isolated_only, n_group_only
+    # For demonstration:
+    # merged_df = pd.DataFrame({
+    #     "test_id": [1,2,3],
+    #     "n_intersection": [5, 3, 4],
+    #     "n_isolated_only": [2, 4, 1],
+    #     "n_group_only": [0, 0, 1]
+    # })
+
+    # Set x-axis
+    merged_df = merged_df.copy()
+    merged_df["test_idx"] = range(1, len(merged_df) + 1) 
+    x = merged_df["test_idx"]
+
+    # Plot stacked bar chart
+    plt.figure(figsize=(12,6))
+    plt.bar(x, merged_df["n_intersection"], label="Touched in all executions")
+    plt.bar(x, merged_df["n_isolated_only"], bottom=merged_df["n_intersection"], label="Only touched in isolated execution")
+    plt.bar(x, merged_df["n_group_only"], bottom=merged_df["n_intersection"] + merged_df["n_isolated_only"], label="Only touched in grouped execution")
+
+    plt.xlabel("Test ID")
+    plt.ylabel("Number of Touched Mutants")
+
+    # Tick labels
+    plt.xticks(fontsize=12)  # x-axis
+    plt.yticks(fontsize=12)  # y-axis
+    
+    # Format y-axis with commas
+    plt.gca().yaxis.set_major_formatter(FuncFormatter(lambda x, pos: f"{int(x):,}"))
+    plt.legend(fontsize=12)
+
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_isolation_vs_group_histograms(df: pd.DataFrame) -> None:
+    """
+    Plot histograms of:
+      1) Absolute difference in mutants covered (isolated - group)
+      2) Percentage difference relative to isolated
+
+    Assumes n_group_only == 0 for all rows.
+    """
+
+    # Absolute difference
+    abs_diff = df["n_total_isolated"] - df["n_total_group"]
+
+    # Percentage difference (avoid division by zero defensively)
+    pct_diff = np.where(
+        df["n_total_isolated"] > 0,
+        abs_diff / df["n_total_isolated"] * 100.0,
+        0.0,
+    )
+
+    def freedman_diaconis_bins(data: np.ndarray) -> int:
+        data = np.asarray(data)
+        q75, q25 = np.percentile(data, [75, 25])
+        iqr = q75 - q25
+        if iqr == 0:
+            return max(1, int(np.sqrt(len(data))))
+        bin_width = 2 * iqr / (len(data) ** (1 / 3))
+        return max(1, int((data.max() - data.min()) / bin_width))
+
+    abs_bins = freedman_diaconis_bins(abs_diff)
+    pct_bins = freedman_diaconis_bins(pct_diff)
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+    # Absolute difference histogram
+    axes[0].hist(abs_diff, bins=abs_bins)
+    axes[0].set_title("Absolute Difference in Mutants Covered")
+    axes[0].set_xlabel("Isolated − Group")
+    axes[0].set_ylabel("Number of Tests")
+    axes[0].axvline(0, linestyle="--", linewidth=1)
+
+    # Percentage difference histogram
+    axes[1].hist(pct_diff, bins=pct_bins)
+    axes[1].set_title("Percentage Difference (Relative to Isolation)")
+    axes[1].set_xlabel("Percentage Reduction (%)")
+    axes[1].set_ylabel("Number of Tests")
+    axes[1].axvline(0, linestyle="--", linewidth=1)
+
+    plt.tight_layout()
+    plt.show()
+
+
+def extract_to_dataframe(
+    archive: Path,
+    files_to_extract: list[str]
+) -> pd.DataFrame:
+
+    rows = []
+    cumulative_df = pd.DataFrame(columns=["name", "values"])
+    print(f"Reading {len(files_to_extract)} files from {archive}")
+
+    try:
+        with zipfile.ZipFile(archive, "r") as z:
+            for file in files_to_extract:
+                try:
+                    with z.open(file) as f:
+                        content = f.read().decode("utf-8").strip()
+
+                        # Split on whitespace or commas
+                        ints = list(sorted(set([
+                            int(x)
+                            for x in content.replace(",", " ").split()
+                            if x
+                        ])))
+
+                        rows.append({
+                            "name": file,
+                            "values": ints,
+                        })
+
+                except Exception as e:
+                    raise RuntimeError(f"Problem reading file {file}: {e}")
+
+    except Exception as e:
+            print("Problem opening ZIP archive!")
+            raise RuntimeError from e
+
+    if rows:
+        cumulative_df = pd.concat(
+            [cumulative_df, pd.DataFrame(rows)],
+            ignore_index=True,
+        )
+
+    print("Reading completed successfully")
+
+    return cumulative_df
 
 def load_isolated_tests(output_isolated_tests: Path) -> pd.DataFrame:
     single_paths = [Path(p,'test_id_0.txt') for p in Path(output_isolated_tests).rglob("test_*") if p.is_dir()]
-    single = {p.parent.name.replace('test_','') : p for p in single_paths}
-    
+  
+    single = {p.parent.name.replace('test_id_','') : p for p in single_paths}
+
     infos = []
 
     for test_id in sorted(single.keys()):
@@ -793,10 +997,10 @@ def load_isolated_tests(output_isolated_tests: Path) -> pd.DataFrame:
     return df
 
 
-def get_tracking_sample(test_names: list[str], output_isolated_tests: Path):
+def get_tracking_sample(paths: FilePaths, tests: dict[str,str], sample_size: int, output_isolated_tests: Path):
 
     # Take sample to run in isolation
-    sample_tests = random.sample(list(test_names.keys()), sample_size)
+    sample_tests = random.sample(list(tests.keys()), sample_size)
 
     clear_folder(output_isolated_tests)
 
@@ -807,7 +1011,7 @@ def get_tracking_sample(test_names: list[str], output_isolated_tests: Path):
 
     for i, test in enumerate(sample_tests):
 
-        test_output_dir = output_isolated_tests / f'test_{i}'
+        test_output_dir = output_isolated_tests / f'{tests[test]}'
 
         cmd = ['python',
             '-m',
