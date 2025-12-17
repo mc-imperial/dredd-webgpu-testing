@@ -32,6 +32,7 @@ class FilePaths:
     vk_icd: Path
     runid: str
     default_stdout: Path
+    tracking_archive: Path
 
 def main():
  
@@ -42,7 +43,8 @@ def main():
                      'cts-stats',
                      'startup-costs',
                      'n-mutants',
-                     'n-tests'
+                     'n-tests'.
+                     'mutant-touching'
                      ])
     args.add_argument('--base',
             type=str,
@@ -65,6 +67,9 @@ def main():
     args.add_argument('--full-stdout',
             type=str,
             default='/data/dev/dredd-webgpu-testing/data/full_cts_stdout_031225.txt')
+    args.add_argument('--full-tracking-archive',
+            type=str,
+            default='/data/dev/dredd-webgpu-testing/data/tracking_files_full_cts_031225.zip')
 
     args = args.parse_args()
 
@@ -83,6 +88,7 @@ def main():
             dredd = base / 'dredd',
             runid = timestamp_string(),
             default_stdout = Path(args.full_stdout)
+            tracking_archive = Paths(args.full_tracking_archive)
             )
 
     if args.analysis == 'all':
@@ -103,10 +109,16 @@ def main():
         mesa_loc = get_loc(paths)
     if args.analysis == 'n-tests':
         analyse_n_tests(paths)
-
+    if args.analysis == 'mutant-touching':
+        analyse_persistency_effect_on_mutant_touching(paths)
 
 def run_all(paths : FilePaths):
     raise NotImplementedError
+
+
+def analyse_mutant_touching(paths: FilePaths):
+    '''
+    '''
 
 
 def analyse_n_tests(paths: FilePaths):
@@ -668,6 +680,7 @@ def analyse_mutant_recording_slowdown():
     Analysis of the time and space overhead associated with recording
     a mutant every time it is encountered, rather than just the first time
     '''
+    raise NotImplementedError
 
 def analyse_persistency_effect_on_mutant_touches():
     '''
@@ -679,12 +692,48 @@ def analyse_persistency_effect_on_mutant_touches():
     analyse_caching_effect_on_mutant_touches()
     raise NotImplementedError
 
-def analyse_device_sharing_effect_on_mutant_touches():
+def analyse_device_sharing_effect_on_mutant_touches(paths: FilePaths):
     '''
     Analysis of the effect of device sharing and other initialisation
-    code on the test-mutant relationship
+    code on the test-mutant relationship.
+    Caching is turned OFF for this.
     '''
-    raise NotImplementedError
+
+    # Devices are shared when tests are run in groups
+    # Devices are most shared when the full CTS is run --> 
+    # full CTS tracking results show us mutants touched
+    # by each test under maximum device sharing (with
+    # caching disabled).
+
+    # In this analysis, we run some samples of tests in 
+    # a fully isolated way, i.e. one fully-parameterised
+    # test in an isolated process, and record which 
+    # mutants are touched.
+
+    # We compare this to the mutants touched when that
+    # test is run as part of the full CTS.
+
+    # Outputs: df with two columns for tests, showing the
+    # number of unique mutants touched when the test is
+    # run in a group vs when the test is run in isolation.
+    # This should show that more mutants are touched in
+    # the isolated running context.
+    # Also show the total number of mutants touched in each
+    # for comparison.
+
+    # Presentation ideas: stacked bar chart showing
+    # mutants touched in both + mutants only touched in 
+    # isolated context for a range of tests?
+
+    # Sample tests to choose? Choose a random selection
+    # from the subset of tests that track *any* mutants
+    # when run in the full CTS.
+
+    
+
+
+
+
 
 def analyse_caching_effect_on_mutant_touches():
     '''
