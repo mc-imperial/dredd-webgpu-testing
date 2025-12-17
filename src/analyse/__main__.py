@@ -22,6 +22,8 @@ from typing import Sequence, Tuple
 from dataclasses import dataclass
 from pathlib import Path
 from collections import Counter, defaultdict
+from itertools import combinations
+
 
 CONFIDENCE = 0.95 # 95% CI
 
@@ -54,7 +56,8 @@ def main():
                      'startup-costs',
                      'n-mutants',
                      'n-tests',
-                     'mutant-touching'
+                     'shared-resources',
+                     'caching'
                      ])
     args.add_argument('--base',
             type=str,
@@ -127,9 +130,13 @@ def main():
         mesa_loc = get_loc(paths)
     if args.analysis == 'n-tests':
         analyse_n_tests(paths)
-    if args.analysis == 'mutant-touching':
+    if args.analysis == 'shared-resources':
         analyse_device_sharing_effect_on_mutant_touches(paths, paths.sample_size, get_data=False)
-
+    if args.analysis == 'caching':
+        analyse_caching_effect_on_mutant_touches(paths, paths.sample_size, n_runs=2, get_data=True)
+    if args.analysis == 'filtering':
+        analyse_initialisation_mutants(paths, get_data = True)
+        
 def run_all(paths : FilePaths):
     raise NotImplementedError
 
@@ -696,14 +703,6 @@ def analyse_mutant_recording_slowdown():
     '''
     raise NotImplementedError
 
-def analyse_persistency_effect_on_mutant_touches(paths: FilePaths):
-    '''
-    Analysis of the effect of shared resources on the test-mutant
-    relationship.
-    Runs tests in isolation and in groups to identify shared resources.
-    '''
-    analyse_device_sharing_effect_on_mutant_touches(paths)
-    #analyse_caching_effect_on_mutant_touches()
 
 def analyse_device_sharing_effect_on_mutant_touches(paths: FilePaths, sample_size : int,  get_data = False):
     '''
@@ -744,6 +743,7 @@ def analyse_device_sharing_effect_on_mutant_touches(paths: FilePaths, sample_siz
     # when run in the full CTS.
     '''
 
+    # TODO: make seed passable
     random.seed(42)
     
     if get_data:
@@ -764,7 +764,9 @@ def analyse_device_sharing_effect_on_mutant_touches(paths: FilePaths, sample_siz
 
     # Get data if we haven't already
     if get_data:
-        get_tracking_sample(paths, test_names, sample_size, output_isolated_tests)
+        sample_tests = random.sample(list(test_names.keys()), paths.sample_size)
+        sample_tests = {x : test_names[x] for x in sample_tests}
+        run_tracking_sample(paths, sample_tests, output_isolated_tests)
 
     # Load isolated data
     isolated_df = load_isolated_tests(output_isolated_tests)
@@ -997,10 +999,10 @@ def load_isolated_tests(output_isolated_tests: Path) -> pd.DataFrame:
     return df
 
 
-def get_tracking_sample(paths: FilePaths, tests: dict[str,str], sample_size: int, output_isolated_tests: Path):
-
-    # Take sample to run in isolation
-    sample_tests = random.sample(list(tests.keys()), sample_size)
+def run_tracking_sample(paths: FilePaths, 
+    sample_tests: dict[str,str], 
+    output_isolated_tests: Path,
+    caching: bool = False):
 
     clear_folder(output_isolated_tests)
 
@@ -1009,9 +1011,12 @@ def get_tracking_sample(paths: FilePaths, tests: dict[str,str], sample_size: int
     env['CXX'] = '/usr/bin/clang++-17'
     env['MESA_DISABLE_SHADER_CACHE']='true'
 
-    for i, test in enumerate(sample_tests):
+    if caching:
+        env['MESA_DISABLE_SHADER_CACHE']='false'  
 
-        test_output_dir = output_isolated_tests / f'{tests[test]}'
+    for i, test in enumerate(list(sample_tests.keys())):
+
+        test_output_dir = output_isolated_tests / f'{sample_tests[test]}'
 
         cmd = ['python',
             '-m',
@@ -1057,12 +1062,132 @@ def clear_folder(folder):
 
     print(f'Folder cleared: {folder}')
 
-def analyse_caching_effect_on_mutant_touches():
+def analyse_caching_effect_on_mutant_touches(paths: FilePaths, sample_size : int,  n_runs : int, get_data = False):
     '''
     Analysis of the Mesa cache effect on which tests touch which
     mutants. 
     '''
-    raise NotImplementedError
+   
+    # TODO: make seed passable
+    random.seed(42)
+
+    if get_data:
+        output_isolated_tests: Path = paths.output / f'isolated_tests_caching_{paths.runid}'
+    else:
+        output_isolated_tests: Path = paths.output / f'isolated_tests_caching_{paths.isolated_runid}'
+
+    output_csv = output_isolated_tests / 'isolated_tests_caching.csv'
+
+    # Get list of tracked files
+    with zipfile.ZipFile(paths.tracking_archive, 'r') as z:
+        tracked_files = z.infolist()
+
+    tracked_tests = [Path(x.filename).stem for x in tracked_files if not x.is_dir()]
+
+    id_to_name = get_mapping(paths.test_to_id_json)
+
+    test_names = {id_to_name[x] : x for x in tracked_tests}
+
+    # Get data if we haven't already
+    if get_data:
+        sample_tests = random.sample(list(test_names.keys()), paths.sample_size)
+        sample_tests = {x : test_names[x] for x in sample_tests}
+
+        dfs = []
+
+        for i in range(n_runs):
+            repeat_dir = output_isolated_tests / f'run_{i}'
+            run_tracking_sample(paths, sample_tests, repeat_dir, caching=True)
+
+            # Load data
+            isolated_df = load_isolated_tests(repeat_dir)
+            isolated_df = isolated_df.rename(columns={'single_id' : 'isolated_id'})
+                
+            # Track which run this came from
+            isolated_df["run_id"] = i
+
+            dfs.append(isolated_df)
+
+            # Combine all runs into one DataFrame
+            all_runs_df = pd.concat(dfs, ignore_index=True)
+
+            all_runs_df.to_csv(output_csv)
+
+    else:
+        all_runs_df = pd.read_csv(output_csv)
+
+    plot_mutant_stability_histogram(all_runs_df)
+    plot_jaccard_similarity_histogram(all_runs_df)
+
+def plot_mutant_stability_histogram(
+    df: pd.DataFrame,
+    bins: int = 20,
+    figsize=(8, 5)
+) -> None:
+    """
+    Plot a histogram showing the fraction of runs in which each mutant
+    (per test) is touched.
+    """
+
+    records = []
+    for _, row in df.iterrows():
+        for mutant_id in row["isolated_id"]:
+            records.append((row["test_id"], mutant_id, row["run_id"]))
+
+    flat_df = pd.DataFrame(
+        records,
+        columns=["test_id", "mutant_id", "run_id"]
+    )
+
+    n_runs = flat_df["run_id"].nunique()
+
+    stability = (
+        flat_df
+        .groupby(["test_id", "mutant_id"])["run_id"]
+        .nunique()
+        .div(n_runs)
+    )
+
+    plt.figure(figsize=figsize)
+    plt.hist(stability, bins=bins)
+    plt.xlabel("Fraction of runs mutant is touched")
+    plt.ylabel("Number of (test, mutant) pairs")
+    plt.title("Mutant coverage stability across runs")
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_jaccard_similarity_histogram(
+    df: pd.DataFrame,
+    bins: int = 20,
+    figsize=(8, 5)
+) -> None:
+    """
+    Plot a histogram of Jaccard similarities between all pairs of runs,
+    computed per test.
+    """
+
+    jaccard_values = []
+
+    for test_id, g in df.groupby("test_id"):
+        runs = list(g[["run_id", "isolated_id"]].itertuples(index=False))
+
+        for (_, a), (_, b) in combinations(runs, 2):
+            set_a = set(a)
+            set_b = set(b)
+            union = set_a | set_b
+
+            jaccard = len(set_a & set_b) / len(union) if union else 1.0
+            jaccard_values.append(jaccard)
+
+    plt.figure(figsize=figsize)
+    plt.hist(jaccard_values, bins=bins)
+    plt.xlabel("Jaccard similarity between runs")
+    plt.ylabel("Number of run pairs")
+    plt.title("Coverage similarity across runs (per test)")
+    plt.tight_layout()
+    plt.show()
+
 
 def analyse_initialisation_mutants():
     '''
