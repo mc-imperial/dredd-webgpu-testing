@@ -38,6 +38,7 @@ class FilePaths:
     test_to_id_json: Path
     output_temp: Path
     sample_size: int = 100
+    isolated_runid: str = '20251217_122122'
 
 def main():
  
@@ -700,7 +701,7 @@ def analyse_persistency_effect_on_mutant_touches(paths: FilePaths):
     analyse_device_sharing_effect_on_mutant_touches(paths)
     #analyse_caching_effect_on_mutant_touches()
 
-def analyse_device_sharing_effect_on_mutant_touches(paths: FilePaths, sample_size : int):
+def analyse_device_sharing_effect_on_mutant_touches(paths: FilePaths, sample_size : int,  get_data = False):
     '''
     Analysis of the effect of device sharing and other initialisation
     code on the test-mutant relationship.
@@ -740,7 +741,11 @@ def analyse_device_sharing_effect_on_mutant_touches(paths: FilePaths, sample_siz
     '''
 
     random.seed(42)
-    output_isolated_tests: Path = paths.output / f'isolated_tests_persistency_{paths.runid}'
+    
+    if get_data:
+        output_isolated_tests: Path = paths.output / f'isolated_tests_persistency_{paths.runid}'
+    else:
+        output_isolated_tests: Path = paths.output / f'isolated_tests_persistency_{paths.isolated_runid}'
 
     # Get list of tracked files
 
@@ -752,6 +757,43 @@ def analyse_device_sharing_effect_on_mutant_touches(paths: FilePaths, sample_siz
     id_to_name = get_mapping(paths.test_to_id_json)
 
     test_names = {id_to_name[x] : x for x in tracked_tests}
+
+    # Get data if we haven't already
+    if get_data:
+        get_tracking_sample(test_names, output_isolated_tests)
+
+    # Load data
+
+    isolated_df = load_isolated_tests(output_isolated_tests)
+
+    print(isolated_df.head(10))
+
+def load_isolated_tests(output_isolated_tests: Path) -> pd.DataFrame:
+    single_paths = [Path(p,'test_id_0.txt') for p in Path(output_isolated_tests).rglob("test_*") if p.is_dir()]
+    single = {p.parent.name.replace('test_','') : p for p in single_paths}
+    
+    infos = []
+
+    for test_id in sorted(single.keys()):
+        with open(single[test_id], 'r') as f:
+            single_mutants = set([int(x.rstrip()) for x in f.readlines()])
+
+        
+        info = {'test_id' : test_id,
+                'single' : len(single_mutants),
+                'single_id' : sorted(list(single_mutants)),
+                }
+        
+        infos.append(info)
+    
+    df = pd.DataFrame(infos).sort_values('test_id')
+    df['test_id'] = df['test_id'].astype(int) 
+    df = df.sort_values('test_id')
+    
+    return df
+
+
+def get_tracking_sample(test_names: list[str], output_isolated_tests: Path):
 
     # Take sample to run in isolation
     sample_tests = random.sample(list(test_names.keys()), sample_size)
