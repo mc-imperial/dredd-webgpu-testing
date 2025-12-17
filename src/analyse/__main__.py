@@ -56,6 +56,9 @@ def main():
     args.add_argument('--individual',
             action='store_true',
             default=False)
+    args.add_argument('--indi-non-param',
+            action='store_true',
+            default=False)
     args.add_argument('--group',
             action='store_true',
             default=False)
@@ -91,6 +94,8 @@ def main():
             analyse_startup_costs(paths, individual=True, group=False, datafile=args.data)
         elif args.group:
             analyse_startup_costs(paths, individual=False, group=True)
+        elif args.indi_non_param:
+            analyse_startup_costs(paths, individual=False, group=False, non_param=True)
         else:
             analyse_startup_costs(paths, individual=True, group=True)
     if args.analysis == 'n-mutants':
@@ -312,10 +317,18 @@ def get_test_info_from_stdout(stdout: Path) -> pd.DataFrame:
     split_cols = split_cols.add_prefix(level_prefix)
     df = df.join(split_cols)
 
+    # Non-parameterised query up to the *last* colon
+    df['query_to_last_colon'] = df['test_name'].apply(extract_to_relevant_colon)
+
     return df
  
 
-def analyse_startup_costs(paths: FilePaths, individual: bool, group: bool, datafile: Path = None):
+def analyse_startup_costs(
+        paths: FilePaths, 
+        individual: bool, 
+        group: bool, 
+        non_param: bool = False,
+        datafile: Path = None):
     '''
     Analysis of the difference in time required to run single tests
     vs run all tests. Runs tests at increasing levels of granularity
@@ -330,9 +343,20 @@ def analyse_startup_costs(paths: FilePaths, individual: bool, group: bool, dataf
 
     if individual:
         startup_costs_individual(paths, df, datafile)
+    if non_param:
+        startup_costs_non_param(paths, df)
     if group:
         startup_costs_groups(paths, df)
 
+def startup_costs_non_param(paths: FilePaths, df: pd.DataFrame):
+
+    outname = 'indi_non_param'
+
+    tests = list(set(df['query_to_last_colon']))
+
+    tests = [x + '*' for x in tests]
+
+    total_seconds = time_group_tests(paths, paths.output, outname, tests)
 
 def startup_costs_individual(paths: FilePaths, df: pd.DataFrame, datafile: Path = None):
         # Get a sample of individual level tests. The union of these
@@ -362,8 +386,8 @@ def startup_costs_individual(paths: FilePaths, df: pd.DataFrame, datafile: Path 
 
         times_s = list(results['runtime_s'])
 
-        n_tests = len(df['test_name'])
         n_samples = len(times_s)
+        n_tests = len(df)
 
         time_results = sample_stats(times_s, total_tests=n_tests)
 
@@ -471,13 +495,13 @@ def time_group_tests(paths: FilePaths, outdir: Path, name: str, tests:list[str])
 
     return total_seconds
 
-def time_individual_tests(paths: FilePaths, tests: list[str]) -> pd.DataFrame:
+def time_individual_tests(paths: FilePaths, tests: list[str], outname: str = 'individual_test_times') -> pd.DataFrame:
 
-    individual_output = paths.output / 'individual_output'
+    individual_output = paths.output / outname
 
     individual_output.mkdir(exist_ok=True)
 
-    outfile = paths.output / f'individual_test_times_{paths.runid}.csv'
+    outfile = paths.output / f'{outname}_{paths.runid}.csv'
 
     # Open the CSV file once, write header
     with open(outfile, "w", newline="") as csvfile:
@@ -743,7 +767,12 @@ def sample_queries(queries, by_group:bool= False, proportion= 0.1, per_group=1, 
 
     return sampled
 
-
+def extract_to_relevant_colon(s: str) -> str:
+    if '=' in s:
+        cutoff = s.index('=')          # first '='
+        return s[: s.rfind(':', 0, cutoff) + 1]
+    else:
+        return s[: s.rfind(':') + 1]
 
 if __name__=="__main__":
     main()
