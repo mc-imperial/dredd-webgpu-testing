@@ -4,6 +4,7 @@ import zipfile
 import random
 import re
 import os
+import shutil
 import subprocess
 import argparse
 import time
@@ -35,6 +36,8 @@ class FilePaths:
     default_stdout: Path
     tracking_archive: Path
     test_to_id_json: Path
+    output_temp: Path
+    sample_size: int = 100
 
 def main():
  
@@ -75,6 +78,10 @@ def main():
     args.add_argument('--test-to-id-json',
             type=str,
             default='/data/dev/dredd-webgpu-testing/data/mapping_test_to_id_031225.json')
+    args.add_argument('--output-temp',
+            type=str,
+            default='/data/dev/dredd-webgpu-testing/data/tracking_files')
+
     args = args.parse_args()
 
     base = Path(args.base)
@@ -93,6 +100,7 @@ def main():
             runid = timestamp_string(),
             default_stdout = Path(args.full_stdout),
             tracking_archive = Path(args.full_tracking_archive),
+            output_temp = Path(args.output_temp),
             test_to_id_json = Path(args.test_to_id_json)
             )
 
@@ -115,15 +123,10 @@ def main():
     if args.analysis == 'n-tests':
         analyse_n_tests(paths)
     if args.analysis == 'mutant-touching':
-        analyse_persistency_effect_on_mutant_touches(paths)
+        analyse_device_sharing_effect_on_mutant_touches(paths, paths.sample_size)
 
 def run_all(paths : FilePaths):
     raise NotImplementedError
-
-
-def analyse_mutant_touching(paths: FilePaths):
-    '''
-    '''
 
 
 def analyse_n_tests(paths: FilePaths):
@@ -226,7 +229,8 @@ def run_cts(dawn: Path,
             vk_icd: str, 
             query: str,
             stdout: Path | None = None,
-            cache_enabled: bool = False) -> float:
+            cache_enabled: bool = False,
+            tracking: bool = False) -> float:
     
     env = os.environ.copy()
     env['VK_ICD_FILENAMES'] = f'{str(mesa)}/{vk_icd}'
@@ -696,7 +700,7 @@ def analyse_persistency_effect_on_mutant_touches(paths: FilePaths):
     analyse_device_sharing_effect_on_mutant_touches(paths)
     #analyse_caching_effect_on_mutant_touches()
 
-def analyse_device_sharing_effect_on_mutant_touches(paths: FilePaths):
+def analyse_device_sharing_effect_on_mutant_touches(paths: FilePaths, sample_size : int):
     '''
     Analysis of the effect of device sharing and other initialisation
     code on the test-mutant relationship.
@@ -735,8 +739,10 @@ def analyse_device_sharing_effect_on_mutant_touches(paths: FilePaths):
     # when run in the full CTS.
     '''
 
-    # Get list of tracked files, from which we will sample
-    # tests to run in isolated processes
+    random.seed(42)
+    output_isolated_tests: Path = paths.output / f'isolated_tests_persistency_{paths.runid}'
+
+    # Get list of tracked files
 
     with zipfile.ZipFile(paths.tracking_archive, 'r') as z:
         tracked_files = z.infolist()
@@ -747,7 +753,39 @@ def analyse_device_sharing_effect_on_mutant_touches(paths: FilePaths):
 
     test_names = {id_to_name[x] : x for x in tracked_tests}
 
+    # Take sample to run in isolation
+    sample_tests = random.sample(list(test_names.keys()), sample_size)
 
+    clear_folder(output_isolated_tests)
+
+    env = os.environ.copy()
+    env['CC'] = '/usr/bin/clang-17'
+    env['CXX'] = '/usr/bin/clang++-17'
+    env['MESA_DISABLE_SHADER_CACHE']='true'
+
+    for i, test in enumerate(sample_tests):
+
+        test_output_dir = output_isolated_tests / f'test_{i}'
+
+        cmd = ['python',
+            '-m',
+            'track',
+            'cts',
+            f'{paths.mesa_tracked}/{paths.vk_icd}',
+            paths.dawn,
+            '--cts', paths.cts,
+            '--query', test,
+            '--output', test_output_dir]
+
+        result = subprocess.run(cmd, env=env)
+
+        # Copy test tracking output to a stable location to avoid overwrites
+        if os.path.exists(test_output_dir):
+            shutil.rmtree(test_output_dir)
+        
+        shutil.copytree(paths.output_temp, test_output_dir)
+        print(f'Copied from {paths.output_temp} to {test_output_dir}')
+        clear_folder(paths.output_temp)
 
 def get_mapping(mapping_json: Path) -> dict:
     with open(mapping_json, 'r') as f:
@@ -757,15 +795,21 @@ def get_mapping(mapping_json: Path) -> dict:
 
     return inverse_map
 
+def clear_folder(folder):
+    if not folder.is_dir():
+        return
 
+    for item in os.listdir(folder):
+        item_path = os.path.join(folder, item)
+        try:
+            if os.path.isfile(item_path) or os.path.islink(item_path):
+                os.unlink(item_path)  # delete file or link
+            elif os.path.isdir(item_path):
+                shutil.rmtree(item_path)  # delete subfolder
+        except Exception as e:
+            raise RuntimeException(f'Failed to delete {item_path}. Reason: {e}')
 
-
-
-    
-
-
-
-
+    print(f'Folder cleared: {folder}')
 
 def analyse_caching_effect_on_mutant_touches():
     '''
