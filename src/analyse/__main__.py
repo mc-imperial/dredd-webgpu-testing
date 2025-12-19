@@ -936,33 +936,6 @@ def plot_stacked_bar(merged_df: pd.DataFrame, outdir: Path = None):
     plt.savefig(outdir / "stacked_plot_shared_resources.pdf")
     plt.close()
 
-    # --- Figure 2: bars sorted by total mutants ---
-    merged_df["total_touched"] = merged_df["n_isolated_only"] + merged_df["n_group_only"] + merged_df["n_intersection"]
-    merged_sorted = merged_df.sort_values("total_touched", ascending=False)
-    x_sorted = range(1, len(merged_sorted) + 1)
-
-    plt.figure(figsize=(12,6))
-    plt.bar(x_sorted, merged_sorted["n_isolated_only"], 
-            label="Only touched in isolated execution", 
-            color=colors["isolated"])
-    plt.bar(x_sorted, merged_sorted["n_group_only"], 
-            bottom=merged_sorted["n_isolated_only"], 
-            label="Only touched in grouped execution", 
-            color=colors["grouped"])
-    plt.bar(x_sorted, merged_sorted["n_intersection"], 
-            bottom=merged_sorted["n_isolated_only"] + merged_sorted["n_group_only"], 
-            label="Touched in all executions", 
-            color=colors["intersection"])
-
-    plt.xlabel("Test ID (sorted by total mutants)")
-    plt.ylabel("Number of Touched Mutants")
-    plt.xticks(fontsize=12)
-    plt.yticks(fontsize=12)
-    plt.gca().yaxis.set_major_formatter(FuncFormatter(lambda x, pos: f"{int(x):,}"))
-    plt.legend(fontsize=12)
-    plt.tight_layout()
-    plt.savefig(outdir / "stacked_plot_sorted_total.pdf")
-    plt.close()
 
 def plot_isolation_vs_group_histograms(df: pd.DataFrame) -> None:
     """
