@@ -9,6 +9,7 @@ import subprocess
 import argparse
 import time
 import math
+import ast
 
 import pandas as pd
 import numpy as np
@@ -43,8 +44,10 @@ class FilePaths:
     tracking_archive: Path
     test_to_id_json: Path
     output_temp: Path
+    figures: Path
     sample_size: int = 100
     isolated_runid: str = '20251217_135018'
+    caching_csv: Path = Path('/data/dev/dredd-webgpu-testing/data/icst_output/isolated_tests_caching_20251217_154821/isolated_tests_caching.csv')
 
 def main():
  
@@ -57,7 +60,8 @@ def main():
                      'n-mutants',
                      'n-tests',
                      'shared-resources',
-                     'caching'
+                     'caching',
+                     'filtering'
                      ])
     args.add_argument('--base',
             type=str,
@@ -109,7 +113,8 @@ def main():
             default_stdout = Path(args.full_stdout),
             tracking_archive = Path(args.full_tracking_archive),
             output_temp = Path(args.output_temp),
-            test_to_id_json = Path(args.test_to_id_json)
+            test_to_id_json = Path(args.test_to_id_json),
+            figures = output / 'figures'
             )
 
     if args.analysis == 'all':
@@ -133,7 +138,7 @@ def main():
     if args.analysis == 'shared-resources':
         analyse_device_sharing_effect_on_mutant_touches(paths, paths.sample_size, get_data=False)
     if args.analysis == 'caching':
-        analyse_caching_effect_on_mutant_touches(paths, paths.sample_size, n_runs=2, get_data=True)
+        analyse_caching_effect_on_mutant_touches(paths, paths.sample_size, n_runs=2, get_data=False)
     if args.analysis == 'filtering':
         analyse_initialisation_mutants(paths, get_data = True)
         
@@ -152,9 +157,15 @@ def analyse_n_tests(paths: FilePaths):
 
     api_count = (df['folder_l0'] == 'api').sum()
     shader_count = (df['folder_l0'] == 'shader').sum()
+    shader_flow_control_count = (
+        (df['folder_l0'] == 'shader') &
+        (df['folder_l1'] == 'execution') &
+        (df['folder_l2'] == 'flow_control')
+    ).sum()
 
     output_str = f'Number of tests under webgpu:api,* is {api_count}\n'
     output_str += f'Number of tests under webgpu:shader,* is {shader_count}\n'
+    output_str += f'Number of tests under webgpu:shader,execution,flow_control,* is {shader_flow_control_count}\n'
 
     print(output_str)
 
@@ -809,6 +820,11 @@ def analyse_device_sharing_effect_on_mutant_touches(paths: FilePaths, sample_siz
     merged_df["isolated_id"] = merged_df["isolated_id"].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) else x)
     merged_df["grouped_id"] = merged_df["grouped_id"].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) else x)
 
+    merged_df["isolated_only_ids"] = merged_df.apply(
+        lambda row: list(set(row["isolated_id"]) - set(row["grouped_id"])),
+        axis=1
+    )
+
     # Compute counts
     merged_df["n_isolated_only"] = merged_df.apply(
         lambda row: len(set(row["isolated_id"]) - set(row["grouped_id"])),
@@ -830,17 +846,49 @@ def analyse_device_sharing_effect_on_mutant_touches(paths: FilePaths, sample_siz
     axis=1
     )
 
-    print(merged_df.head)
-
-    # Save the results as a table
-
+    # Plot the cumulative union of isolated only mutants
+    #plot_cumulative_isolated_only_union(merged_df)
     # Plot the results
     df = merged_df[['test_id','n_isolated_only','n_group_only','n_intersection']]
-    plot_stacked_bar(df)
+    plot_stacked_bar(df, paths.figures)
+
     
     #plot_isolation_vs_group_histograms(df)
 
-def plot_stacked_bar(merged_df: pd.DataFrame):
+def plot_cumulative_isolated_only_union(df):
+    """
+    Plot how the cumulative union of mutants touched only in isolation
+    grows as more tests are included.
+
+    Assumes:
+      - df is ordered in the order tests are added
+      - df['isolated_only_ids'] contains a list (or stringified list) of mutant IDs
+    """
+
+    # Ensure isolated_only_ids contains actual lists
+    df["isolated_only_ids"] = df["isolated_only_ids"].apply(
+        lambda x: ast.literal_eval(x) if isinstance(x, str) else x
+    )
+
+    cumulative_union = set()
+    cumulative_sizes = []
+
+    for ids in df["isolated_only_ids"]:
+        cumulative_union |= set(ids)
+        cumulative_sizes.append(len(cumulative_union))
+
+    # X-axis: number of tests included
+    x = range(1, len(cumulative_sizes) + 1)
+
+    plt.figure()
+    plt.plot(x, cumulative_sizes)
+    plt.xlabel("Number of tests included")
+    plt.ylabel("Unique mutants touched only in isolation")
+    plt.title("Cumulative union of isolation-only mutants")
+    plt.tight_layout()
+    plt.show()
+
+def plot_stacked_bar(merged_df: pd.DataFrame, outdir: Path = None):
     # Example DataFrame
     # merged_df should have columns: test_id, n_intersection, n_isolated_only, n_group_only
     # For demonstration:
@@ -851,31 +899,70 @@ def plot_stacked_bar(merged_df: pd.DataFrame):
     #     "n_group_only": [0, 0, 1]
     # })
 
-    # Set x-axis
+    # Colorblind-friendly colors
+    colors = {
+        "isolated": "#1f77b4",    # blue
+        "grouped": "#17becf",     # cyan / teal
+        "intersection": "#ffdd57" # yellow / gold
+    }
+
+    # Copy and add test index
     merged_df = merged_df.copy()
-    merged_df["test_idx"] = range(1, len(merged_df) + 1) 
+    merged_df["test_idx"] = range(1, len(merged_df) + 1)
     x = merged_df["test_idx"]
 
-    # Plot stacked bar chart
+    # --- Figure 1: existing test order ---
     plt.figure(figsize=(12,6))
-    plt.bar(x, merged_df["n_intersection"], label="Touched in all executions")
-    plt.bar(x, merged_df["n_isolated_only"], bottom=merged_df["n_intersection"], label="Only touched in isolated execution")
-    plt.bar(x, merged_df["n_group_only"], bottom=merged_df["n_intersection"] + merged_df["n_isolated_only"], label="Only touched in grouped execution")
+
+    plt.bar(x, merged_df["n_isolated_only"], 
+            label="Only touched in isolated execution", 
+            color=colors["isolated"])
+    plt.bar(x, merged_df["n_group_only"], 
+            bottom=merged_df["n_isolated_only"], 
+            label="Only touched in grouped execution", 
+            color=colors["grouped"])
+    plt.bar(x, merged_df["n_intersection"], 
+            bottom=merged_df["n_isolated_only"] + merged_df["n_group_only"], 
+            label="Touched in all executions", 
+            color=colors["intersection"])
 
     plt.xlabel("Test ID")
     plt.ylabel("Number of Touched Mutants")
-
-    # Tick labels
-    plt.xticks(fontsize=12)  # x-axis
-    plt.yticks(fontsize=12)  # y-axis
-    
-    # Format y-axis with commas
+    plt.xticks(fontsize=12)
+    plt.yticks(fontsize=12)
     plt.gca().yaxis.set_major_formatter(FuncFormatter(lambda x, pos: f"{int(x):,}"))
     plt.legend(fontsize=12)
-
     plt.tight_layout()
-    plt.show()
+    plt.savefig(outdir / "stacked_plot_shared_resources.pdf")
+    plt.close()
 
+    # --- Figure 2: bars sorted by total mutants ---
+    merged_df["total_touched"] = merged_df["n_isolated_only"] + merged_df["n_group_only"] + merged_df["n_intersection"]
+    merged_sorted = merged_df.sort_values("total_touched", ascending=False)
+    x_sorted = range(1, len(merged_sorted) + 1)
+
+    plt.figure(figsize=(12,6))
+    plt.bar(x_sorted, merged_sorted["n_isolated_only"], 
+            label="Only touched in isolated execution", 
+            color=colors["isolated"])
+    plt.bar(x_sorted, merged_sorted["n_group_only"], 
+            bottom=merged_sorted["n_isolated_only"], 
+            label="Only touched in grouped execution", 
+            color=colors["grouped"])
+    plt.bar(x_sorted, merged_sorted["n_intersection"], 
+            bottom=merged_sorted["n_isolated_only"] + merged_sorted["n_group_only"], 
+            label="Touched in all executions", 
+            color=colors["intersection"])
+
+    plt.xlabel("Test ID (sorted by total mutants)")
+    plt.ylabel("Number of Touched Mutants")
+    plt.xticks(fontsize=12)
+    plt.yticks(fontsize=12)
+    plt.gca().yaxis.set_major_formatter(FuncFormatter(lambda x, pos: f"{int(x):,}"))
+    plt.legend(fontsize=12)
+    plt.tight_layout()
+    plt.savefig(outdir / "stacked_plot_sorted_total.pdf")
+    plt.close()
 
 def plot_isolation_vs_group_histograms(df: pd.DataFrame) -> None:
     """
@@ -1114,10 +1201,11 @@ def analyse_caching_effect_on_mutant_touches(paths: FilePaths, sample_size : int
             all_runs_df.to_csv(output_csv)
 
     else:
-        all_runs_df = pd.read_csv(output_csv)
-
-    plot_mutant_stability_histogram(all_runs_df)
-    plot_jaccard_similarity_histogram(all_runs_df)
+        all_runs_df = pd.read_csv(paths.caching_csv)
+ 
+    #plot_mutant_stability_histogram(all_runs_df)
+    outpath = paths.figures / 'jaccard.pdf'
+    plot_jaccard_similarity_histogram(all_runs_df, outpath)
 
 def plot_mutant_stability_histogram(
     df: pd.DataFrame,
@@ -1159,8 +1247,9 @@ def plot_mutant_stability_histogram(
 
 def plot_jaccard_similarity_histogram(
     df: pd.DataFrame,
+    outpath: Path,
     bins: int = 20,
-    figsize=(8, 5)
+    figsize=(8, 5),
 ) -> None:
     """
     Plot a histogram of Jaccard similarities between all pairs of runs,
@@ -1189,13 +1278,22 @@ def plot_jaccard_similarity_histogram(
     plt.show()
 
 
-def analyse_initialisation_mutants():
+def analyse_initialisation_mutants(paths: FilePaths, get_data:bool = False):
     '''
     Analysis of which mutants are associated with shared resource
     initialisation and should therefore be excluded from our 
     mutation testing candidates
     '''
-    raise NotImplementedError
+
+    '''
+    Run tests in isolation and compare the mutants touched
+    to those touched when the test was run as part of the
+    full CTS.
+    '''
+
+    pass
+
+
 
 def get_result(line: str):
     results = {
