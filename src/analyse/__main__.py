@@ -26,6 +26,7 @@ from pathlib import Path
 from collections import Counter, defaultdict
 from itertools import combinations
 
+from analyse.analyse_mapping import process_raw_data, analyse_count
 
 CONFIDENCE = 0.95 # 95% CI
 
@@ -46,9 +47,12 @@ class FilePaths:
     test_to_id_json: Path
     output_temp: Path
     figures: Path
+    mutant_to_test_mapping: Path
+    mutant_mapping_counts: Path
     sample_size: int = 100
     isolated_runid: str = '20251217_135018'
     caching_csv: Path = Path('/data/dev/dredd-webgpu-testing/data/icst_output/isolated_tests_caching_20251217_154821/isolated_tests_caching.csv')
+
 
 def main():
  
@@ -116,7 +120,9 @@ def main():
             tracking_archive = Path(args.full_tracking_archive),
             output_temp = Path(args.output_temp),
             test_to_id_json = Path(args.test_to_id_json),
-            figures = output / 'figures'
+            figures = output / 'figures',
+            mutant_to_test_mapping = output / 'mutant_id_to_test_id_mapping_031225.csv.gz',
+            mutant_mapping_counts = output / 'mutant_test_counts_031225.csv'
             )
 
     if args.analysis == 'all':
@@ -143,8 +149,8 @@ def main():
         analyse_caching_effect_on_mutant_touches(paths, paths.sample_size, n_runs=2, get_data=False)
     if args.analysis == 'filtering':
         analyse_initialisation_mutants(paths, get_data = True)
-    if arg.analysis == 'touching':
-        analyse_full_touching_data(paths, get_data = True)
+    if args.analysis == 'touching':
+        analyse_full_touching_data(paths, get_data = False)
         
 def run_all(paths : FilePaths):
     raise NotImplementedError
@@ -158,12 +164,14 @@ def analyse_full_touching_data(paths: FilePaths, get_data: bool = False):
 
     if get_data:
         get_mutant_to_tests_mapping(paths)
-    
+        process_raw_data(paths.mutant_to_test_mapping, paths.mutant_mapping_counts)
+
+    analyse_count(paths.mutant_mapping_counts)
 
 
 def get_mutant_to_tests_mapping(paths: FilePaths):
     tracking_archive = paths.tracking_archive
-    output_path = paths.output / 'mutant_id_to_test_id_mapping_031225.csv.gz'
+    output_path = paths.mutant_to_test_mapping
 
     mutant_to_test_mapping = {}
 
