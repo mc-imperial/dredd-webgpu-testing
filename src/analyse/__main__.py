@@ -10,6 +10,7 @@ import argparse
 import time
 import math
 import ast
+import gzip
 
 import pandas as pd
 import numpy as np
@@ -61,7 +62,8 @@ def main():
                      'n-tests',
                      'shared-resources',
                      'caching',
-                     'filtering'
+                     'filtering',
+                     'touching'
                      ])
     args.add_argument('--base',
             type=str,
@@ -141,9 +143,69 @@ def main():
         analyse_caching_effect_on_mutant_touches(paths, paths.sample_size, n_runs=2, get_data=False)
     if args.analysis == 'filtering':
         analyse_initialisation_mutants(paths, get_data = True)
+    if arg.analysis == 'touching':
+        analyse_full_touching_data(paths, get_data = True)
         
 def run_all(paths : FilePaths):
     raise NotImplementedError
+
+def analyse_full_touching_data(paths: FilePaths, get_data: bool = False):
+    '''
+    Loads data from full tracking analysis 
+    Computes the mutant -> tests mapping
+    Plots the distribution of the mutants over number of touching tests
+    '''
+
+    if get_data:
+        get_mutant_to_tests_mapping(paths)
+    
+
+
+def get_mutant_to_tests_mapping(paths: FilePaths):
+    tracking_archive = paths.tracking_archive
+    output_path = paths.output / 'mutant_id_to_test_id_mapping_031225.csv.gz'
+
+    mutant_to_test_mapping = {}
+
+    with zipfile.ZipFile(tracking_archive, 'r') as z:
+        files = z.infolist()
+        n_files = len(files)
+        for i, info in enumerate(files):
+            print(f'Processing file {i} of {n_files}')
+            if not info.is_dir():
+
+                with z.open(info.filename) as f:
+                    text = f.read().decode('utf-8')
+                    
+                    numbers = [int(line) for line in text.splitlines()]
+                    unique_ids = sorted(set(numbers))
+                    
+                    # Store mapping as list because they are more memory-efficient
+                    # than sets. If we use sets here, we run out of memory
+                    for mutant in unique_ids:
+                        if mutant not in mutant_to_test_mapping.keys():
+                            mutant_to_test_mapping[mutant] = []
+                        
+                        test_id = Path(info.filename).stem.removeprefix('test_id_')
+                        mutant_to_test_mapping[mutant].append(test_id)
+                    
+    # Deduplicate
+    mutant_to_test_mapping = {k: list(sorted(set(v))) for k, v in mutant_to_test_mapping.items()}
+    
+    # Write out to csv
+    print(f'Writing to {output_path}...')
+    try:
+        with gzip.open(output_path, "wt", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(["mutant_id", "test_id"])  # header
+
+            for mutant_id, test_ids in mutant_to_test_mapping.items():
+                for test_id in test_ids:
+                    writer.writerow([mutant_id, test_id])
+    except Exception as e:
+        raise RuntimeError(f'Problem writing to csv!: \n {e}')
+
+    print(f'Finished writing to {output_path}!')
 
 
 def analyse_n_tests(paths: FilePaths):
@@ -715,7 +777,7 @@ def analyse_mutant_recording_slowdown():
     raise NotImplementedError
 
 
-def analyse_device_sharing_effect_on_mutant_touches(paths: FilePaths, sample_size : int,  get_data = False):
+def analyse_device_sharing_effect_on_mutant_touches(paths: FilePaths, sample_size : int,  get_data = False, make_merged = False):
     '''
     Analysis of the effect of device sharing and other initialisation
     code on the test-mutant relationship.
@@ -779,81 +841,96 @@ def analyse_device_sharing_effect_on_mutant_touches(paths: FilePaths, sample_siz
         sample_tests = {x : test_names[x] for x in sample_tests}
         run_tracking_sample(paths, sample_tests, output_isolated_tests)
 
-    # Load isolated data
-    isolated_df = load_isolated_tests(output_isolated_tests)
-    isolated_df = isolated_df.rename(columns={'single_id' : 'isolated_id'})
+    if make_merged:
+        # Load isolated data
+        isolated_df = load_isolated_tests(output_isolated_tests)
+        isolated_df = isolated_df.rename(columns={'single_id' : 'isolated_id'})
 
-    # Load grouped data for the relevant tests
+        # Load grouped data for the relevant tests
+        test_names = [f'tracking_files/test_id_{x}.txt' for x in isolated_df['test_id']]
 
-    test_names = [f'tracking_files/test_id_{x}.txt' for x in isolated_df['test_id']]
+        grouped_df = extract_to_dataframe(paths.tracking_archive, test_names)
 
-    grouped_df = extract_to_dataframe(paths.tracking_archive, test_names)
+        prefix = 'tracking_files/test_id_'
+        suffix = '.txt'
 
-    prefix = 'tracking_files/test_id_'
-    suffix = '.txt'
+        grouped_df['test_id'] = grouped_df['name'].str.removeprefix(prefix).str.removesuffix(suffix).astype(int)
+        grouped_df['grouped'] = grouped_df['values'].apply(len)
+        grouped_df = grouped_df.rename(columns={'values': 'grouped_id'})
+        grouped_df = grouped_df.drop(columns='name')
 
-    grouped_df['test_id'] = grouped_df['name'].str.removeprefix(prefix).str.removesuffix(suffix).astype(int)
-    grouped_df['grouped'] = grouped_df['values'].apply(len)
-    grouped_df = grouped_df.rename(columns={'values': 'grouped_id'})
-    grouped_df = grouped_df.drop(columns='name')
+        # Merge data together
+        merged_df = pd.merge(
+            isolated_df,
+            grouped_df,
+            on="test_id",
+            how="outer",  # keep all rows
+            indicator=True  # adds a column showing merge status
+        )
 
-    # Merge data together
-    merged_df = pd.merge(
-        isolated_df,
-        grouped_df,
-        on="test_id",
-        how="outer",  # keep all rows
-        indicator=True  # adds a column showing merge status
-    )
+        # Check for any non-matching rows
+        non_matching = merged_df[merged_df["_merge"] != "both"]
+        if not non_matching.empty:
+            raise ValueError(f"Some test_id rows do not match between isolated and group dataframes:\n{non_matching}")
 
-    # Check for any non-matching rows
-    non_matching = merged_df[merged_df["_merge"] != "both"]
-    if not non_matching.empty:
-        raise ValueError(f"Some test_id rows do not match between isolated and group dataframes:\n{non_matching}")
+        # Keep only the matched rows
+        merged_df = merged_df[merged_df["_merge"] == "both"].drop(columns="_merge")
 
-    # Keep only the matched rows
-    merged_df = merged_df[merged_df["_merge"] == "both"].drop(columns="_merge")
+        print(merged_df.head())
 
-    print(merged_df.head())
+        # Compare the number of mutant IDs in isolation vs in a group
+        merged_df["isolated_id"] = merged_df["isolated_id"].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) else x)
+        merged_df["grouped_id"] = merged_df["grouped_id"].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) else x)
 
-    # Compare the number of mutant IDs in isolation vs in a group
-    merged_df["isolated_id"] = merged_df["isolated_id"].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) else x)
-    merged_df["grouped_id"] = merged_df["grouped_id"].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) else x)
+        merged_df["isolated_only_ids"] = merged_df.apply(
+            lambda row: list(set(row["isolated_id"]) - set(row["grouped_id"])),
+            axis=1
+        )
 
-    merged_df["isolated_only_ids"] = merged_df.apply(
-        lambda row: list(set(row["isolated_id"]) - set(row["grouped_id"])),
+        # Compute counts
+        merged_df["n_isolated_only"] = merged_df.apply(
+            lambda row: len(set(row["isolated_id"]) - set(row["grouped_id"])),
+            axis=1
+        )
+
+        merged_df["n_group_only"] = merged_df.apply(
+            lambda row: len(set(row["grouped_id"]) - set(row["isolated_id"])),
+            axis=1
+        )
+        
+        merged_df["n_total_unique"] = merged_df.apply(
+            lambda row: len(set(row["isolated_id"]) | set(row["grouped_id"])),
+            axis=1
+        )
+        
+        merged_df["n_intersection"] = merged_df.apply(
+        lambda row: len(set(row["isolated_id"]) & set(row["grouped_id"])),
         axis=1
-    )
+        )
 
-    # Compute counts
-    merged_df["n_isolated_only"] = merged_df.apply(
-        lambda row: len(set(row["isolated_id"]) - set(row["grouped_id"])),
-        axis=1
-    )
+        merged_df.to_csv(paths.output / 'merged_df_shared_resources.csv')
 
-    merged_df["n_group_only"] = merged_df.apply(
-        lambda row: len(set(row["grouped_id"]) - set(row["isolated_id"])),
-        axis=1
-    )
-    
-    merged_df["n_total_unique"] = merged_df.apply(
-        lambda row: len(set(row["isolated_id"]) | set(row["grouped_id"])),
-        axis=1
-    )
-    
-    merged_df["n_intersection"] = merged_df.apply(
-    lambda row: len(set(row["isolated_id"]) & set(row["grouped_id"])),
-    axis=1
-    )
+    merged_df = pd.read_csv(paths.output / 'merged_df_shared_resources.csv')
 
-    # Plot the cumulative union of isolated only mutants
-    #plot_cumulative_isolated_only_union(merged_df)
     # Plot the results
     df = merged_df[['test_id','n_isolated_only','n_group_only','n_intersection']]
-    plot_stacked_bar(df, paths.figures)
+    with open(paths.test_to_id_json, 'r') as f:
+        mapping = json.load(f)
 
-    
-    #plot_isolation_vs_group_histograms(df)
+    mapping = {int(v.replace('test_id_','')):k for k,v in mapping.items()}
+
+    print(len(mapping))
+    for x in list((mapping.keys()))[:10]:
+        print(f'{x} : {mapping[x]}')
+
+    df['test_name'] = df['test_id'].map(mapping)
+    df['test_group'] = (
+        df["test_name"]
+        .str.split(":", n=1).str[1]                # Take part after first colon
+        .str.split(",", n=2).str[:1]              # Take first two items after splitting by comma
+        .apply(lambda x: "-".join(x))             # Join them with a dash
+    )
+    plot_stacked_bar(df, paths.figures)
 
 def plot_cumulative_isolated_only_union(df):
     """
@@ -887,55 +964,96 @@ def plot_cumulative_isolated_only_union(df):
     plt.title("Cumulative union of isolation-only mutants")
     plt.tight_layout()
     plt.show()
+import matplotlib.pyplot as plt
+from matplotlib.ticker import FuncFormatter
 
 def plot_stacked_bar(merged_df: pd.DataFrame, outdir: Path = None):
-    # Example DataFrame
-    # merged_df should have columns: test_id, n_intersection, n_isolated_only, n_group_only
-    # For demonstration:
-    # merged_df = pd.DataFrame({
-    #     "test_id": [1,2,3],
-    #     "n_intersection": [5, 3, 4],
-    #     "n_isolated_only": [2, 4, 1],
-    #     "n_group_only": [0, 0, 1]
-    # })
+    """
+    Plots a stacked bar chart for test executions grouped by category.
+    merged_df must contain columns:
+        - test_id
+        - n_intersection
+        - n_isolated_only
+        - n_group_only
+        - test_group (categorical group for each test)
+    """
+
+    # Use a serif font similar to LaTeX
+    plt.rc('font', family='serif')
 
     # Colorblind-friendly colors
     colors = {
         "isolated": "#1f77b4",    # blue
-        "grouped": "#17becf",     # cyan / teal
-        "intersection": "#ffdd57" # yellow / gold
+        "grouped": "#17becf",     # cyan/teal
+        "intersection": "#ffdd57" # yellow/gold
     }
 
-    # Copy and add test index
+    # Copy dataframe and assign x positions
     merged_df = merged_df.copy()
     merged_df["test_idx"] = range(1, len(merged_df) + 1)
     x = merged_df["test_idx"]
 
-    # --- Figure 1: existing test order ---
-    plt.figure(figsize=(12,6))
+    ymax = (merged_df["n_isolated_only"] + 
+            merged_df["n_group_only"] + 
+            merged_df["n_intersection"]).max()
 
-    plt.bar(x, merged_df["n_isolated_only"], 
-            label="Only touched in isolated execution", 
-            color=colors["isolated"])
-    plt.bar(x, merged_df["n_group_only"], 
-            bottom=merged_df["n_isolated_only"], 
-            label="Only touched in grouped execution", 
-            color=colors["grouped"])
-    plt.bar(x, merged_df["n_intersection"], 
-            bottom=merged_df["n_isolated_only"] + merged_df["n_group_only"], 
-            label="Touched in all executions", 
-            color=colors["intersection"])
+    fig, ax = plt.subplots(figsize=(12,6))
 
-    plt.xlabel("Test ID")
-    plt.ylabel("Number of Touched Mutants")
-    plt.xticks(fontsize=12)
-    plt.yticks(fontsize=12)
-    plt.gca().yaxis.set_major_formatter(FuncFormatter(lambda x, pos: f"{int(x):,}"))
-    plt.legend(fontsize=12)
+    # Plot stacked bars
+    ax.bar(x, merged_df["n_isolated_only"], 
+           label="Isolated execution only", color=colors["isolated"])
+    ax.bar(x, merged_df["n_group_only"], 
+           bottom=merged_df["n_isolated_only"], 
+           label="Grouped execution only", color=colors["grouped"])
+    ax.bar(x, merged_df["n_intersection"], 
+           bottom=merged_df["n_isolated_only"] + merged_df["n_group_only"], 
+           label="All execution", color=colors["intersection"])
+
+    # Axis labels
+    ax.set_xlabel("")  # no x-axis label
+    ax.set_ylabel("Mutant IDs (thousands)", fontsize=24)  # bigger font
+    ax.tick_params(axis='x', labelsize=16)
+    ax.tick_params(axis='y', labelsize=20)
+    ax.set_xticks(merged_df["test_idx"])   # keep the tick positions
+    ax.set_xticklabels([])
+
+    # Format y-axis in thousands
+    ax.yaxis.set_major_formatter(FuncFormatter(lambda x, pos: f"{int(x/1000):,}"))
+
+    # Map test groups to positions
+    category_positions = {}
+    for group, df_grp in merged_df.groupby("test_group"):
+        pos = df_grp["test_idx"].mean()
+        category_positions[group] = pos
+
+    # Draw category dividers and labels
+    sorted_groups = list(merged_df["test_group"].unique())
+    prev_end = 0
+    for i, group in enumerate(sorted_groups):
+        df_grp = merged_df[merged_df["test_group"] == group]
+        start = df_grp["test_idx"].min()
+        end = df_grp["test_idx"].max()
+
+        # Skip first divider
+        divider_x = start - 0.5
+        divider_bottom = -0.15 * ymax
+        if i > 0:
+            ax.plot([divider_x, divider_x], 
+                    [divider_bottom, ymax], 
+                    color="black", linestyle=":", linewidth=2)
+
+        # Add category label
+        ax.text((start+end)/2, divider_bottom*0.8, group, 
+                ha='center', va='top', fontsize=18, fontweight='bold')
+
+    ax.set_ylim(divider_bottom*1.2, ymax*1.05)
+
+    ax.legend(fontsize=16, loc='lower center', bbox_to_anchor=(0.5, 1.02), ncol=3)
     plt.tight_layout()
-    plt.savefig(outdir / "stacked_plot_shared_resources.pdf")
-    plt.close()
 
+    if outdir is not None:
+        plt.savefig(outdir / "stacked_plot_shared_resources.pdf")
+    plt.close(fig)
 
 def plot_isolation_vs_group_histograms(df: pd.DataFrame) -> None:
     """
