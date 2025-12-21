@@ -815,6 +815,7 @@ def get_sample_for_shared_analysis(paths: FilePaths, test_names: list[str]) -> l
         prefix = pre + group + ','
         tests = [x for x in test_names if x.startswith(prefix)]
         output_str += f'Number of tests in group {group} is {len(tests)}\n'
+        output_str += f'    This is {round(len(tests) / len(test_names),4)}% of all tests that touch at least one mutant\n'
 
     print(output_str)
     with open(paths.output / 'Number of tests that touch at least one mutant by group.txt', 'w') as f:
@@ -883,7 +884,7 @@ def analyse_device_sharing_effect_on_mutant_touches(paths: FilePaths, sample_siz
 
     # Get data if we haven't already
     if get_data:
-        sample_tests = get_sample_for_shared_analysis(list(test_names.keys()), paths.sample_size)
+        sample_tests = get_sample_for_shared_analysis(paths, list(test_names.keys()))
         sample_tests = {x : test_names[x] for x in sample_tests}
         run_tracking_sample(paths, sample_tests, output_isolated_tests)
 
