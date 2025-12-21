@@ -27,7 +27,7 @@ from pathlib import Path
 from collections import Counter, defaultdict
 from itertools import combinations
 
-from analyse.analyse_mapping import process_raw_data, analyse_count
+from analyse.analyse_mapping import process_raw_data, analyse_count, three_level_histogram
 
 CONFIDENCE = 0.95 # 95% CI
 
@@ -68,7 +68,6 @@ def main():
                      'n-tests',
                      'shared-resources',
                      'caching',
-                     'filtering',
                      'touching'
                      ])
     args.add_argument('--base',
@@ -169,7 +168,47 @@ def analyse_full_touching_data(paths: FilePaths, get_data: bool = False):
 
     df = pd.read_csv(paths.mutant_mapping_counts)
 
-    analyse_count(paths.mutant_mapping_counts, paths.figures)
+    shared_df = pd.read_csv(paths.shared_resources_csv)
+
+    id_counts = (
+        shared_df["isolated_id"]
+            .dropna()
+            .apply(ast.literal_eval)     # parse strings → lists
+            .apply(set)                 # ensure 1 count per row per ID
+            .explode()                  # one ID per row
+            .value_counts()             # count rows per ID
+            .to_dict()
+    )
+
+    # Idea - if some tests fail or don't emit coverage in the group run, this could really affect these results?
+    output_str = f'Number of mutants that appear at least once in an isolated test run and NOT in the corresponding group run: {len(id_counts)}\n'
+    output_str += f'Number of mutants that are touched in isolation only by >10 tests {len([x for x, v in id_counts.items() if v > 10])}\n'
+    output_str += f'Number of mutants that are touched in isolation only by >20 tests {len([x for x, v in id_counts.items() if v > 20])}\n'
+    output_str += f'Number of mutants that are touched in isolation only by >50 tests {len([x for x, v in id_counts.items() if v > 50])}\n'
+
+    print(output_str)
+
+    # Make 3-level histogram
+    three_level_histogram(paths.mutant_mapping_counts,
+        paths.figures,
+        appearances_dict = id_counts,
+        name = 'three_level'
+    )
+    exit()
+
+    # Analyse counts before filtering
+    analyse_count(paths.mutant_mapping_counts, paths.figures, name = 'unfiltered')
+
+    # Analyse counts with filtering
+    all_ids_that_appear_in_isolated_only = list(id_counts.keys())
+    analyse_count(paths.mutant_mapping_counts, paths.figures, all_ids_that_appear_in_isolated_only, 'all')
+
+    all_ids_with_count_over_10 = [id for id, count in id_counts.items() if count > 10]
+    analyse_count(paths.mutant_mapping_counts, paths.figures, all_ids_with_count_over_10, 'over_10')
+
+    all_ids_with_count_over_20 = [id for id, count in id_counts.items() if count > 20]
+    analyse_count(paths.mutant_mapping_counts, paths.figures, all_ids_with_count_over_20, 'over_20')
+
 
 def get_mutant_id_test_counts(paths: FilePaths) -> dict[int, int]:
     """

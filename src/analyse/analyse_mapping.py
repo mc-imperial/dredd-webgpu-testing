@@ -5,6 +5,8 @@ from collections import Counter
 from tqdm import tqdm 
 import math
 import argparse
+import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
 from typing import List, Tuple
 from matplotlib.ticker import FuncFormatter
@@ -39,12 +41,12 @@ def main():
         analyse_count(test_count_csv)
 
 def load_counts(data: Path) -> List[int]:
-    counts = []
-    with open(data, newline='') as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            counts.append(int(row["test_count"]))
-    return counts
+    df = pd.read_csv(
+        data,
+        usecols=["mutant_id", "test_count"],  # only read needed columns
+        dtype={"mutant_id": int, "test_count": int}
+    )
+    return df
 
 
 def compute_summary(counts: List[int]) -> Tuple[int, int, int, int, int, int]:
@@ -84,7 +86,7 @@ def save_histogram_plot(
         color="#0b3c5d",
     )
 
-    ax.set_xlabel("Number of tests mutant appears in", fontsize=18) 
+    ax.set_xlabel("Number of tests the mutant is touched by", fontsize=18) 
     ax.set_ylabel("Number of mutants", fontsize=18) 
 
     ax.yaxis.set_major_formatter(
@@ -146,26 +148,116 @@ def extract_bucket_data(counts: List[int], bucket_index: int, bucket_size: float
     end = (bucket_index + 1) * bucket_size
     return [c for c in counts if start <= c < end]
 
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.ticker import FuncFormatter
+from pathlib import Path
 
-def analyse_count(data: Path, outpath: Path):
-    counts = load_counts(data)
 
-    total, zero, one, two, max_val, num_max = compute_summary(counts)
+def three_level_histogram(
+    data: Path,
+    outpath: Path,
+    appearances_dict: dict[int, int],
+    ids_to_filter: list[int] = None,
+    name: str = None,
+    single_hist_only: bool = True,
+    stats: bool = False,
+):
+    # Load your CSV as DataFrame
+    df = load_counts(data)  # must return DataFrame with 'mutant_id' and 'test_count'
 
-    print("\nSummary Statistics")
-    print("==================")
-    print(f"Total mutants: {total}")
-    print(f"Mutants with 0 tests: {zero}")
-    print(f"Mutants with 1 test: {one}")
-    print(f"Mutants with 2 tests: {two}")
-    print(f"Max tests for a mutant: {max_val}")
-    print(f"Number of mutants at max: {num_max}")
+    # Merge appearances dict into DataFrame
+    df = df.copy()
+    df["appearances"] = df["mutant_id"].map(appearances_dict).fillna(0).astype(int)
+
+    counts_full = df["test_count"].to_numpy()
+    counts_zero = df.loc[df["appearances"] == 0, "test_count"].to_numpy()
+
+    # Use a serif font similar to LaTeX
+    plt.rc("font", family="serif")
+
+    fig, ax = plt.subplots(figsize=(8, 4))
+
+    # Shared bins
+    bin_edges = np.linspace(counts_full.min(), counts_full.max(), 51)
+
+    # Histograms (layered)
+    ax.hist(
+        counts_full,
+        bins=bin_edges,
+        color="blue",
+        alpha=0.30,
+        label="All touched mutants",
+    )
+
+    ax.hist(
+        counts_zero,
+        bins=bin_edges,
+        color="blue",
+        alpha=0.70,
+        label="Filtered touched mutants",
+    )
+
+    # Axis labels
+    ax.set_xlabel(
+        "Number of tests the mutant is touched by",
+        fontsize=18,
+    )
+    ax.set_ylabel(
+        "Number of mutants",
+        fontsize=18,
+    )
+
+    # Tick formatting
+    ax.yaxis.set_major_formatter(
+        FuncFormatter(lambda y, _: f"{int(y):,}")
+    )
+    ax.xaxis.set_major_formatter(
+        FuncFormatter(lambda x, _: f"{int(x):,}")
+    )
+    ax.tick_params(axis="both", labelsize=14)
+
+    ax.legend(fontsize=12)
+
+    plt.tight_layout()
+    plt.savefig(outpath / f"histogram_superimposed_{name}.pdf")
+    plt.close(fig)
+
+
+def analyse_count(data: Path, 
+    outpath: Path, 
+    ids_to_filter: list[int] = None, 
+    name: str = None, 
+    single_hist_only: bool = True,
+    stats: bool = False):
+
+    df = load_counts(data)
+
+    if ids_to_filter is not None:
+        df = df[~df["mutant_id"].isin(ids_to_filter)]
+
+    counts = list(df['test_count'])
 
     # 1️⃣ Full Histogram
     full_size, full_bucket_counts = ascii_histogram(
         counts, buckets=50, title="Full Histogram", 
-        plot_path=outpath / 'full_histogram.pdf'
+        plot_path=outpath / f'full_histogram_{name}.pdf'
     )
+
+    if single_hist_only:
+        return
+    
+    if stats:
+        total, zero, one, two, max_val, num_max = compute_summary(counts)
+
+        print("\nSummary Statistics")
+        print("==================")
+        print(f"Total mutants: {total}")
+        print(f"Mutants with 0 tests: {zero}")
+        print(f"Mutants with 1 test: {one}")
+        print(f"Mutants with 2 tests: {two}")
+        print(f"Max tests for a mutant: {max_val}")
+        print(f"Number of mutants at max: {num_max}")
 
     # Determine second zoom boundary → lowest bucket is index 0
     low_subset = extract_bucket_data(counts, bucket_index=0, bucket_size=full_size)
@@ -173,7 +265,7 @@ def analyse_count(data: Path, outpath: Path):
     # 2️⃣ Histogram of lowest bucket
     low_size, low_counts = ascii_histogram(
         low_subset, buckets=25, title="Zoom-Level 2 (Low Coverage Range)",
-        plot_path=outpath / 'zoom_level_2_histogram.pdf'
+        plot_path=outpath / f'zoom_level_2_histogram_{name}.pdf'
     )
 
     # Now zoom lowest bucket of that → still index 0
@@ -182,7 +274,7 @@ def analyse_count(data: Path, outpath: Path):
     # 3️⃣ Histogram of the lowest bucket of the lowest bucket
     ascii_histogram(
         low_low_subset, buckets=20, title="Zoom-Level 3 (Lowest of Low Coverage)",
-        plot_path=outpath / 'zoom_level_3_histogram.pdf'
+        plot_path=outpath / f'zoom_level_3_histogram_{name}.pdf'
     )
 
 def analyse_count_with_matplotlib(data: Path):

@@ -73,8 +73,22 @@ def analyse(test_paths):
     print(f'Loading data...')
     df = pd.read_csv(isolated_mutant_csv)
 
-    histogram_of_n_isolated(df, output_dir)
-    histogram_of_isolated_ids(df, output_dir)
+    print(df.head())
+    print(len(df))
+
+
+    unique_ids = (
+        df["isolated_only_ids"]
+        .dropna()
+        .apply(ast.literal_eval)
+        .explode()
+        .unique()
+    )
+
+    print(len(unique_ids))
+
+    #histogram_of_n_isolated(df, output_dir)
+    #histogram_of_isolated_ids(df, output_dir)
     
 
 def histogram_of_n_isolated(df, output_dir):
