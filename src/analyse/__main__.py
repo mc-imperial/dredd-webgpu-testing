@@ -11,6 +11,7 @@ import time
 import math
 import ast
 import gzip
+import textwrap
 
 import pandas as pd
 import numpy as np
@@ -146,7 +147,7 @@ def main():
     if args.analysis == 'n-tests':
         analyse_n_tests(paths)
     if args.analysis == 'shared-resources':
-        analyse_device_sharing_effect_on_mutant_touches(paths, paths.sample_size, get_data=True)
+        analyse_device_sharing_effect_on_mutant_touches(paths, paths.sample_size, get_data=False)
     if args.analysis == 'caching':
         analyse_caching_effect_on_mutant_touches(paths, paths.sample_size, n_runs=2, get_data=False)
     if args.analysis == 'touching':
@@ -974,10 +975,150 @@ def analyse_device_sharing_effect_on_mutant_touches(paths: FilePaths, sample_siz
     df['test_group'] = (
         df["test_name"]
         .str.split(":", n=1).str[1]                # Take part after first colon
-        .str.split(",", n=2).str[:1]              # Take first two items after splitting by comma
-        .apply(lambda x: "-".join(x))             # Join them with a dash
+        .str.split(",", n=2).str[0]            # Take first item after splitting by comma
     )
+    df['test_subgroup'] = (
+        df["test_name"]
+        .str.split(":", n=1).str[1]                # Take part after first colon
+        .str.split(",", n=2).str[1]              # Take first item after splitting by comma
+    )
+
+    print(df.head(10))
+
     plot_stacked_bar(df, paths.figures)
+
+
+def plot_stacked_bar(merged_df: pd.DataFrame, outdir: Path = None):
+    """
+    Plots a stacked bar chart for test executions grouped by category
+    with two-level categorical labels placed below the x-axis:
+        - test_group
+        - test_subgroup
+    """
+
+    plt.rc("font", family="serif")
+
+    colors = {
+        "isolated": "#1f77b4",
+        "grouped": "#17becf",
+        "intersection": "#ffdd57",
+    }
+
+    merged_df = merged_df.sort_values(
+        ["test_group", "test_subgroup", "test_id"]
+    ).copy()
+
+    merged_df["test_idx"] = range(1, len(merged_df) + 1)
+    x = merged_df["test_idx"]
+
+    ymax = (
+        merged_df["n_isolated_only"]
+        + merged_df["n_group_only"]
+        + merged_df["n_intersection"]
+    ).max()
+
+    fig, ax = plt.subplots(figsize=(12, 8))
+
+    # Bars
+    ax.bar(x, merged_df["n_isolated_only"],
+           label="Isolated execution only",
+           color=colors["isolated"])
+    ax.bar(x, merged_df["n_group_only"],
+           bottom=merged_df["n_isolated_only"],
+           label="Grouped execution only",
+           color=colors["grouped"])
+    ax.bar(x, merged_df["n_intersection"],
+           bottom=merged_df["n_isolated_only"] + merged_df["n_group_only"],
+           label="All execution",
+           color=colors["intersection"])
+
+    # Axes formatting
+    ax.set_ylabel("Mutant IDs (thousands)", fontsize=24)
+    ax.tick_params(axis="y", labelsize=20)
+    ax.set_xticks(x)
+    ax.set_xticklabels([])
+    ax.yaxis.set_major_formatter(
+        FuncFormatter(lambda v, pos: f"{int(v / 1000):,}")
+    )
+
+    ax.set_ylim(0, ymax * 1.05)
+
+    # Shared transform: x in data coords, y in axes coords
+    xaxis_transform = ax.get_xaxis_transform()
+
+    # ---- Subgroup labels (closer to axis) ----
+    prev_end = None
+    for (_, subgroup), df_sub in merged_df.groupby(
+        ["test_group", "test_subgroup"], sort=False
+    ):
+        start = df_sub["test_idx"].min()
+        end = df_sub["test_idx"].max()
+
+        if prev_end is not None:
+            ax.plot(
+                [start - 0.5, start - 0.5],
+                [0, 1],
+                transform=xaxis_transform,
+                color="black",
+                linestyle="-",
+                linewidth=1,
+            )
+
+        wrapped = textwrap.fill(subgroup, width=14)
+        ax.text(
+            (start + end) / 2,
+            -0.05,
+            wrapped,
+            ha="center",
+            va="top",
+            fontsize=16,
+            transform=xaxis_transform,
+        )
+
+        prev_end = end
+
+    # ---- Group labels (further below) ----
+    prev_end = None
+    for group, df_grp in merged_df.groupby("test_group", sort=False):
+        start = df_grp["test_idx"].min()
+        end = df_grp["test_idx"].max()
+
+        if prev_end is not None:
+            ax.plot(
+                [start - 0.5, start - 0.5],
+                [0, 1],
+                transform=xaxis_transform,
+                color="black",
+                linestyle="-",
+                linewidth=1,
+            )
+
+        ax.text(
+            (start + end) / 2,
+            -0.15,
+            group,
+            ha="center",
+            va="top",
+            fontsize=18,
+            fontweight="bold",
+            transform=xaxis_transform,
+        )
+
+        prev_end = end
+
+    ax.legend(
+        fontsize=16,
+        loc="lower center",
+        bbox_to_anchor=(0.5, 1.02),
+        ncol=3,
+    )
+
+    plt.tight_layout()
+
+    if outdir is not None:
+        plt.savefig(outdir / "stacked_plot_shared_resources_two_labels.pdf")
+
+    plt.close(fig)
 
 def plot_cumulative_isolated_only_union(df):
     """
@@ -1013,94 +1154,6 @@ def plot_cumulative_isolated_only_union(df):
     plt.show()
 import matplotlib.pyplot as plt
 from matplotlib.ticker import FuncFormatter
-
-def plot_stacked_bar(merged_df: pd.DataFrame, outdir: Path = None):
-    """
-    Plots a stacked bar chart for test executions grouped by category.
-    merged_df must contain columns:
-        - test_id
-        - n_intersection
-        - n_isolated_only
-        - n_group_only
-        - test_group (categorical group for each test)
-    """
-
-    # Use a serif font similar to LaTeX
-    plt.rc('font', family='serif')
-
-    # Colorblind-friendly colors
-    colors = {
-        "isolated": "#1f77b4",    # blue
-        "grouped": "#17becf",     # cyan/teal
-        "intersection": "#ffdd57" # yellow/gold
-    }
-
-    # Copy dataframe and assign x positions
-    merged_df = merged_df.copy()
-    merged_df["test_idx"] = range(1, len(merged_df) + 1)
-    x = merged_df["test_idx"]
-
-    ymax = (merged_df["n_isolated_only"] + 
-            merged_df["n_group_only"] + 
-            merged_df["n_intersection"]).max()
-
-    fig, ax = plt.subplots(figsize=(12,6))
-
-    # Plot stacked bars
-    ax.bar(x, merged_df["n_isolated_only"], 
-           label="Isolated execution only", color=colors["isolated"])
-    ax.bar(x, merged_df["n_group_only"], 
-           bottom=merged_df["n_isolated_only"], 
-           label="Grouped execution only", color=colors["grouped"])
-    ax.bar(x, merged_df["n_intersection"], 
-           bottom=merged_df["n_isolated_only"] + merged_df["n_group_only"], 
-           label="All execution", color=colors["intersection"])
-
-    # Axis labels
-    ax.set_xlabel("")  # no x-axis label
-    ax.set_ylabel("Mutant IDs (thousands)", fontsize=24)  # bigger font
-    ax.tick_params(axis='x', labelsize=16)
-    ax.tick_params(axis='y', labelsize=20)
-    ax.set_xticks(merged_df["test_idx"])   # keep the tick positions
-    ax.set_xticklabels([])
-
-    # Format y-axis in thousands
-    ax.yaxis.set_major_formatter(FuncFormatter(lambda x, pos: f"{int(x/1000):,}"))
-
-    # Map test groups to positions
-    category_positions = {}
-    for group, df_grp in merged_df.groupby("test_group"):
-        pos = df_grp["test_idx"].mean()
-        category_positions[group] = pos
-
-    # Draw category dividers and labels
-    sorted_groups = list(merged_df["test_group"].unique())
-    prev_end = 0
-    for i, group in enumerate(sorted_groups):
-        df_grp = merged_df[merged_df["test_group"] == group]
-        start = df_grp["test_idx"].min()
-        end = df_grp["test_idx"].max()
-
-        # Skip first divider
-        divider_x = start - 0.5
-        divider_bottom = -0.15 * ymax
-        if i > 0:
-            ax.plot([divider_x, divider_x], 
-                    [divider_bottom, ymax], 
-                    color="black", linestyle=":", linewidth=2)
-
-        # Add category label
-        ax.text((start+end)/2, divider_bottom*0.8, group, 
-                ha='center', va='top', fontsize=18, fontweight='bold')
-
-    ax.set_ylim(divider_bottom*1.2, ymax*1.05)
-
-    ax.legend(fontsize=16, loc='lower center', bbox_to_anchor=(0.5, 1.02), ncol=3)
-    plt.tight_layout()
-
-    if outdir is not None:
-        plt.savefig(outdir / "stacked_plot_shared_resources.pdf")
-    plt.close(fig)
 
 def plot_isolation_vs_group_histograms(df: pd.DataFrame) -> None:
     """
