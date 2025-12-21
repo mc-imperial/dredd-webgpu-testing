@@ -2,11 +2,13 @@ from pathlib import Path
 import gzip
 import csv
 from collections import Counter
-from tqdm import tqdm  # pip install tqdm
+from tqdm import tqdm 
 import math
 import argparse
 import matplotlib.pyplot as plt
 from typing import List, Tuple
+from matplotlib.ticker import FuncFormatter
+
 
 TOTAL_ROWS=1389833509
 
@@ -56,7 +58,48 @@ def compute_summary(counts: List[int]) -> Tuple[int, int, int, int, int, int]:
     return total, zero_count, one_count, two_count, max_val, max_count
 
 
-def ascii_histogram(counts: List[int], buckets: int, title: str):
+def save_histogram_plot(
+    bucket_counts,
+    bucket_size,
+    title: str,
+    outpath: Path,
+):
+    """
+    Saves a histogram plot corresponding to the ASCII histogram.
+    """
+
+    # X positions = bucket centers
+    x = [i * bucket_size for i in range(len(bucket_counts))]
+
+    # Use a serif font similar to LaTeX
+    plt.rc('font', family='serif')
+    
+    fig, ax = plt.subplots(figsize=(8, 4))
+
+    ax.bar(
+        x,
+        bucket_counts,
+        width=bucket_size,
+        align="edge",
+        color="#0b3c5d",
+    )
+
+    ax.set_xlabel("Number of tests mutant appears in", fontsize=18) 
+    ax.set_ylabel("Number of mutants", fontsize=18) 
+
+    ax.yaxis.set_major_formatter(
+        FuncFormatter(lambda y, _: f"{int(y):,}")
+    )
+    ax.xaxis.set_major_formatter(
+        FuncFormatter(lambda y, _: f"{int(y):,}")
+    )
+    ax.tick_params(axis="both", labelsize=14)
+
+    plt.tight_layout()
+    plt.savefig(outpath)
+    plt.close(fig)
+
+def ascii_histogram(counts: List[int], buckets: int, title: str, plot_path: Path = None):
     """Returns bucket_size and bucket_counts."""
     if not counts:
         print(f"\n{title}: No data\n")
@@ -86,6 +129,14 @@ def ascii_histogram(counts: List[int], buckets: int, title: str):
         bar = "#" * bar_len
         print(f"{start:6} - {end:6} | {bar} ({count})")
 
+    if plot_path is not None:
+        save_histogram_plot(
+            bucket_counts=bucket_counts,
+            bucket_size=bucket_size,
+            title=title,
+            outpath=plot_path,
+        )
+
     return bucket_size, bucket_counts
 
 
@@ -96,7 +147,7 @@ def extract_bucket_data(counts: List[int], bucket_index: int, bucket_size: float
     return [c for c in counts if start <= c < end]
 
 
-def analyse_count(data: Path):
+def analyse_count(data: Path, outpath: Path):
     counts = load_counts(data)
 
     total, zero, one, two, max_val, num_max = compute_summary(counts)
@@ -112,7 +163,8 @@ def analyse_count(data: Path):
 
     # 1️⃣ Full Histogram
     full_size, full_bucket_counts = ascii_histogram(
-        counts, buckets=50, title="Full Histogram"
+        counts, buckets=50, title="Full Histogram", 
+        plot_path=outpath / 'full_histogram.pdf'
     )
 
     # Determine second zoom boundary → lowest bucket is index 0
@@ -120,7 +172,8 @@ def analyse_count(data: Path):
 
     # 2️⃣ Histogram of lowest bucket
     low_size, low_counts = ascii_histogram(
-        low_subset, buckets=25, title="Zoom-Level 2 (Low Coverage Range)"
+        low_subset, buckets=25, title="Zoom-Level 2 (Low Coverage Range)",
+        plot_path=outpath / 'zoom_level_2_histogram.pdf'
     )
 
     # Now zoom lowest bucket of that → still index 0
@@ -128,7 +181,8 @@ def analyse_count(data: Path):
 
     # 3️⃣ Histogram of the lowest bucket of the lowest bucket
     ascii_histogram(
-        low_low_subset, buckets=20, title="Zoom-Level 3 (Lowest of Low Coverage)"
+        low_low_subset, buckets=20, title="Zoom-Level 3 (Lowest of Low Coverage)",
+        plot_path=outpath / 'zoom_level_3_histogram.pdf'
     )
 
 def analyse_count_with_matplotlib(data: Path):

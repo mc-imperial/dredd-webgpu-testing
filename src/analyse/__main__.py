@@ -49,6 +49,7 @@ class FilePaths:
     figures: Path
     mutant_to_test_mapping: Path
     mutant_mapping_counts: Path
+    shared_resources_csv: Path
     sample_size: int = 100
     isolated_runid: str = '20251217_135018'
     caching_csv: Path = Path('/data/dev/dredd-webgpu-testing/data/icst_output/isolated_tests_caching_20251217_154821/isolated_tests_caching.csv')
@@ -121,6 +122,7 @@ def main():
             output_temp = Path(args.output_temp),
             test_to_id_json = Path(args.test_to_id_json),
             figures = output / 'figures',
+            shared_resources_csv = output / 'merged_df_shared_resources.csv',
             mutant_to_test_mapping = output / 'mutant_id_to_test_id_mapping_031225.csv.gz',
             mutant_mapping_counts = output / 'mutant_test_counts_031225.csv'
             )
@@ -144,11 +146,9 @@ def main():
     if args.analysis == 'n-tests':
         analyse_n_tests(paths)
     if args.analysis == 'shared-resources':
-        analyse_device_sharing_effect_on_mutant_touches(paths, paths.sample_size, get_data=False)
+        analyse_device_sharing_effect_on_mutant_touches(paths, paths.sample_size, get_data=True)
     if args.analysis == 'caching':
         analyse_caching_effect_on_mutant_touches(paths, paths.sample_size, n_runs=2, get_data=False)
-    if args.analysis == 'filtering':
-        analyse_initialisation_mutants(paths, get_data = True)
     if args.analysis == 'touching':
         analyse_full_touching_data(paths, get_data = False)
         
@@ -166,7 +166,26 @@ def analyse_full_touching_data(paths: FilePaths, get_data: bool = False):
         get_mutant_to_tests_mapping(paths)
         process_raw_data(paths.mutant_to_test_mapping, paths.mutant_mapping_counts)
 
-    analyse_count(paths.mutant_mapping_counts)
+    df = pd.read_csv(paths.mutant_mapping_counts)
+
+    analyse_count(paths.mutant_mapping_counts, paths.figures)
+
+def get_mutant_id_test_counts(paths: FilePaths) -> dict[int, int]:
+    """
+    Returns a mapping:
+        mutant_id -> number of tests in which it appears in `isolated_id`
+    """
+
+    df = pd.read_csv(paths.shared_resources_csv)
+
+    counter = Counter()
+
+    # Each row corresponds to one test
+    for ids_str in df["isolated_id"]:
+        ids = ast.literal_eval(ids_str)   # parse string -> list
+        counter.update(set(ids))          # set() ensures 1 count per test
+
+    return dict(counter)
 
 
 def get_mutant_to_tests_mapping(paths: FilePaths):
@@ -785,6 +804,25 @@ def analyse_mutant_recording_slowdown():
     raise NotImplementedError
 
 
+def get_sample_for_shared_analysis(paths: FilePaths, test_names: list[str]) -> list[str]:
+    
+    print(len(test_names))
+    output_str = f'Total tests that touch at least one mutant: {len(test_names)}\n'
+
+    pre = 'webgpu:'
+
+    for group in ['api', 'shader', 'compat', 'util', 'web_platform', 'webworker']:
+        prefix = pre + group + ','
+        tests = [x for x in test_names if x.startswith(prefix)]
+        output_str += f'Number of tests in group {group} is {len(tests)}\n'
+
+    print(output_str)
+    with open(paths.output / 'Number of tests that touch at least one mutant by group.txt', 'w') as f:
+        f.write(output_str)
+
+    return random.sample(test_names, paths.sample_size)
+
+
 def analyse_device_sharing_effect_on_mutant_touches(paths: FilePaths, sample_size : int,  get_data = False, make_merged = False):
     '''
     Analysis of the effect of device sharing and other initialisation
@@ -845,7 +883,7 @@ def analyse_device_sharing_effect_on_mutant_touches(paths: FilePaths, sample_siz
 
     # Get data if we haven't already
     if get_data:
-        sample_tests = random.sample(list(test_names.keys()), paths.sample_size)
+        sample_tests = get_sample_for_shared_analysis(list(test_names.keys()), paths.sample_size)
         sample_tests = {x : test_names[x] for x in sample_tests}
         run_tracking_sample(paths, sample_tests, output_isolated_tests)
 
@@ -916,9 +954,9 @@ def analyse_device_sharing_effect_on_mutant_touches(paths: FilePaths, sample_siz
         axis=1
         )
 
-        merged_df.to_csv(paths.output / 'merged_df_shared_resources.csv')
+        merged_df.to_csv(paths.shared_resources_csv)
 
-    merged_df = pd.read_csv(paths.output / 'merged_df_shared_resources.csv')
+    merged_df = pd.read_csv(paths.shared_resources_csv)
 
     # Plot the results
     df = merged_df[['test_id','n_isolated_only','n_group_only','n_intersection']]
