@@ -2,6 +2,7 @@
 
 BASE=/data/dev
 QUERY='webgpu:shader,execution,flow_control,call:*'
+QUERY='webgpu:shader,execution,flow_control,call:arg_eval_pointers:preventValueOptimizations=false'
 CTS=$BASE/webgpu_cts
 DAWN=$BASE/dawn
 MESA_INSTALL=$BASE/mesa_tracked/build/install
@@ -12,6 +13,6 @@ $DAWN/tools/run run-cts \
     --verbose \
     --bin=$DAWN/out/Debug \
     --cts=$CTS \
-    --mutant-tracking \
+    -j=1 \
     $QUERY
  
