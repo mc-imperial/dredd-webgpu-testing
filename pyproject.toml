@@ -13,24 +13,33 @@ find = {}  # Scan the project directory with the default parameters
 name = "dredd_webgpu_testing"
 version = "0.0.1"
 authors = [
-  { name="Amber Gorzynski", email="amber.gorzynski22@imperial.ac.uk" },
-  { name="Alastair F. Donaldson", email="alastair.donaldson@imperial.ac.uk" },
+  { ANONYMOUS },
+  { ANONYMOUS },
 ]
 description = "Runner scripts for research involving the Dredd mutation testing tool applied to WebGPU"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-  "numpy==2.2.2",
-  "pandas==2.2.3",
-  "path==17.0.0",
-  "python-dateutil==2.9.0.post0",
-  "pytz==2025.1",
-  "six==1.17.0",
-  "tzdata==2025.1",
-  "Mako==1.3.8",
-  "MarkupSafe==3.0.2",
-  "meson==1.7.0",
-  "ply==3.11",
-  "PyYAML==6.0.2",
+contourpy==1.3.2
+cycler==0.12.1
+fonttools==4.61.0
+kiwisolver==1.4.9
+Mako==1.3.10
+MarkupSafe==3.0.3
+matplotlib==3.10.7
+meson==1.10.0
+numpy==2.2.2
+packaging==25.0
+pandas==2.2.3
+path==17.0.0
+pillow==12.0.0
+pyparsing==3.2.5
+python-dateutil==2.9.0.post0
+pytz==2025.1
+PyYAML==6.0.3
+scipy==1.15.3
+six==1.17.0
+tqdm==4.67.1
+tzdata==2025.1
 ]
 
