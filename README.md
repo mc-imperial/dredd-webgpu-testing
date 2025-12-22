@@ -1,8 +1,28 @@
-# dredd-webgpu-testing
+# Mutation testing for WebGPU CTS
 
 Generate new tests for the WebGPU CTS using mutation testing and fuzzing.
 
-# Build 
+# ICST 2026 results replication instructions
+
+Replicating our full results requires installing many components. The full build instructions are given below. We also provide all intermediate data gathered during our experiments that can be analysed to produce the figures in our ICST 2026 submission using the following steps.
+
+Prerequisites:
+- Python 3.10
+- pip
+
+First, clone this repository. Next:
+
+```
+python -m venv venv
+source venv/bin/activate
+pip install . 
+cd src
+python -m analyse all
+```
+
+This should output the statistics and charts used in the submission to the folder `data/icst_output`.
+
+# Full build instructions 
 
 Prerequisites:
 - Python 3.10
@@ -69,7 +89,7 @@ For this, we need to use instrumented versions of the CTS and the Dawn harness f
 
 Get the instrumented CTS here:
 ```
-git clone https://github.com/ambergorzynski/webgpu_cts.git
+git clone [ANONYMISED]
 cd webgpu_cts
 git checkout mutant_tracking
 npm install
@@ -119,7 +139,7 @@ For efficiency, we do not want to use resources on mutants that WGSLsmith will n
 
 First, build WGSLsmith (note just build WGSLsmith, not the harness or reducer):
 ```
-git clone https://github.com/ambergorzynski/wgslsmith.git
+git clone https://github.com/[ANONYMISED]
 cd wgslsmith
 git checkout abstract_numerics
 ./build.py --no-reducer --no-harness

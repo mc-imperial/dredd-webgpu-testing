@@ -152,8 +152,19 @@ def main():
     if args.analysis == 'touching':
         analyse_full_touching_data(paths, get_data = False)
         
-def run_all(paths : FilePaths):
-    raise NotImplementedError
+def run_all(paths: FilePaths, get_data: bool = False):
+    '''
+    Runs all analyses with an option to gather data from
+    sratch or not
+    '''
+    analyse_startup_costs(paths, individual=True, group=True, non_param=True, get_data=False)
+    n_mutants = count_mutants(paths)
+    mesa_loc = get_loc(paths)
+    analyse_n_tests(paths)
+    analyse_device_sharing_effect_on_mutant_touches(paths, paths.sample_size, get_data=False)
+    analyse_full_touching_data(paths, get_data = False)
+
+
 
 def analyse_full_touching_data(paths: FilePaths, get_data: bool = False):
     '''
