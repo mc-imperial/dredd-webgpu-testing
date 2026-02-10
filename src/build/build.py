@@ -5,6 +5,7 @@ from pathlib import Path
 from dataclasses import dataclass
 
 from common.constants import COMMITS
+from build.build_mesa import clean
 
 @dataclass(frozen=True)
 class Dirs:
@@ -13,7 +14,11 @@ class Dirs:
     dawn: Path
     dawn_out: str
     build_dawn_sh: Path
-
+    mesa: Path
+    mesa_tracked: Path
+    mesa_mutated: Path
+    clang17: Path
+    clangpp17: Path
 
 BASE = Path('/data/dev')
 HERE = Path(__file__).resolve().parent
@@ -23,7 +28,12 @@ DIRS = Dirs(
     depot_tools=BASE / "depot_tools",
     dawn=BASE / "dawn",
     dawn_out='out/Debug',
-    build_dawn_sh = HERE / "build_dawn.sh"
+    build_dawn_sh = HERE / "build_dawn.sh",
+    mesa = BASE / "mesa",
+    mesa_tracked = BASE / "mesa_tracked",
+    mesa_mutated = BASE / "mesa_mutated",
+    clang17 = '/usr/bin/clang-17',
+    clangpp17 = '/usr/bin/clang++-17'
 
 )
 
@@ -33,8 +43,14 @@ def main():
     env["PATH"] = str(DIRS.depot_tools) + ':' + env["PATH"]
 
     try:
-        build_depot_tools(DIRS.depot_tools, env)
-        build_dawn(DIRS.dawn, env)
+        build_depot_tools(env)
+        print('\nDepot tools build - success!')
+
+        build_dawn(env)
+        print('\nDawn build - success!')
+
+        build_mesa(env)
+        print('\nMesa build - success!')
 
     except subprocess.CalledProcessError as e:
         handle_error(e)
@@ -51,11 +67,13 @@ def handle_error(e):
     print(e.stderr, file=sys.stderr)
     sys.exit(e.returncode)
 
-def build_depot_tools(wd, env):
+def build_depot_tools(env):
+    wd = DIRS.depot_tools
     commit = COMMITS['depot_tools']['commit']
     get(wd, commit, env)
 
-def build_dawn(wd, env):
+def build_dawn(env):
+    wd = DIRS.dawn
     commit = COMMITS['dawn']['commit']
     get(wd, commit, env)
     
@@ -69,6 +87,14 @@ def build_dawn(wd, env):
         },
         check=True,
     )
+
+def build_mesa(env):
+    commit = COMMITS['mesa']['commit']
+    
+    for wd in [DIRS.mesa, DIRS.mesa_tracked, DIRS.mesa_mutated]:
+        print(f'Building {wd}')
+        get(wd, commit, env)
+        clean(wd, DIRS.clang17, DIRS.clangpp17)
 
 def get(wd, commit, env):
     run(

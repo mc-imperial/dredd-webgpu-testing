@@ -7,6 +7,7 @@ cp scripts/standalone-with-node.gclient .gclient
 # Fetch external dependencies and toolchains
 gclient sync
 
+rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
 cd "$BUILD_DIR"
 
