@@ -85,6 +85,7 @@ def track_wgslsmith(tracking_dir : Path,
     dawn_node : Path,
     n : int = 1):
     for i in range(n):
+        print(f'Running wgslsmith program {i+1} of {n}')
         tracking_file = Path(tracking_dir, f'tracking_file_wgslsmith_run_{i}.txt').resolve()
         wgslsmith_program = Path(program_dir, f'wgslsmith/wgslsmith_prog_{i}.js').resolve()
         run_wgslsmith_program(wgslsmith_program,
