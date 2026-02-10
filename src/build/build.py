@@ -1,23 +1,40 @@
 import os
 import subprocess
+import sys
 from pathlib import Path
+from dataclasses import dataclass
 
 from common.constants import COMMITS
-import subprocess
-import sys
+
+@dataclass(frozen=True)
+class Dirs:
+    base: Path
+    depot_tools: Path
+    dawn: Path
+    dawn_out: str
+    build_dawn_sh: Path
+
+
+BASE = Path('/data/dev')
+HERE = Path(__file__).resolve().parent
+
+DIRS = Dirs(
+    base=BASE,
+    depot_tools=BASE / "depot_tools",
+    dawn=BASE / "dawn",
+    dawn_out='out/Debug',
+    build_dawn_sh = HERE / "build_dawn.sh"
+
+)
 
 def main():
-
-    base = Path('/data/dev')
-    depot_tools = base / 'depot_tools'
-    dawn = base / 'dawn'
-
+    
     env = os.environ.copy()
-    env["PATH"] = str(depot_tools) + ':' + env["PATH"]
+    env["PATH"] = str(DIRS.depot_tools) + ':' + env["PATH"]
 
     try:
-        build_depot_tools(depot_tools, env)
-        build_dawn(dawn, env)
+        build_depot_tools(DIRS.depot_tools, env)
+        build_dawn(DIRS.dawn, env)
 
     except subprocess.CalledProcessError as e:
         handle_error(e)
@@ -41,6 +58,17 @@ def build_depot_tools(wd, env):
 def build_dawn(wd, env):
     commit = COMMITS['dawn']['commit']
     get(wd, commit, env)
+    
+    subprocess.run(
+        [DIRS.build_dawn_sh],
+        cwd=wd,
+        env={
+            **env,
+            "BUILD_DIR": DIRS.dawn_out,
+            "DAWN_ROOT": str(wd),
+        },
+        check=True,
+    )
 
 def get(wd, commit, env):
     run(
