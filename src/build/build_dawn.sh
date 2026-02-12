@@ -7,9 +7,9 @@ cp scripts/standalone-with-node.gclient .gclient
 # Fetch external dependencies and toolchains
 gclient sync
 
-rm -rf "$BUILD_DIR"
-mkdir -p "$BUILD_DIR"
-cd "$BUILD_DIR"
+rm -rf "$DAWN_BUILD_DIR"
+mkdir -p "$DAWN_BUILD_DIR"
+cd "$DAWN_BUILD_DIR"
 
 # Build
 cmake "$DAWN_ROOT" -GNinja -DDAWN_BUILD_NODE_BINDINGS=1

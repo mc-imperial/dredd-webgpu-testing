@@ -19,6 +19,9 @@ class Dirs:
     mesa_mutated: Path
     clang17: Path
     clangpp17: Path
+    dredd: Path
+    llvm_dir: Path
+    build_dredd_sh: Path
 
 BASE = Path('/data/dev')
 HERE = Path(__file__).resolve().parent
@@ -33,7 +36,10 @@ DIRS = Dirs(
     mesa_tracked = BASE / "mesa_tracked",
     mesa_mutated = BASE / "mesa_mutated",
     clang17 = '/usr/bin/clang-17',
-    clangpp17 = '/usr/bin/clang++-17'
+    clangpp17 = '/usr/bin/clang++-17',
+    dredd = BASE / "dredd",
+    llvm_dir = '/usr/lib/llvm-17',
+    build_dredd_sh = HERE / "build_dredd.sh"
 
 )
 
@@ -43,6 +49,7 @@ def main():
     env["PATH"] = str(DIRS.depot_tools) + ':' + env["PATH"]
 
     try:
+        
         build_depot_tools(env)
         print('\nDepot tools build - success!')
 
@@ -51,6 +58,10 @@ def main():
 
         build_mesa(env)
         print('\nMesa build - success!')
+        
+        build_dredd(env)
+        print('\nDredd build - success!')
+        
 
     except subprocess.CalledProcessError as e:
         handle_error(e)
@@ -82,7 +93,7 @@ def build_dawn(env):
         cwd=wd,
         env={
             **env,
-            "BUILD_DIR": DIRS.dawn_out,
+            "DAWN_BUILD_DIR": DIRS.dawn_out,
             "DAWN_ROOT": str(wd),
         },
         check=True,
@@ -95,6 +106,21 @@ def build_mesa(env):
         print(f'Building {wd}')
         get(wd, commit, env)
         clean(wd, DIRS.clang17, DIRS.clangpp17)
+
+def build_dredd(env):
+    wd = DIRS.dredd
+    commit = COMMITS['dredd']['commit']
+    get(wd, commit, env)
+    
+    subprocess.run(
+        [DIRS.build_dredd_sh],
+        cwd=wd,
+        env={
+            **env,
+            "LLVM_DIR": DIRS.llvm_dir,
+        },
+        check=True,
+    )
 
 def get(wd, commit, env):
     run(

@@ -18,6 +18,8 @@ COMMITS = {
         "release": "mesa-25.3.5",
     },
     "webgpu_cts": "",
-    "dredd": "",
+    "dredd": {
+        "commit": "639addf1043e82e06f4cf3ead5f6ff50d3df1823"
+    },
     "wgslsmith": ""
 }
