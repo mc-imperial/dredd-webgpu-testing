@@ -17,7 +17,9 @@ COMMITS = {
         "commit": "8418351c7c56f06312d1bbb285ce776b41f6790b",
         "release": "mesa-25.3.5",
     },
-    "webgpu_cts": "",
+    "cts": {
+        "commit": "49ac7ea2497c6d3a4a741557c46000d70655d55a"
+    },
     "dredd": {
         "commit": "639addf1043e82e06f4cf3ead5f6ff50d3df1823"
     },

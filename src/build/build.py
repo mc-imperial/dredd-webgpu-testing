@@ -22,6 +22,7 @@ class Dirs:
     dredd: Path
     llvm_dir: Path
     build_dredd_sh: Path
+    cts: Path
 
 BASE = Path('/data/dev')
 HERE = Path(__file__).resolve().parent
@@ -39,7 +40,8 @@ DIRS = Dirs(
     clangpp17 = '/usr/bin/clang++-17',
     dredd = BASE / "dredd",
     llvm_dir = '/usr/lib/llvm-17',
-    build_dredd_sh = HERE / "build_dredd.sh"
+    build_dredd_sh = HERE / "build_dredd.sh",
+    cts = BASE / "webgpu_cts"
 
 )
 
@@ -51,17 +53,19 @@ def main():
     try:
         
         build_depot_tools(env)
-        print('\nDepot tools build - success!')
+        print('\nDepot tools build - success!\n')
 
         build_dawn(env)
-        print('\nDawn build - success!')
+        print('\nDawn build - success!\n')
 
         build_mesa(env)
-        print('\nMesa build - success!')
+        print('\nMesa build - success!\n')
         
         build_dredd(env)
-        print('\nDredd build - success!')
+        print('\nDredd build - success!\n')
         
+        build_cts(env)
+        print('\nCTS build - success!\n')
 
     except subprocess.CalledProcessError as e:
         handle_error(e)
@@ -120,6 +124,17 @@ def build_dredd(env):
             "LLVM_DIR": DIRS.llvm_dir,
         },
         check=True,
+    )
+
+def build_cts(env):
+    wd = DIRS.cts
+    commit = COMMITS['cts']['commit']
+    get(wd, commit, env)
+    run(
+        ['npm', 'install'],
+        cwd=wd,
+        env=env,
+        step='npm install cts'
     )
 
 def get(wd, commit, env):
