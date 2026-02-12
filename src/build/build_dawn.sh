@@ -14,3 +14,5 @@ cd "$DAWN_BUILD_DIR"
 # Build
 cmake "$DAWN_ROOT" -GNinja -DDAWN_BUILD_NODE_BINDINGS=1
 ninja dawn.node
+
+

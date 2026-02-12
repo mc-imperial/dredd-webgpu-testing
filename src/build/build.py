@@ -14,6 +14,7 @@ class Dirs:
     dawn: Path
     dawn_out: str
     build_dawn_sh: Path
+    dawn_patch: Path
     mesa: Path
     mesa_tracked: Path
     mesa_mutated: Path
@@ -32,16 +33,17 @@ DIRS = Dirs(
     depot_tools=BASE / "depot_tools",
     dawn=BASE / "dawn",
     dawn_out='out/Debug',
-    build_dawn_sh = HERE / "build_dawn.sh",
-    mesa = BASE / "mesa",
-    mesa_tracked = BASE / "mesa_tracked",
-    mesa_mutated = BASE / "mesa_mutated",
-    clang17 = '/usr/bin/clang-17',
-    clangpp17 = '/usr/bin/clang++-17',
-    dredd = BASE / "dredd",
-    llvm_dir = '/usr/lib/llvm-17',
-    build_dredd_sh = HERE / "build_dredd.sh",
-    cts = BASE / "webgpu_cts"
+    dawn_patch= HERE.parent / 'patches' / 'dawn_tracking.diff',
+    build_dawn_sh= HERE / "build_dawn.sh",
+    mesa= BASE / "mesa",
+    mesa_tracked= BASE / "mesa_tracked",
+    mesa_mutated= BASE / "mesa_mutated",
+    clang17= '/usr/bin/clang-17',
+    clangpp17= '/usr/bin/clang++-17',
+    dredd= BASE / "dredd",
+    llvm_dir= '/usr/lib/llvm-17',
+    build_dredd_sh= HERE / "build_dredd.sh",
+    cts= BASE / "webgpu_cts"
 
 )
 
@@ -54,10 +56,10 @@ def main():
         
         build_depot_tools(env)
         print('\nDepot tools build - success!\n')
-
+        
         build_dawn(env)
         print('\nDawn build - success!\n')
-
+        
         build_mesa(env)
         print('\nMesa build - success!\n')
         
@@ -66,7 +68,7 @@ def main():
         
         build_cts(env)
         print('\nCTS build - success!\n')
-
+    
     except subprocess.CalledProcessError as e:
         handle_error(e)
 
@@ -75,7 +77,6 @@ def main():
 def handle_error(e):
     print("ERROR: subprocess failed", file=sys.stderr)
     print(f"  step: {getattr(e, 'step', 'unknown')}", file=sys.stderr)
-    print(f"  cwd: {e.cwd}", file=sys.stderr)
     print(f"  command: {' '.join(e.cmd)}", file=sys.stderr)
     print(f"  exit code: {e.returncode}", file=sys.stderr)
     print("  stderr:", file=sys.stderr)
@@ -99,6 +100,7 @@ def build_dawn(env):
             **env,
             "DAWN_BUILD_DIR": DIRS.dawn_out,
             "DAWN_ROOT": str(wd),
+            "DAWN_PATCH": str(DIRS.dawn_patch)
         },
         check=True,
     )
