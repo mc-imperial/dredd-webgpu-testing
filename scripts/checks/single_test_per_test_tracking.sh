@@ -1,6 +1,7 @@
 #!/bin/bash
 
-BASE=/home/ubuntu/dev
+BASE=/data/dev
+OUTPUT=$BASE/dredd-webgpu-testing/data
 DAWN=$BASE/dawn
 CTS=$BASE/webgpu_cts
 MESA=$BASE/mesa_tracked/build/install/share/vulkan/icd.d/lvp_icd.x86_64.json
@@ -12,5 +13,6 @@ $DAWN/tools/run run-cts \
     --bin=$DAWN/out/Debug \
     --cts=$CTS \
     --mutant-tracking \
+    --mutant-output=$OUTPUT \
     'webgpu:shader,execution,expression,access,array,index:concrete_scalar:*'
 
