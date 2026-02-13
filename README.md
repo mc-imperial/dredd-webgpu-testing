@@ -20,21 +20,31 @@ source venv/bin/activate
 pip install . 
 ```
 
-To re-build everything:
+# Build modified CTS and Dawn for mutant touching analysis
+
+For efficient killing, we want to know which CTS tests `touch` which mutants. By `touch`, we mean that the code containing the mutant is executed during the test execution. This will allow us to target our testing later on.
+
+For this, we need to use instrumented versions of the CTS and the Dawn harness for running the CTS, which will allow us to track precisely which test is executing code containing each mutant.
+
+Get the instrumented CTS here:
 ```
-cd src
-sudo apt-get build-dep mesa
-sudo apt install -y llvm-17 clang-17 clang-tidy-17 clang-format-17 libclang-17-dev
-python -m build.build
+git clone https://github.com/ambergorzynski/webgpu_cts.git
+cd webgpu_cts
+git checkout mutant_tracking
+npm install
 ```
 
-# Build Dawn
-Follow the instructions to build Dawn with Node [here][https://dawn.googlesource.com/dawn/+/refs/heads/chromium/6536/src/dawn/node/README.md]
+Dawn is very frequently updated. We modify it on a fork that mirrors the official Dawn repo. The Dawn repo makes releases in the form of branches, which we mirror in the fork as release/chromium/xxxx. Our modifications are on the corresponding tracking/chromium/xxxx branch.
+```
+git clone https://github.com/ambergorzynski/dawn.git
+cd dawn
+git checkout tracking/chromium/xxxx
+```
 
-# Build Dredd
+## Build Dredd
 Follow the instructions to build Dredd from source [here][https://github.com/mc-imperial/dredd]
 
-# Mutate Mesa
+## Build Mesa
 
 First, get *two* checkouts of the Mesa version that you want to mutate. Build a `mutated` and `tracked` version once without any Dredd intervention in order to produce a compile commands database. For Mesa:
 ```
@@ -55,8 +65,17 @@ sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-noble.list http://packages.l
 sudo apt update
 sudo apt install vulkan-sdk
 ```
+## Run the build script to ensure commits are aligned
 
-Next, use the script to build and mutate the mutated and tracked subjects. This will:
+```
+cd src
+python -m build.build
+```
+
+# Mutate
+
+## Mutate Mesa
+Use the script to mutate the mutated and tracked subjects. This will:
 - Perform a clean build with the required build options
 - Inject mutants into the mutation version of the subject
 - Inject mutant coverage instrumentation into the tracking version of the subject
@@ -68,29 +87,6 @@ cd src
 python -m mutate mesa /path/to/mesa_mutated /path/to/mesa_tracked \
     --mutation_dir src/gallium/drivers/llvmpipe \
     --dredd /path/to/dredd
-```
-
-If the mutation subject is Mesa, then in order to continue you must also build a single version of Dawn to run the CTS.
-
-# Getting modified CTS and Dawn for mutant touching analysis
-
-For efficient killing, we want to know which CTS tests `touch` which mutants. By `touch`, we mean that the code containing the mutant is executed during the test execution. This will allow us to target our testing later on.
-
-For this, we need to use instrumented versions of the CTS and the Dawn harness for running the CTS, which will allow us to track precisely which test is executing code containing each mutant.
-
-Get the instrumented CTS here:
-```
-git clone https://github.com/ambergorzynski/webgpu_cts.git
-cd webgpu_cts
-git checkout mutant_tracking
-npm install
-```
-
-Dawn is very frequently updated. We modify it on a fork that mirrors the official Dawn repo. The Dawn repo makes releases in the form of branches, which we mirror in the fork as release/chromium/xxxx. Our modifications are on the corresponding tracking/chromium/xxxx branch.
-```
-git clone https://github.com/ambergorzynski/dawn.git
-cd dawn
-git checkout tracking/chromium/xxxx
 ```
 
 # Run test-wise mutant tracking
