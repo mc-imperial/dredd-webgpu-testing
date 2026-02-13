@@ -20,6 +20,17 @@ source venv/bin/activate
 pip install . 
 ```
 
+To re-build everything:
+```
+cd src
+sudo apt-get build-dep mesa
+sudo apt install -y llvm-17 clang-17 clang-tidy-17 clang-format-17 libclang-17-dev
+python -m build.build
+```
+
+# Build Dawn
+Follow the instructions to build Dawn with Node [here][https://dawn.googlesource.com/dawn/+/refs/heads/chromium/6536/src/dawn/node/README.md]
+
 # Build Dredd
 Follow the instructions to build Dredd from source [here][https://github.com/mc-imperial/dredd]
 
@@ -61,7 +72,7 @@ python -m mutate mesa /path/to/mesa_mutated /path/to/mesa_tracked \
 
 If the mutation subject is Mesa, then in order to continue you must also build a single version of Dawn to run the CTS.
 
-# Run test-wise mutant tracking
+# Getting modified CTS and Dawn for mutant touching analysis
 
 For efficient killing, we want to know which CTS tests `touch` which mutants. By `touch`, we mean that the code containing the mutant is executed during the test execution. This will allow us to target our testing later on.
 
@@ -75,19 +86,15 @@ git checkout mutant_tracking
 npm install
 ```
 
-The patch to instrument Dawn is here:
-`src/patches/dawn_tracking.diff`
-
-Apply the patches like this:
+Dawn is very frequently updated. We modify it on a fork that mirrors the official Dawn repo. The Dawn repo makes releases in the form of branches, which we mirror in the fork as release/chromium/xxxx. Our modifications are on the corresponding tracking/chromium/xxxx branch.
 ```
+git clone https://github.com/ambergorzynski/dawn.git
 cd dawn
-git checkout -b tracking
-git apply --whitespace=fix /path/to/dawn_tracking.diff .
+git checkout tracking/chromium/xxxx
 ```
 
-There is no need to rebuild Dawn or the CTS. The patch is applied to a Go harness in Dawn that is not part of the build, and the CTS will re-build itself automatically upon running when it detects changes.
+# Run test-wise mutant tracking
 
-Next, run mutant tracking:
 
 ```
 cd dredd-webgpu-testing
