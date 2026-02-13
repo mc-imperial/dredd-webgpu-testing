@@ -80,17 +80,19 @@ Use the script to mutate the mutated and tracked subjects. This will:
 - Inject mutants into the mutation version of the subject
 - Inject mutant coverage instrumentation into the tracking version of the subject
 
+The `--reset` option is necessary for test-wise tracking.
+
 ```
 cd dredd-webgpu-testing
 source venv/bin/activate
 cd src
 python -m mutate mesa /path/to/mesa_mutated /path/to/mesa_tracked \
-    --mutation_dir src/gallium/drivers/llvmpipe \
-    --dredd /path/to/dredd
+    --mutation_dir src/compiler/nir \
+    --dredd /path/to/dredd \
+    --reset
 ```
 
 # Run test-wise mutant tracking
-
 
 ```
 cd dredd-webgpu-testing
