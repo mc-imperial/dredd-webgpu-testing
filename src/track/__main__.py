@@ -3,6 +3,7 @@ import os
 import argparse
 import zipfile
 import csv
+from dataclasses import dataclass
 from tqdm import tqdm
 from pathlib import Path
 from typing import List, Set
@@ -10,6 +11,21 @@ from typing import List, Set
 from run.cts.map import map_mutants
 from run.cts.utils import run_cts
 from run.wgslsmith.utils import run_wgslsmith_program
+
+@dataclass
+class TestPaths:
+    output_temp: Path
+    vk_icd: Path
+    dawn: Path
+    cts: Path
+    test_output_dir: Path
+    cwd: Path
+    map_temp: Path
+    query_json: Path
+    tracked_json: Path
+    isolated_output: Path
+    group_output: Path
+    isolated_mutant_csv: Path
 
 def main():
 
@@ -41,14 +57,31 @@ def main():
     parser.add_argument('--test-wise-touching',
             action=argparse.BooleanOptionalAction,
             default=True)
+    parser.add_argument('--identify-initialisation-ids',
+            action=argparse.BooleanOptionalAction,
+            default=False)
 
     args = parser.parse_args()
+ 
+    test_paths: TestPaths = TestPaths(
+        vk_icd = args.vk_icd,
+        dawn = args.dawn,
+        cts = args.cts,
+        tracking_output = args.output, 'tracking_files'
+        compressed_output = args.output, 'tracking_files.zip'
+        map_test_to_mutant = args.output / 'mapping_test_to_id.json',
+        map_mutant_to_test = args.output / 'mapping_mutant_id_to_tests.csv'
+        tests_with_results = args.output, 'tests_with_results.json',
+        tests_with_track_flag = args.output, 'tests_with_tracking_flag.json',
+        isolated_output = args.output / 'isolated_output',
+        group_output = args.output / 'group_output',
+        isolated_mutant_csv = args.output / 'isolated_only_mutants.csv'
+    )
     
     args.output.mkdir(parents=True,exist_ok=True)
 
     if args.tracker == 'cts':
-        track_cts(args)
-
+        track_cts(args, test_paths)
 
     if args.tracker == 'wgslsmith':
         # Get aggregate mutant coverage of a sample of tests
@@ -68,28 +101,44 @@ def main():
             f.writelines(mutants)
         
 
-def track_cts(args):
+def track_cts(args, test_paths):
 
-    output = args.output
-    tracking_output = f'{str(args.output)}/tracking_files'
-    compressed_output = f'{str(args.output)}/tracking_files.zip'
-    mapping_csv = Path(output / 'mapping_mutant_id_to_tests.csv')
-    
-    # Gather tracking data
-    run_cts(args.cts, 
-        dawn=args.dawn, 
-        outdir=output,
-        vk_icd=args.vk_icd,
-        query=args.query,
-        tracking=True)
+    if args.identify_initialisation_ids:
+        find_initialisation_mutants(test_paths)
+        
+    else:
+        # Gather tracking data
+        run_cts(test_paths.cts, 
+            dawn=test_paths.dawn, 
+            outdir=test_paths.output,
+            vk_icd=test_paths.vk_icd,
+            query=args.query,
+            tracking=True)
 
-    # Compress output
-    files = compress(tracking_output, compressed_output)
-    delete_files(files)
-    remove_empty_dirs(tracking_output)
+        # Compress output
+        files = compress(test_paths.tracking_output, test_paths.compressed_output)
+        delete_files(files)
+        remove_empty_dirs(test_paths.tracking_output)
 
-    # Get mutant - to - test mapping
-    get_mutant_to_test_mapping(compressed_output, mapping_csv)
+        # Get mutant - to - test mapping
+        get_mutant_to_test_mapping(test_paths.compressed_output, test_paths.map_mutant_to_test)
+
+def find_initialisation_mutants(test_paths):
+    '''
+    This fn identifies which mutants are likely to be initialisation mutants by: 
+     1. running a sample of tests in isolation
+     2. comparing the mutants touched in isolation with those touched in the group run
+     3. predicting that mutant IDs touched in isolation but not in the group run are
+        likely to be initialisation mutants
+    '''
+
+    # Identify which tests have an associated tracking file
+
+    # Select sample from these tests
+
+    # Run each sample test in isolation
+
+    # Compare mutants touched to those touched when run as a group
 
 def collect_files(folder_path):
     """Return a list of all file paths under folder_path."""
