@@ -84,23 +84,52 @@ def track_cts(args):
         tracking=True)
 
     # Compress output
-    compress(tracking_output, compressed_output)
+    files = compress(tracking_output, compressed_output)
+    delete_files(files)
+    remove_empty_dirs(tracking_output)
 
     # Get mutant - to - test mapping
     get_mutant_to_test_mapping(compressed_output, mapping_csv)
 
-def compress(folder_path, output_zip):
-    # Collect all files first
+def collect_files(folder_path):
+    """Return a list of all file paths under folder_path."""
     file_paths = []
     for root, _, files in os.walk(folder_path):
-        for file in files:
-            full_path = os.path.join(root, file)
-            file_paths.append(full_path)
+        for name in files:
+            file_paths.append(os.path.join(root, name))
+    return file_paths
 
-    with zipfile.ZipFile(output_zip, 'w', zipfile.ZIP_DEFLATED) as zipf:
-        for file in tqdm(file_paths, desc="Compressing", unit="file"):
+
+def compress(folder_path, output_zip):
+    files = collect_files(folder_path)
+
+    with zipfile.ZipFile(output_zip, "w", zipfile.ZIP_DEFLATED) as zipf:
+        for file in tqdm(files, desc="Compressing", unit="file"):
             arcname = os.path.relpath(file, folder_path)
             zipf.write(file, arcname)
+
+    return files  # important: exact list that was zipped
+
+
+def delete_files(files):
+    for file in tqdm(files, desc="Deleting originals", unit="file"):
+        try:
+            os.remove(file)
+        except FileNotFoundError:
+            pass
+
+
+def remove_empty_dirs(root):
+    """Remove empty directories bottom-up."""
+    for current, dirs, _ in os.walk(root, topdown=False):
+        for d in dirs:
+            path = os.path.join(current, d)
+            try:
+                os.rmdir(path)
+            except OSError:
+                pass
+
+
 
 def get_mutant_to_test_mapping(tracking_archive, output_path):
 
