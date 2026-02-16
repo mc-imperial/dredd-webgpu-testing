@@ -15,7 +15,7 @@ class TestStatus(Enum):
 
 def run_cts(cts,
         dawn,
-        dredd_covered_mutants_path : Path,
+        outdir : Path,
         query : str = 'webgpu:*',
         vk_icd : str = '',
         tracking : bool = False):
@@ -26,7 +26,7 @@ def run_cts(cts,
     tracking_environment = os.environ.copy()
     
     # Set env vars depending on whether we are doing per-test coverage tracking or not
-    tracking_environment["DREDD_MUTANT_TRACKING_FILE"] = str(dredd_covered_mutants_path)
+    #tracking_environment["DREDD_MUTANT_TRACKING_FILE"] = str(dredd_covered_mutants_path)
 
     tracking_environment["VK_ICD_FILENAMES"] = f'{vk_icd}'
 
@@ -34,22 +34,21 @@ def run_cts(cts,
             'run-cts', 
             '--verbose',
             f'--bin={dawn}/out/Debug']
-    #        '--j', '1']
 
     if tracking:
         tracking_compile_cmd.append('--mutant-tracking')
+        tracking_compile_cmd.append(f'--mutant-output={outdir}')
 
     tracking_compile_cmd.extend([
             f'--cts={cts}',
             f"{query}"]) 
 
-    print(tracking_compile_cmd)
     result = subprocess.run(tracking_compile_cmd, 
                             env=tracking_environment)
 
     if(result.returncode != 0):
         print(f'Problem running tracking command!: \n{result.stderr}')
-        exit(1)
+        raise RuntimeError
     else:
         print(f'Tracking command finished with return code {result.returncode}')
 

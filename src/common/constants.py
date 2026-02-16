@@ -10,8 +10,7 @@ COMMITS = {
         "commit": "42786f6e46c25c30dd58f69283ab6fcd0c959f58"
     },
     "dawn": {
-        "commit": "a44d7a3d78f23c680491c0fc04f53a1df62e02ff",
-        "release": "chromium/7680"
+        "commit": "f545629edad55c0026b9b07f376a37dd0f759609",
     },
     "mesa": {
         "commit": "8418351c7c56f06312d1bbb285ce776b41f6790b",

@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import List, Set
 
 from run.cts.map import map_mutants
+from run.cts.utils import run_cts
 from run.wgslsmith.utils import run_wgslsmith_program
 
 def main():
@@ -15,10 +16,10 @@ def main():
     
     parser.add_argument('tracker',
             choices=['cts','wgslsmith'])
-    parser.add_argument('tracked_vk_icd',
+    parser.add_argument('--vk-icd',
             type=Path,
             help = "Path to tracked_mesa vk_icd.json")
-    parser.add_argument('dawn',
+    parser.add_argument('--dawn',
             type=Path,
             help='Path to Dawn')
     parser.add_argument('--cts',
@@ -34,35 +35,23 @@ def main():
     parser.add_argument('--wgslsmith_sample',
             type=int,
             default=1)
-    parser.add_argument('--process_map',
-            action=argparse.BooleanOptionalAction)
+    parser.add_argument('--test-wise-touching',
+            action=argparse.BooleanOptionalAction,
+            default=True)
 
     args = parser.parse_args()
     
-    tracking_dir = Path(args.output, 'tracking_files')
-    
-    if not args.process_map:
-        tracking_dir.mkdir(parents=True,exist_ok=True)
+    args.output.mkdir(parents=True,exist_ok=True)
 
     if args.tracker == 'cts':
-        # Get the mutant to test ID mapping so that we know 
-        # which mutants are touched by which tests
-        output_file = 'mapping_mutant_to_query_list.csv'
+        run_cts(args.cts, 
+            dawn=args.dawn, 
+            outdir=args.output,
+            vk_icd=args.vk_icd,
+            query=args.query,
+            tracking=True)
 
-        if args.process_map:
-            process_test_wise_tracking(tracking_dir, 
-                args.output, 
-                output_file)
-        else:
-            map_mutants(args.cts,
-                args.dawn,
-                tracking_dir,
-                args.output,
-                output_file,
-                args.tracked_vk_icd,
-                args.query) 
-
-    elif args.tracker == 'wgslsmith':
+    if args.tracker == 'wgslsmith':
         # Get aggregate mutant coverage of a sample of tests
         program_dir = Path(args.output, 'wgslsmith_progs')
         program_dir.mkdir(exist_ok=True)
