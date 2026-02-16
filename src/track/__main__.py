@@ -1,6 +1,9 @@
 import subprocess
 import os
 import argparse
+import zipfile
+import csv
+from tqdm import tqdm
 from pathlib import Path
 from typing import List, Set
 
@@ -44,12 +47,8 @@ def main():
     args.output.mkdir(parents=True,exist_ok=True)
 
     if args.tracker == 'cts':
-        run_cts(args.cts, 
-            dawn=args.dawn, 
-            outdir=args.output,
-            vk_icd=args.vk_icd,
-            query=args.query,
-            tracking=True)
+        track_cts(args)
+
 
     if args.tracker == 'wgslsmith':
         # Get aggregate mutant coverage of a sample of tests
@@ -68,6 +67,85 @@ def main():
         with open(Path(args.output, output_file),'w') as f:
             f.writelines(mutants)
         
+
+def track_cts(args):
+
+    output = args.output
+    tracking_output = f'{str(args.output)}/tracking_files'
+    compressed_output = f'{str(args.output)}/tracking_files.zip'
+    mapping_csv = Path(output / 'mapping_mutant_id_to_tests.csv')
+    
+    # Gather tracking data
+    run_cts(args.cts, 
+        dawn=args.dawn, 
+        outdir=output,
+        vk_icd=args.vk_icd,
+        query=args.query,
+        tracking=True)
+
+    # Compress output
+    compress(tracking_output, compressed_output)
+
+    # Get mutant - to - test mapping
+    get_mutant_to_test_mapping(compressed_output, mapping_csv)
+
+def compress(folder_path, output_zip):
+    # Collect all files first
+    file_paths = []
+    for root, _, files in os.walk(folder_path):
+        for file in files:
+            full_path = os.path.join(root, file)
+            file_paths.append(full_path)
+
+    with zipfile.ZipFile(output_zip, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        for file in tqdm(file_paths, desc="Compressing", unit="file"):
+            arcname = os.path.relpath(file, folder_path)
+            zipf.write(file, arcname)
+
+def get_mutant_to_test_mapping(tracking_archive, output_path):
+
+    mutant_to_test_mapping = {}
+
+    with zipfile.ZipFile(tracking_archive, 'r') as z:
+        files = z.infolist()
+        n_files = len(files)
+        for i, info in enumerate(files):
+            print(f'Processing file {i} of {n_files}')
+            if not info.is_dir():
+
+                with z.open(info.filename) as f:
+                    text = f.read().decode('utf-8')
+                    
+                    numbers = [int(line) for line in text.splitlines()]
+                    unique_ids = sorted(set(numbers))
+                    
+                    # Store mapping as list because they are more memory-efficient
+                    # than sets. If we use sets here, we run out of memory
+                    for mutant in unique_ids:
+                        if mutant not in mutant_to_test_mapping.keys():
+                            mutant_to_test_mapping[mutant] = []
+                        
+                        test_id = Path(info.filename).stem.removeprefix('test_id_')
+                        mutant_to_test_mapping[mutant].append(test_id)
+                    
+    # Deduplicate
+    mutant_to_test_mapping = {k: list(sorted(set(v))) for k, v in mutant_to_test_mapping.items()}
+    
+    # Write out ot csv
+    print(f'Writing to {output_path}...')
+    try:
+        with open(output_path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(["mutant_id", "test_id"])  # header
+
+            for mutant_id, test_ids in mutant_to_test_mapping.items():
+                for test_id in test_ids:
+                    writer.writerow([mutant_id, test_id])
+    except Exception as e:
+        raise RuntimeError(f'Problem writing to csv!: \n {e}')
+
+    print(f'Finished writing to {output_path}!')
+    
 def track_wgslsmith(tracking_dir : Path, 
     program_dir : Path, 
     mesa_vk_icd : Path,
