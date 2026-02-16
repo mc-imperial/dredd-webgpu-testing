@@ -18,7 +18,8 @@ def run_cts(cts,
         outdir : Path,
         query : str = 'webgpu:*',
         vk_icd : str = '',
-        tracking : bool = False):
+        tracking : bool = False,
+        mesa_shader_cache: bool = False):
    
     # Run the test with mutant tracking enabled
     print("Running CTS with mutant tracking compiler...")
@@ -29,6 +30,9 @@ def run_cts(cts,
     #tracking_environment["DREDD_MUTANT_TRACKING_FILE"] = str(dredd_covered_mutants_path)
 
     tracking_environment["VK_ICD_FILENAMES"] = f'{vk_icd}'
+    
+    if not mesa_shader_cache:
+        tracking_environment["MESA_SHADER_CACHE_DISABLE"]="true"
 
     tracking_compile_cmd = [f'{dawn}/tools/run',
             'run-cts', 

@@ -129,8 +129,6 @@ def remove_empty_dirs(root):
             except OSError:
                 pass
 
-
-
 def get_mutant_to_test_mapping(tracking_archive, output_path):
 
     mutant_to_test_mapping = {}
