@@ -5,13 +5,15 @@ REPO=$BASE/dredd-webgpu-testing
 DAWN=$BASE/dawn
 CTS=$BASE/webgpu_cts
 VK_ICD=$BASE/mesa_tracked/build/install/share/vulkan/icd.d/lvp_icd.x86_64.json
-OUTPUT=$REPO/data_wip
-LOG=$OUTPUT/cts_stdout_wip.txt
+OUTPUT=$REPO/data
+
+rm -rf $OUTPUT/group_output
+rm -rf $OUTPUT/isolated_output
 
 python -m track cts \
     --vk-icd $VK_ICD \
     --dawn $DAWN \
     --cts $CTS \
     --output $OUTPUT \
-    --query 'webgpu:shader,execution,flow_control,call:arg_eval_pointers:*' \
-    | tee "$LOG"
+    --query 'webgpu:*' \
+    --identify-initialisation-ids
