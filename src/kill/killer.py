@@ -4,13 +4,16 @@ from typing import List
 from .mutant import Mutant
 from .utils import write_json_atomic, now_iso
 import subprocess
+import logging
+from tqdm import tqdm
+from pathlib import Path
 
 class CTSKillStatus:
     SURVIVED = "SURVIVED"
     KILLED = "KILLED"
 
 class MutantKiller:
-    def __init__(self, mutants: List[Mutant], dawn: str, cts: str, vk_icd: str, output_dir: str):
+    def __init__(self, mutants: List[Mutant], dawn: str, cts: str, vk_icd: str, output_dir: Path):
         self.mutants = mutants
         self.dawn = dawn
         self.cts = cts
@@ -53,7 +56,7 @@ class MutantKiller:
         passed = False
         for line in iter(process.stdout.readline, ""):
             line = line.strip()
-            print(line)
+            tqdm.write(line)
             if " - pass" in line:
                 passed = True
             elif "failed to gather tests" in line:
@@ -114,20 +117,38 @@ class MutantKiller:
 
         logging.info(f"Mutant {mutant.id} survived ({len(attempted_tests)} tests)") 
     
+
     def kill_all(self):
-        """
-        Loop over all mutants and attempt to kill them.
-        """
-        for mutant in self.mutants:
-            # Skip if mutant has already been tested
+        processed_ids = self._already_processed_ids()
+
+        total = len(self.mutants)
+        initial = len(processed_ids)
+
+        with tqdm(
+            total=total,
+            initial=initial,
+            desc="Killing mutants",
+            unit="mutant",
+        ) as pbar:
+
             for mutant in self.mutants:
-                if (self.killed_dir / f"{mutant.id}.json").exists():
-                    continue
-                if (self.survived_dir / f"{mutant.id}.json").exists():
+                if mutant.id in processed_ids:
                     continue
 
-            self.kill_mutant(mutant)
-            if mutant.killed:
-                print(f"Mutant {mutant.id} killed by {mutant.killing_test}")
-            else:
-                print(f"Mutant {mutant.id} survived")
+                self.kill_mutant(mutant)
+
+                killed = len(list(self.killed_dir.glob("*.json")))
+                survived = len(list(self.survived_dir.glob("*.json")))
+
+                pbar.set_postfix(killed=killed, survived=survived)
+                pbar.update(1)            
+                
+                if mutant.killed:
+                        tqdm.write(f"Mutant {mutant.id} killed by {mutant.killing_test}")
+                else:
+                    tqdm.write(f"Mutant {mutant.id} survived")
+
+    def _already_processed_ids(self) -> set[int]:
+        killed = {int(p.stem) for p in self.killed_dir.glob("*.json")}
+        survived = {int(p.stem) for p in self.survived_dir.glob("*.json")}
+        return killed | survived

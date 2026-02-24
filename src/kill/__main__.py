@@ -46,7 +46,7 @@ def main():
                           dawn = args.dawn,
                           cts = args.cts, 
                           vk_icd = args.vk_icd, 
-                          output_dir = str(args.output)
+                          output_dir = args.output
                         )
     killer.kill_all()
 
