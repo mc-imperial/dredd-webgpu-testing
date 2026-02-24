@@ -157,9 +157,7 @@ source venv/bin/activate
 cd src
 python -m kill \
     /path/to/infofilemutated \
-    /path/to/infofiletracked \
     /path/to/mesa/mutated/vk_icd \
-    /path/to/mesa/tracked/vk_icd \
     /path/to/dawn \
     --cts /path/to/cts \
     --map /path/to/mutants_to_kill_csv \
