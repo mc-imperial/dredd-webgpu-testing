@@ -7,7 +7,7 @@ VKICDMUTATED=$BASE/mesa_mutated/build/install/share/vulkan/icd.d/lvp_icd.x86_64.
 VKICDTRACKED=$BASE/mesa_tracked/build/install/share/vulkan/icd.d/lvp_icd.x86_64.json
 DAWN=$BASE/dawn
 CTS=$BASE/webgpu_cts
-MAP=$BASE/data/mapping_mutant_id_to_tests_without_init_ids.csv
+MAP=$BASE/data/mutants_to_kill.csv
 
 python -m kill \
     $INFOMUTATED \
