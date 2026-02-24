@@ -1,5 +1,8 @@
 # killer.py
 import os
+import csv
+import time
+from datetime import datetime, timezone
 from typing import List
 from .mutant import Mutant
 from .utils import write_json_atomic, now_iso
@@ -26,11 +29,55 @@ class MutantKiller:
         self.killed_dir.mkdir(parents=True, exist_ok=True)
         self.survived_dir.mkdir(parents=True, exist_ok=True)
 
+        self.summary_csv = output_dir / "mutation_summary.csv"
+        self._init_summary_csv()
+
         logging.basicConfig(
             filename=self.output_dir / "run.log",
             level=logging.INFO,
             format="%(asctime)s %(levelname)s %(message)s",
         )
+
+    def _init_summary_csv(self):
+        if not self.summary_csv.exists():
+            with open(self.summary_csv, "w", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerow([
+                    "mutant_id",
+                    "status",
+                    "killing_test",
+                    "num_covering_tests",
+                    "num_tests_run_mutated",
+                    "unmutated_time_sec",
+                    "mutated_time_sec",
+                    "total_time_sec",
+                    "timestamp_utc",
+                ])
+        
+    def _append_summary_row(
+        self,
+        mutant_id: int,
+        status: str,
+        killing_test: str,
+        num_covering_tests: int,
+        num_tests_run_mutated: int,
+        unmutated_time: float,
+        mutated_time: float,
+        total_time: float,
+    ):
+        with open(self.summary_csv, "a", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow([
+                mutant_id,
+                status,
+                killing_test,
+                num_covering_tests,
+                num_tests_run_mutated,
+                round(unmutated_time, 3),
+                round(mutated_time, 3),
+                round(total_time, 3),
+                now_iso(),
+            ])
 
     def run_cts_test(self, test_name: str, env: dict) -> bool:
         """
@@ -70,27 +117,49 @@ class MutantKiller:
         env = os.environ.copy()
         env["VK_ICD_FILENAMES"] = self.vk_icd
 
+        t_total_start = time.perf_counter()
+        t_unmutated = 0.0
+        t_mutated = 0.0
+
         attempted_tests = []
+        mutated_tests_run = 0
 
         for test in mutant.covering_tests:
             attempted_tests.append(test)
 
             # Unmutated run
             env.pop("DREDD_ENABLED_MUTATION", None)
-            if not self.run_cts_test(test, env):
+            t0 = time.perf_counter()
+            unmutated_passed = self.run_cts_test(test, env)
+            t_unmutated += time.perf_counter() - t0
+
+            if not unmutated_passed:
                 continue
 
             # Mutated run
             env["DREDD_ENABLED_MUTATION"] = str(mutant.id)
-            if not self.run_cts_test(test, env):
-                # KILLED — log immediately
+            mutated_tests_run += 1
+
+            t0 = time.perf_counter()
+            mutated_passed = self.run_cts_test(test, env)
+            t_mutated += time.perf_counter() - t0
+
+            if not mutated_passed:
+                # ---------- KILLED ----------
                 mutant.killed = True
                 mutant.killing_test = test
 
                 record = {
                     "mutant_id": mutant.id,
+                    "status": "killed",
                     "killing_test": test,
-                    "timestamp": now_iso(),
+                    "num_covering_tests": len(mutant.covering_tests),
+                    "attempted_tests": attempted_tests,
+                    "num_tests_run_mutated": mutated_tests_run,
+                    "unmutated_time_sec": round(t_unmutated, 3),
+                    "mutated_time_sec": round(t_mutated, 3),
+                    "total_time_sec": round(time.perf_counter() - t_total_start, 3),
+                    "timestamp_utc": now_iso(),
                 }
 
                 write_json_atomic(
@@ -99,6 +168,18 @@ class MutantKiller:
                 )
 
                 logging.info(f"Mutant {mutant.id} killed by {test}")
+
+                self._append_summary_row(
+                    mutant_id=mutant.id,
+                    status="killed",
+                    killing_test=test,
+                    num_covering_tests=len(mutant.covering_tests),
+                    num_tests_run_mutated=mutated_tests_run,
+                    unmutated_time=t_unmutated,
+                    mutated_time=t_mutated,
+                    total_time=time.perf_counter() - t_total_start,
+                )
+
                 return
 
         # SURVIVED — log immediately
@@ -106,8 +187,14 @@ class MutantKiller:
 
         record = {
             "mutant_id": mutant.id,
+            "status": "survived",
+            "num_covering_tests": len(mutant.covering_tests),
             "attempted_tests": attempted_tests,
-            "timestamp": now_iso(),
+            "num_tests_run_mutated": mutated_tests_run,
+            "unmutated_time_sec": round(t_unmutated, 3),
+            "mutated_time_sec": round(t_mutated, 3),
+            "total_time_sec": round(time.perf_counter() - t_total_start, 3),
+            "timestamp_utc": now_iso(),
         }
 
         write_json_atomic(
@@ -116,6 +203,17 @@ class MutantKiller:
         )
 
         logging.info(f"Mutant {mutant.id} survived ({len(attempted_tests)} tests)") 
+
+        self._append_summary_row(
+            mutant_id=mutant.id,
+            status="survived",
+            killing_test="",
+            num_covering_tests=len(mutant.covering_tests),
+            num_tests_run_mutated=mutated_tests_run,
+            unmutated_time=t_unmutated,
+            mutated_time=t_mutated,
+            total_time=time.perf_counter() - t_total_start,
+        )
     
 
     def kill_all(self):
