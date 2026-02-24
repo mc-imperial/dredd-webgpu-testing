@@ -136,7 +136,37 @@ python -m track cts \
     --query 'webgpu:*'
 ```
 
-# Find mutants that are covered by WGSLsmith
+## Produce a list of mutants to kill
+Remove the initialisation mutants from the mutant - to - test mapping using this script, which will produce a `mutants_to_kill.csv` in the same folder as the mutant to test map csv:
+```
+python scripts/remove_mutants \
+    /path/to/mutant_to_test_id_map.csv \
+    /path/to/test_id_to_test_name_map.json \
+    /path/to/initialisation_list.csv
+```
+
+# Identify mutants that are not killed by the CTS
+
+The next step is to try to kill mutants using the CTS. We choose the mutants that are touched by only a small number of CTS tests. This means it is quick to determine whether the mutant can be killed by the CTS or not. We exclude mutants that are flagged in our initialisation analysis.
+
+Run the following command to try and kill mutants. The sample parameter sets the limit for the number of mutant kills that will be attempted, starting with mutants that are touched by the fewest tests.
+
+```
+cd dredd-webgpu-testing
+source venv/bin/activate
+cd src
+python -m kill \
+    /path/to/infofilemutated \
+    /path/to/infofiletracked \
+    /path/to/mesa/mutated/vk_icd \
+    /path/to/mesa/tracked/vk_icd \
+    /path/to/dawn \
+    --cts /path/to/cts \
+    --map /path/to/mutants_to_kill_csv \
+    --sample 5
+```
+
+# WGSLsmith
 
 For efficiency, we do not want to use resources on mutants that WGSLsmith will not be able to eventually kill. So, we run a sample of e.g. 50 WGSLsmith tests to see which mutants they touch. This will be used to target our CTS mutant killing.
 
@@ -161,25 +191,3 @@ python -m track wgslsmith \
     /path/to/instrumented_dawn \
     --wgslsmith_sample 100
 ``` 
-
-# Identify mutants that are not killed by the CTS
-
-The next step is to try to kill mutants using the CTS. We choose the mutants that are:
-(a) Touched by only a small number of CTS tests. This means it is quick to determine whether the mutant can be killed by the CTS or not.
-(b) Touched by a sample of WGSLsmith tests. This ensures that when we use WGSLsmith to try and kill the mutant, we have some reasonable chance of at least touching it.
-
-```
-cd dredd-webgpu-testing
-source venv/bin/activate
-cd src
-python -m kill \
-    /path/to/infofilemutated \
-    /path/to/infofiletracked \
-    /path/to/mesa/mutated/vk_icd \
-    /path/to/mesa/tracked/vk_icd \
-    /path/to/dawn \
-    --cts /path/to/cts \
-    --map /path/to/mutant_to_test_mapping.csv \
-    --wgslsmith_touched /path/to/touched.txt \
-    --sample 5
-```
