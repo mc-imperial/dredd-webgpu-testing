@@ -1,11 +1,12 @@
-import argparse
-import pandas as pd
 from pathlib import Path
+import csv
 import os
+import argparse
+from collections import defaultdict
+from typing import List
 
-from run.cts.map import get_least_covered_mutants
-import run.cts.kill_mutants
-import run.wgslsmith.kill_mutants
+from .mutant import Mutant
+from .killer import MutantKiller
 
 def main():
     
@@ -16,15 +17,9 @@ def main():
     parser.add_argument('info_file_mutated',
             type=Path,
             help = "Path to mutated info file")
-    parser.add_argument('info_file_tracked',
-            type=Path,
-            help = "Path to tracked info file")
-    parser.add_argument('mutated_vk_icd',
+    parser.add_argument('vk_icd',
             type=Path,
             help = "Path to mutated_mesa vk_icd.json")
-    parser.add_argument('tracked_vk_icd',
-            type=Path,
-            help = "Path to tracked_mesa vk_icd.json")
     parser.add_argument('dawn',
             type=Path,
             help='Path to Dawn')
@@ -39,14 +34,6 @@ def main():
             type=Path,
             help='Path to mutant to mapping csv file that maps each mutant to a set of queries that cover it',
             default='')
-    parser.add_argument('--wgslsmith_touched',
-            type=Path,
-            help='Path to list of mutants touched by a sample of WGSLsmith tests',
-            default='')
-    parser.add_argument('--mutant_ids',
-            type=comma_list,
-            help='List of specific mutant IDs to kill',
-            default=None)
     parser.add_argument('--sample',
             type=int,
             help='Number of mutants to kill',
@@ -54,40 +41,40 @@ def main():
 
     args = parser.parse_args()
 
-    # Get list of mutants to target
-    mutants_to_kill = []
+    mutants = load_mutants_from_csv(args.map)[:args.sample]
+    killer = MutantKiller(mutants, 
+                          dawn = args.dawn,
+                          cts = args.cts, 
+                          vk_icd = args.vk_icd, 
+                          output_dir = str(args.output)
+                        )
+    killer.kill_all()
 
-    if args.mutant_ids is not None:
-        mutants_to_kill = args.mutant_ids
+def load_mutants_from_csv(path: Path) -> List[Mutant]:
+    """
+    Load mutants from a long-format CSV with columns: 'mutant_id', 'test_name', 'count'.
+    Groups all tests per mutant and returns a list of Mutant objects sorted by ascending count
+    (least-frequently appearing mutants first).
+    """
+    mutant_tests = defaultdict(list)
+    mutant_counts = {}
 
-    mutants_to_kill = get_least_covered_mutants(args.map,
-        args.wgslsmith_touched,
-        sample=args.sample)
+    with open(path, newline='') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            mutant_id = int(row['mutant_id'])
+            test_name = row['test_name']
+            count = int(row['mutant_count'])
+            mutant_tests[mutant_id].append(test_name)
+            mutant_counts[mutant_id] = count  # Assuming count is the same for all rows of a mutant
 
-    if len(mutants_to_kill) == 0:
-        print('No mutants to kill!')
-        exit(1)
+    # Create Mutant objects
+    mutants = [Mutant(mid, tests) for mid, tests in mutant_tests.items()]
 
-    # Kill mutants with CTS
-    print(f'Number of mutants to kill: {len(mutants_to_kill)}')
+    # Sort by ascending count (least frequent first)
+    mutants.sort(key=lambda m: mutant_counts[m.id])
 
-    cts_args=[str(args.info_file_mutated),
-        str(args.info_file_tracked), 
-        str(args.output), # mutant_kill_path
-        '--mutant_sample', f'''{','.join([str(m) for m in mutants_to_kill])}''',
-        '--mutant_to_test_mapping', str(args.map),
-        '--cts_repo', str(args.cts),
-        'mesa',
-        str(args.dawn),
-        str(args.mutated_vk_icd), 
-        str(args.tracked_vk_icd)
-        ]
-
-    run.cts.kill_mutants.main(cts_args)
-
-
-def comma_list(arg):
-    return arg.split(',')
+    return mutants
 
 if __name__=="__main__":
     main()
