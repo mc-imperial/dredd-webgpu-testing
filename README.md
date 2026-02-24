@@ -94,31 +94,49 @@ python -m mutate mesa /path/to/mesa_mutated /path/to/mesa_tracked \
 
 # Run test-wise mutant tracking
 
+Run all tests within the given query in tracking mode. The output will be:
+- A tracking file corresponding to each individual test that lists the mutant IDs that that test touches. For larger queries or the full CTS, the number of files is very large and so the output is compressed.
+- A mapping from mutant ID to the list of test that touches that mutant (i.e. the inverse of the relation in the tracking files)
+- A copy of the stdout recording the outcome of each individual test (pass/fail/skip)
+
 ```
 cd dredd-webgpu-testing
 source venv/bin/activate
 cd src
+../scripts/track.sh
+```
+
+The relevant python command (this will not record the stdout) is:
+```
 python -m track cts \
-    /path/to/mesa/tracked/vk_icd \
-    /path/to/instrumented_dawn \
-    --cts /path/to/instrumented_cts \
-    --query 'webgpu:shader,execution,shadow:while:*'
+    --vk-icd /path/to/mesa/tracked/vk_icd \
+    --dawn /path/to/dawn \
+    --cts /path/to/cts \
+    --output /path/to/save/tracking/files \
+    --query 'webgpu:*'
 ```
 
 This will save out a csv file containing a mapping from each touched mutants to a list of queries that touch it, which will enable us to target mutants efficiently in the killing steps.
 
-If you just want to rerun the mutant map processing (from the raw files to the summary csv):
+## Filter initialisation mutants
+
+Some mutants will appear to be touched by only a few tests, which implies that they are good candidates for killing. But this may be because they are associated with initialisation code (e.g. setting up shared devices) and therefore are potentially touchable by many tests. We want to exclude these mutants.
+
+We identify potential initialisation mutants by running a set of queries in two modes: once in isolation, and once as part of the parent query group. We compare the mutants touched by the query in each mode. Mutants that are touched in isolation mode but *not* in group mode are likely to be initialisation mutants. 
+
+Run the following to get a list of mutant IDs along with the number of sample tests for which that mutant was touched in isolation mode but *not* in group mode. If this number is 0, then the mutant ID is unlikely to be an initialisation mutant. The higher the number, the more likely it is that this mutant is an initialisation mutant. Conservatively, we can exclude all mutants with number greater than 0 from our analysis. Less conservatively, we can exclude mutants that are touched in isolation but not in group mode above some threshold that is greater than 0, for example 50.
+
 ```
-cd dredd-webgpu-testing
-source venv/bin/activate
-cd src
 python -m track cts \
-    /path/to/mesa/tracked/vk_icd \
-    /path/to/instrumented_dawn \
-    --process_map
+    --vk-icd /path/to/mesa/tracked/vk_icd \
+    --dawn /path/to/dawn \
+    --cts /path/to/cts \
+    --output /path/to/save/tracking/files \
+    --identify-initialisation-ids \
+    --query 'webgpu:*'
 ```
 
-## Find mutants that are covered by WGSLsmith
+# Find mutants that are covered by WGSLsmith
 
 For efficiency, we do not want to use resources on mutants that WGSLsmith will not be able to eventually kill. So, we run a sample of e.g. 50 WGSLsmith tests to see which mutants they touch. This will be used to target our CTS mutant killing.
 
