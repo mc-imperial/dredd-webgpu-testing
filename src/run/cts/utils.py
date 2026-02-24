@@ -20,7 +20,7 @@ def run_cts(cts,
         vk_icd : str = '',
         tracking : bool = False,
         mesa_shader_cache: bool = False):
-   
+
     # Run the test with mutant tracking enabled
     print("Running CTS with mutant tracking compiler...")
     
@@ -30,6 +30,9 @@ def run_cts(cts,
     #tracking_environment["DREDD_MUTANT_TRACKING_FILE"] = str(dredd_covered_mutants_path)
 
     tracking_environment["VK_ICD_FILENAMES"] = f'{vk_icd}'
+
+    tracking_environment['CC'] = '/usr/bin/clang-17'
+    tracking_environment['CXX'] = '/usr/bin/clang++-17'
     
     if not mesa_shader_cache:
         tracking_environment["MESA_SHADER_CACHE_DISABLE"]="true"
@@ -49,12 +52,6 @@ def run_cts(cts,
 
     result = subprocess.run(tracking_compile_cmd, 
                             env=tracking_environment)
-
-    if(result.returncode != 0):
-        print(f'Problem running tracking command!: \n{result.stderr}')
-        raise RuntimeError
-    else:
-        print(f'Tracking command finished with return code {result.returncode}')
 
     return result
 
