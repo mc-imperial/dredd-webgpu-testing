@@ -4,6 +4,7 @@ import argparse
 import csv
 import json 
 import zipfile
+import ast
 import re
 import random
 import pandas as pd
@@ -32,6 +33,7 @@ class TestPaths:
     isolated_output: Path
     group_output: Path
     isolated_mutant_csv: Path
+    initialisation_mutants_csv: Path
     stdout: Path
 
 def main():
@@ -89,6 +91,7 @@ def main():
         isolated_output = args.output / 'isolated_output',
         group_output = args.output / 'group_output',
         isolated_mutant_csv = args.output / 'isolated_only_mutants.csv',
+        initialisation_mutants_csv = args.output / 'initialisation_mutant_ids.csv',
         stdout = args.output / 'cts_stdout.txt'
     )
     
@@ -162,10 +165,30 @@ def find_initialisation_mutants(test_paths):
  
     runnable_queries = [(query, group.rstrip(':') + ':*') for (query, group) in sample]
 
-    # Run each sample test in isolation
-    run_tests_in_isolation(runnable_queries, test_paths)
+    # Get comparison of mutant IDs touched in isolation vs in group execution mode
+    run_tests_in_isolation_and_group(runnable_queries, test_paths)
 
-def run_tests_in_isolation(runnable_queries, test_paths):
+    # Generate a list of mutants with the number of times they are touched in isolation vs in group mode
+    print(f'Loading data...')
+    df = pd.read_csv(test_paths.isolated_mutant_csv)
+
+    # Find mutant IDs that are touched when the query is run in isolation
+    # AND when it is run as part of a group
+    unique_ids = (
+        df["isolated_only_ids"]
+        .dropna()
+        .apply(ast.literal_eval)
+        .explode()
+        .unique()
+    )
+
+    print(len(unique_ids))
+    pd.Series(unique_ids, name="unique_id").to_csv(
+        test_paths.initialisation_mutants_csv,
+        index=False
+    )
+
+def run_tests_in_isolation_and_group(runnable_queries, test_paths):
 
     # Open CSV once, write header
     with open(test_paths.isolated_mutant_csv, 'w', newline='') as f:

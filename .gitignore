@@ -15,6 +15,8 @@ reduce/mutant_*
 reduce/backup*
 reduce/reduce_pro*
 data/*
+icst_data/*
+data_wip/*
 
 # PyCharm
 .idea

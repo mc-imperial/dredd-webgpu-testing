@@ -124,7 +124,7 @@ Some mutants will appear to be touched by only a few tests, which implies that t
 
 We identify potential initialisation mutants by running a set of queries in two modes: once in isolation, and once as part of the parent query group. We compare the mutants touched by the query in each mode. Mutants that are touched in isolation mode but *not* in group mode are likely to be initialisation mutants. 
 
-Run the following to get a list of mutant IDs along with the number of sample tests for which that mutant was touched in isolation mode but *not* in group mode. If this number is 0, then the mutant ID is unlikely to be an initialisation mutant. The higher the number, the more likely it is that this mutant is an initialisation mutant. Conservatively, we can exclude all mutants with number greater than 0 from our analysis. Less conservatively, we can exclude mutants that are touched in isolation but not in group mode above some threshold that is greater than 0, for example 50.
+Run the following to get a list of mutant IDs that are likely to be initialisation mutants and should therefore be excluded from our analysis.
 
 ```
 python -m track cts \
