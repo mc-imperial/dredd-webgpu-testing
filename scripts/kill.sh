@@ -13,4 +13,4 @@ python -m kill \
     $DAWN \
     --cts $CTS \
     --map $MAP \
-    --sample 2
+    --sample 2000
