@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import List, Set
 
 from run.cts.map import map_mutants, get_least_covered_mutants
+from run.cts.utils import run_cts
 import run.cts.kill_mutants
 import run.wgslsmith.kill_mutants
 

@@ -15,43 +15,43 @@ class TestStatus(Enum):
 
 def run_cts(cts,
         dawn,
-        dredd_covered_mutants_path : Path,
+        outdir : Path,
         query : str = 'webgpu:*',
         vk_icd : str = '',
-        tracking : bool = False):
-   
+        tracking : bool = False,
+        mesa_shader_cache: bool = False):
+
     # Run the test with mutant tracking enabled
     print("Running CTS with mutant tracking compiler...")
     
     tracking_environment = os.environ.copy()
     
     # Set env vars depending on whether we are doing per-test coverage tracking or not
-    tracking_environment["DREDD_MUTANT_TRACKING_FILE"] = str(dredd_covered_mutants_path)
+    #tracking_environment["DREDD_MUTANT_TRACKING_FILE"] = str(dredd_covered_mutants_path)
 
     tracking_environment["VK_ICD_FILENAMES"] = f'{vk_icd}'
+
+    tracking_environment['CC'] = '/usr/bin/clang-17'
+    tracking_environment['CXX'] = '/usr/bin/clang++-17'
+    
+    if not mesa_shader_cache:
+        tracking_environment["MESA_SHADER_CACHE_DISABLE"]="true"
 
     tracking_compile_cmd = [f'{dawn}/tools/run',
             'run-cts', 
             '--verbose',
             f'--bin={dawn}/out/Debug']
-    #        '--j', '1']
 
     if tracking:
         tracking_compile_cmd.append('--mutant-tracking')
+        tracking_compile_cmd.append(f'--mutant-output={outdir}')
 
     tracking_compile_cmd.extend([
             f'--cts={cts}',
             f"{query}"]) 
 
-    print(tracking_compile_cmd)
     result = subprocess.run(tracking_compile_cmd, 
                             env=tracking_environment)
-
-    if(result.returncode != 0):
-        print(f'Problem running tracking command!: \n{result.stderr}')
-        exit(1)
-    else:
-        print(f'Tracking command finished with return code {result.returncode}')
 
     return result
 

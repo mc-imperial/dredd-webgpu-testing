@@ -119,6 +119,7 @@ def run_wgslsmith_program(program_js : Path,
         exit(1)
         
     if generate:
+        print(f'Generating {program_js}')
         gen_wgslsmith_program(program_js)
 
     env["VK_ICD_FILENAMES"] = str(vk_icd)
@@ -129,6 +130,8 @@ def run_wgslsmith_program(program_js : Path,
 
     if mutants is not None:  
         env["DREDD_ENABLED_MUTATION"] = ','.join([str(m) for m in mutants])
+
+    print(f'Running...')
 
     if self_contained_js:
         run_cmd = ['node', str(program_js), str(dawn_node)]
@@ -145,6 +148,11 @@ def run_wgslsmith_program(program_js : Path,
         print('DREDD_ENABLED_MUTATION not set.')
     try:
         result = subprocess.run(run_cmd, cwd=working_dir, env=env, timeout=timeout, capture_output=True, text = True)
+        if result.returncode != 0:
+            print(f'Problem with program!')
+            print(f'stdout:\n{result.stdout}')
+            print(f'stderr:\n{result.stderr}')
+            raise RuntimeError
     except subprocess.TimeoutExpired:
         print('Timeout expired!')
         return None

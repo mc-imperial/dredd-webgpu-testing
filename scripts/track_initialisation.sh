@@ -6,7 +6,9 @@ DAWN=$BASE/dawn
 CTS=$BASE/webgpu_cts
 VK_ICD=$BASE/mesa_tracked/build/install/share/vulkan/icd.d/lvp_icd.x86_64.json
 OUTPUT=$REPO/data
-LOG=$OUTPUT/cts_stdout.txt
+
+rm -rf $OUTPUT/group_output
+rm -rf $OUTPUT/isolated_output
 
 python -m track cts \
     --vk-icd $VK_ICD \
@@ -14,4 +16,4 @@ python -m track cts \
     --cts $CTS \
     --output $OUTPUT \
     --query 'webgpu:*' \
-    | tee "$LOG"
+    --identify-initialisation-ids

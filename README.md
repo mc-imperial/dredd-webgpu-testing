@@ -20,10 +20,31 @@ source venv/bin/activate
 pip install . 
 ```
 
-# Build Dredd
+# Build modified CTS and Dawn for mutant touching analysis
+
+For efficient killing, we want to know which CTS tests `touch` which mutants. By `touch`, we mean that the code containing the mutant is executed during the test execution. This will allow us to target our testing later on.
+
+For this, we need to use instrumented versions of the CTS and the Dawn harness for running the CTS, which will allow us to track precisely which test is executing code containing each mutant.
+
+Get the instrumented CTS here:
+```
+git clone https://github.com/ambergorzynski/webgpu_cts.git
+cd webgpu_cts
+git checkout mutant_tracking
+npm install
+```
+
+Dawn is very frequently updated. We modify it on a fork that mirrors the official Dawn repo. The Dawn repo makes releases in the form of branches, which we mirror in the fork as release/chromium/xxxx. Our modifications are on the corresponding tracking/chromium/xxxx branch.
+```
+git clone https://github.com/ambergorzynski/dawn.git
+cd dawn
+git checkout tracking/chromium/xxxx
+```
+
+## Build Dredd
 Follow the instructions to build Dredd from source [here][https://github.com/mc-imperial/dredd]
 
-# Mutate Mesa
+## Build Mesa
 
 First, get *two* checkouts of the Mesa version that you want to mutate. Build a `mutated` and `tracked` version once without any Dredd intervention in order to produce a compile commands database. For Mesa:
 ```
@@ -44,76 +65,117 @@ sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-noble.list http://packages.l
 sudo apt update
 sudo apt install vulkan-sdk
 ```
+## Run the build script to ensure commits are aligned
 
-Next, use the script to build and mutate the mutated and tracked subjects. This will:
+```
+cd src
+python -m build.build
+```
+
+# Mutate
+
+## Mutate Mesa
+Use the script to mutate the mutated and tracked subjects. This will:
 - Perform a clean build with the required build options
 - Inject mutants into the mutation version of the subject
 - Inject mutant coverage instrumentation into the tracking version of the subject
+
+The `--reset` option is necessary for test-wise tracking.
 
 ```
 cd dredd-webgpu-testing
 source venv/bin/activate
 cd src
 python -m mutate mesa /path/to/mesa_mutated /path/to/mesa_tracked \
-    --mutation_dir src/gallium/drivers/llvmpipe \
-    --dredd /path/to/dredd
+    --mutation_dir src/compiler/nir \
+    --dredd /path/to/dredd \
+    --reset
 ```
-
-If the mutation subject is Mesa, then in order to continue you must also build a single version of Dawn to run the CTS.
 
 # Run test-wise mutant tracking
 
-For efficient killing, we want to know which CTS tests `touch` which mutants. By `touch`, we mean that the code containing the mutant is executed during the test execution. This will allow us to target our testing later on.
-
-For this, we need to use instrumented versions of the CTS and the Dawn harness for running the CTS, which will allow us to track precisely which test is executing code containing each mutant.
-
-Get the instrumented CTS here:
-```
-git clone https://github.com/ambergorzynski/webgpu_cts.git
-cd webgpu_cts
-git checkout mutant_tracking
-npm install
-```
-
-The patch to instrument Dawn is here:
-`src/patches/dawn_tracking.diff`
-
-Apply the patches like this:
-```
-cd dawn
-git checkout -b tracking
-git apply --whitespace=fix /path/to/dawn_tracking.diff .
-```
-
-There is no need to rebuild Dawn or the CTS. The patch is applied to a Go harness in Dawn that is not part of the build, and the CTS will re-build itself automatically upon running when it detects changes.
-
-Next, run mutant tracking:
+Run all tests within the given query in tracking mode. The output will be:
+- A tracking file corresponding to each individual test that lists the mutant IDs that that test touches. For larger queries or the full CTS, the number of files is very large and so the output is compressed.
+- A mapping from mutant ID to the list of test that touches that mutant (i.e. the inverse of the relation in the tracking files)
+- A copy of the stdout recording the outcome of each individual test (pass/fail/skip)
 
 ```
 cd dredd-webgpu-testing
 source venv/bin/activate
 cd src
+../scripts/track.sh
+```
+
+The relevant python command (this will not record the stdout) is:
+```
 python -m track cts \
-    /path/to/mesa/tracked/vk_icd \
-    /path/to/instrumented_dawn \
-    --cts /path/to/instrumented_cts \
-    --query 'webgpu:shader,execution,shadow:while:*'
+    --vk-icd /path/to/mesa/tracked/vk_icd \
+    --dawn /path/to/dawn \
+    --cts /path/to/cts \
+    --output /path/to/save/tracking/files \
+    --query 'webgpu:*'
 ```
 
 This will save out a csv file containing a mapping from each touched mutants to a list of queries that touch it, which will enable us to target mutants efficiently in the killing steps.
 
-If you just want to rerun the mutant map processing (from the raw files to the summary csv):
+## Filter initialisation mutants
+
+Some mutants will appear to be touched by only a few tests, which implies that they are good candidates for killing. But this may be because they are associated with initialisation code (e.g. setting up shared devices) and therefore are potentially touchable by many tests. We want to exclude these mutants.
+
+We identify potential initialisation mutants by running a set of queries in two modes: once in isolation, and once as part of the parent query group. We compare the mutants touched by the query in each mode. Mutants that are touched in isolation mode but *not* in group mode are likely to be initialisation mutants. 
+
+Run the following to get a list of mutant IDs that are likely to be initialisation mutants and should therefore be excluded from our analysis.
+
+```
+python -m track cts \
+    --vk-icd /path/to/mesa/tracked/vk_icd \
+    --dawn /path/to/dawn \
+    --cts /path/to/cts \
+    --output /path/to/save/tracking/files \
+    --identify-initialisation-ids \
+    --query 'webgpu:*'
+```
+
+## Produce a list of mutants to kill
+Remove the initialisation mutants from the mutant - to - test mapping using this script, which will produce a `mutants_to_kill.csv` in the same folder as the mutant to test map csv:
+```
+python scripts/remove_mutants \
+    /path/to/mutant_to_test_id_map.csv \
+    /path/to/test_id_to_test_name_map.json \
+    /path/to/initialisation_list.csv
+```
+
+# Identify mutants that are not killed by the CTS
+
+The next step is to try to kill mutants using the CTS. We choose the mutants that are touched by only a small number of CTS tests. This means it is quick to determine whether the mutant can be killed by the CTS or not. We exclude mutants that are flagged in our initialisation analysis.
+
+Run the following command to try and kill mutants. The sample parameter sets the limit for the number of mutant kills that will be attempted, starting with mutants that are touched by the fewest tests. This will save the following in the output folder:
+- `mutation_summary.csv` containing a list of all mutants analsed and the killed / surviving outcome, along with time information and which test killed the mutant
+- `run.log` containing similar information to the csv but in log form
+- Two folders: `killed_mutants` and `surviving_mutants`, containing one `.json` file for each mutant along with more detailed information about which tests were attempted for that mutant, timestamps, etc.
+
 ```
 cd dredd-webgpu-testing
 source venv/bin/activate
 cd src
-python -m track cts \
-    /path/to/mesa/tracked/vk_icd \
-    /path/to/instrumented_dawn \
-    --process_map
+python -m kill \
+    /path/to/infofilemutated \
+    /path/to/mesa/mutated/vk_icd \
+    /path/to/dawn \
+    --cts /path/to/cts \
+    --map /path/to/mutants_to_kill_csv \
+    --output /path/for/output \
+    --sample 5
 ```
 
-## Find mutants that are covered by WGSLsmith
+## Analyse results
+
+Run the following analysis script to produce a console summary of the killed and surviving mutants:
+```
+python analyse/analyse_cts_killing.py /path/to/mutation_summary.csv
+```
+
+# WGSLsmith
 
 For efficiency, we do not want to use resources on mutants that WGSLsmith will not be able to eventually kill. So, we run a sample of e.g. 50 WGSLsmith tests to see which mutants they touch. This will be used to target our CTS mutant killing.
 
@@ -138,25 +200,3 @@ python -m track wgslsmith \
     /path/to/instrumented_dawn \
     --wgslsmith_sample 100
 ``` 
-
-# Identify mutants that are not killed by the CTS
-
-The next step is to try to kill mutants using the CTS. We choose the mutants that are:
-(a) Touched by only a small number of CTS tests. This means it is quick to determine whether the mutant can be killed by the CTS or not.
-(b) Touched by a sample of WGSLsmith tests. This ensures that when we use WGSLsmith to try and kill the mutant, we have some reasonable chance of at least touching it.
-
-```
-cd dredd-webgpu-testing
-source venv/bin/activate
-cd src
-python -m kill \
-    /path/to/infofilemutated \
-    /path/to/infofiletracked \
-    /path/to/mesa/mutated/vk_icd \
-    /path/to/mesa/tracked/vk_icd \
-    /path/to/dawn \
-    --cts /path/to/cts \
-    --map /path/to/mutant_to_test_mapping.csv \
-    --wgslsmith_touched /path/to/touched.txt \
-    --sample 5
-```
