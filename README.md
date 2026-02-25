@@ -149,7 +149,10 @@ python scripts/remove_mutants \
 
 The next step is to try to kill mutants using the CTS. We choose the mutants that are touched by only a small number of CTS tests. This means it is quick to determine whether the mutant can be killed by the CTS or not. We exclude mutants that are flagged in our initialisation analysis.
 
-Run the following command to try and kill mutants. The sample parameter sets the limit for the number of mutant kills that will be attempted, starting with mutants that are touched by the fewest tests.
+Run the following command to try and kill mutants. The sample parameter sets the limit for the number of mutant kills that will be attempted, starting with mutants that are touched by the fewest tests. This will save the following in the output folder:
+- `mutation_summary.csv` containing a list of all mutants analsed and the killed / surviving outcome, along with time information and which test killed the mutant
+- `run.log` containing similar information to the csv but in log form
+- Two folders: `killed_mutants` and `surviving_mutants`, containing one `.json` file for each mutant along with more detailed information about which tests were attempted for that mutant, timestamps, etc.
 
 ```
 cd dredd-webgpu-testing
@@ -161,7 +164,15 @@ python -m kill \
     /path/to/dawn \
     --cts /path/to/cts \
     --map /path/to/mutants_to_kill_csv \
+    --output /path/for/output \
     --sample 5
+```
+
+## Analyse results
+
+Run the following analysis script to produce a console summary of the killed and surviving mutants:
+```
+python analyse/analyse_cts_killing.py /path/to/mutation_summary.csv
 ```
 
 # WGSLsmith
