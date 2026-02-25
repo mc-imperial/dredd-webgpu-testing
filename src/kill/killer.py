@@ -2,14 +2,17 @@
 import os
 import csv
 import time
+import signal
 from datetime import datetime, timezone
 from typing import List
-from .mutant import Mutant
-from .utils import write_json_atomic, now_iso
 import subprocess
 import logging
 from tqdm import tqdm
 from pathlib import Path
+
+from .mutant import Mutant
+from .utils import write_json_atomic, now_iso
+from .config import TEST_TIMEOUT_SECONDS
 
 class CTSKillStatus:
     SURVIVED = "SURVIVED"
@@ -81,37 +84,42 @@ class MutantKiller:
 
     def run_cts_test(self, test_name: str, env: dict) -> bool:
         """
-        Run a single CTS test and return True if it passed.
+        Run a single CTS test with a timeout using subprocess.run().
+        Returns True if the test passed, False if it failed or timed out.
         """
-
-        cmd = [f'{self.dawn}/tools/run',
-            'run-cts', 
+        cmd = [
+            f'{self.dawn}/tools/run',
+            'run-cts',
             '--verbose',
             f'--bin={self.dawn}/out/Debug',
             f'--cts={str(self.cts)}',
-            test_name]  
+            test_name
+        ]
 
-        process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            universal_newlines=True,
-            env=env,
-        )
+        try:
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                env=env,
+                timeout=TEST_TIMEOUT_SECONDS
+            )
+            # Output all lines without breaking progress bar
+            for line in result.stdout.splitlines():
+                tqdm.write(line.strip())
 
-        passed = False
-        for line in iter(process.stdout.readline, ""):
-            line = line.strip()
-            tqdm.write(line)
-            if " - pass" in line:
-                passed = True
-            elif "failed to gather tests" in line:
+            if "failed to gather tests" in result.stdout:
                 raise RuntimeError(f"Test '{test_name}' could not be gathered")
 
-        process.stdout.close()
-        process.wait()
-        return passed
+            return " - pass" in result.stdout
+
+        except subprocess.TimeoutExpired:
+            tqdm.write(f"CTS test timed out after {TEST_TIMEOUT_SECONDS}s: {test_name}")
+            return False
+        except Exception as e:
+            logging.warning(f"Exception while running CTS test '{test_name}': {e}")
+            return False
 
     def kill_mutant(self, mutant: Mutant) -> None:
         env = os.environ.copy()
