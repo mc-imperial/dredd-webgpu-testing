@@ -3,6 +3,10 @@ import json
 from pathlib import Path
 from datetime import datetime
 
+class KillStatus:
+    SURVIVED = "SURVIVED"
+    KILLED = "KILLED"
+
 def write_json_atomic(path: Path, data: dict) -> None:
     """
     Write JSON atomically to avoid corruption if the process crashes.

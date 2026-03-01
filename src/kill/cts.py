@@ -13,74 +13,25 @@ from pathlib import Path
 from .mutant import Mutant
 from .utils import write_json_atomic, now_iso
 from .config import TEST_TIMEOUT_SECONDS
+from .base import BaseMutantKiller
 
 class CTSKillStatus:
     SURVIVED = "SURVIVED"
     KILLED = "KILLED"
 
-class MutantKiller:
-    def __init__(self, mutants: List[Mutant], dawn: str, cts: str, vk_icd: str, output_dir: Path):
-        self.mutants = mutants
+class MutantKiller(BaseMutantKiller):
+    def __init__(
+        self,
+        mutants: List[Mutant],
+        dawn: str,
+        cts: str,
+        vk_icd: str,
+        output_dir: Path,
+    ):
+        super().__init__(mutants, output_dir)
         self.dawn = dawn
         self.cts = cts
         self.vk_icd = vk_icd
-        self.output_dir = output_dir
-
-        self.killed_dir = self.output_dir / "killed_mutants"
-        self.survived_dir = self.output_dir / "surviving_mutants"
-
-        self.killed_dir.mkdir(parents=True, exist_ok=True)
-        self.survived_dir.mkdir(parents=True, exist_ok=True)
-
-        self.summary_csv = output_dir / "mutation_summary.csv"
-        self._init_summary_csv()
-
-        logging.basicConfig(
-            filename=self.output_dir / "run.log",
-            level=logging.INFO,
-            format="%(asctime)s %(levelname)s %(message)s",
-        )
-
-    def _init_summary_csv(self):
-        if not self.summary_csv.exists():
-            with open(self.summary_csv, "w", newline="") as f:
-                writer = csv.writer(f)
-                writer.writerow([
-                    "mutant_id",
-                    "status",
-                    "killing_test",
-                    "num_covering_tests",
-                    "num_tests_run_mutated",
-                    "unmutated_time_sec",
-                    "mutated_time_sec",
-                    "total_time_sec",
-                    "timestamp_utc",
-                ])
-        
-    def _append_summary_row(
-        self,
-        mutant_id: int,
-        status: str,
-        killing_test: str,
-        num_covering_tests: int,
-        num_tests_run_mutated: int,
-        unmutated_time: float,
-        mutated_time: float,
-        total_time: float,
-    ):
-        with open(self.summary_csv, "a", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow([
-                mutant_id,
-                status,
-                killing_test,
-                num_covering_tests,
-                num_tests_run_mutated,
-                round(unmutated_time, 3),
-                round(mutated_time, 3),
-                round(total_time, 3),
-                now_iso(),
-            ])
 
     def run_cts_test(self, test_name: str, env: dict) -> bool:
         """
@@ -253,8 +204,3 @@ class MutantKiller:
                         tqdm.write(f"Mutant {mutant.id} killed by {mutant.killing_test}")
                 else:
                     tqdm.write(f"Mutant {mutant.id} survived")
-
-    def _already_processed_ids(self) -> set[int]:
-        killed = {int(p.stem) for p in self.killed_dir.glob("*.json")}
-        survived = {int(p.stem) for p in self.survived_dir.glob("*.json")}
-        return killed | survived
