@@ -61,9 +61,11 @@ class WGSLsmithMutantKiller(BaseMutantKiller):
             prog = tmp / "prog.wgsl"
             js = tmp / "prog.js"
 
+            print('Generating WGSLsmith program')
             if not gen_wgslsmith_program(prog, seed=seed):
                 return
 
+            print('Running WGLSsmith program')
             unmutated = run_wgslsmith_program(
                 js,
                 f"{self.dawn}/out/Debug/dawn.node",

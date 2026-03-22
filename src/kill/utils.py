@@ -134,19 +134,29 @@ def run_wgslsmith_program(
 
     cmd = ["node", str(program_js), str(dawn_node)]
 
+    process = subprocess.Popen(
+        cmd,
+        env=run_env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+
+    output_lines = []
+
     try:
-        result = subprocess.run(
-            cmd,
-            env=run_env,
-            timeout=timeout,
-            capture_output=True,
-            text=True,
-        )
+        for line in process.stdout:
+            print(line, end="")  # live output
+            output_lines.append(line)
+
+        process.wait(timeout=timeout)
+
     except subprocess.TimeoutExpired:
+        process.kill()
         return None
+
+    result_output = "".join(output_lines)
     
-    print(result)
-    exit()
     return result
 
 def extract_output(stdout: str) -> list[int]:
