@@ -1,6 +1,6 @@
 #!/bin/bash
 
-BASE=/home/ubuntu/dev
+BASE=/data/dev
 
 export VK_ICD_FILENAMES=$BASE/mesa_tracked/build/install/share/vulkan/icd.d/lvp_icd.x86_64.json 
 
