@@ -26,16 +26,16 @@ def now_iso() -> str:
 
 def gen_wgslsmith_program(
     program_path: Path,
+    input_path: Path,
     *,
     seed: Optional[int] = None,
     recondition: bool = True,
-    as_js: bool = True,
+    as_js: bool = False,
 ) -> bool:
     """
     Generate a WGSLsmith program at `program_path`.
     Optionally recondition and emit a self-contained JS runner.
     """
-    input_path = program_path.parent / f"{program_path.stem}_inputs.json"
     js_path = program_path.with_suffix(".js")
 
     cmd = ["wgslsmith", "gen", "-o", str(program_path)]
@@ -103,6 +103,49 @@ def _gen_js_program(
         f.write(f"const expectedArray = [{input_array}];\n")
         f.write(f"const shaderCode = `\n{shader_code}`;\n")
         f.write(boilerplate_code)
+
+def run_wgslsmith_program_harness(
+    harness: Path,
+    program_wgsl: Path,
+    inputs_json: Path,
+    vk_icd: Optional[str] = None,
+    mutants: Optional[List[int]] = None,
+    tracking: Optional[Path] = None,
+    timeout: int = 60,
+    env: Optional[dict] = None,
+    ):
+    
+    if tracking and mutants:
+        raise ValueError("Cannot enable tracking and mutants simultaneously")
+
+    run_env = (env or os.environ).copy()
+
+    if vk_icd:
+        run_env["VK_ICD_FILENAMES"] = str(vk_icd)
+
+    if tracking:
+        run_env["DREDD_MUTANT_TRACKING_FILE"] = str(tracking)
+
+    if mutants:
+        run_env["DREDD_ENABLED_MUTATION"] = ",".join(map(str, mutants))
+
+    cmd = [harness, 'run', str(program_wgsl), str(inputs_json)]
+
+    print(f'Run cmd: {cmd}')
+    
+    result = subprocess.run(
+        cmd,
+        env=run_env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        timeout=timeout,
+    )
+
+    print(result.stdout)
+    exit()
+    
+    return result
 
 def run_wgslsmith_program(
     program_js: Path,

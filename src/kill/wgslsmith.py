@@ -13,6 +13,7 @@ from .utils import (
     KillStatus,
     gen_wgslsmith_program,
     run_wgslsmith_program,
+    run_wgslsmith_program_harness,
     extract_output,
 )
 
@@ -60,18 +61,31 @@ class WGSLsmithMutantKiller(BaseMutantKiller):
         with test_work_dir(self.debug_dir, test_name) as tmp:
             prog = tmp / "prog.wgsl"
             js = tmp / "prog.js"
+            inputs = tmp / "input.json"
 
-            print('Generating WGSLsmith program')
-            if not gen_wgslsmith_program(prog, seed=seed):
+            print(f'Generating WGSLsmith program in {prog}')
+            if not gen_wgslsmith_program(prog, inputs, seed=seed):
                 return
 
             print('Running WGSLsmith program')
-            unmutated = run_wgslsmith_program(
-                js,
-                f"{self.dawn}/out/Debug/dawn.node",
-                vk_icd=self.vk_icd,
-                timeout=self.run_timeout,
-            )
+            #TODO: parameterise harness
+            use_harness=True
+            harness = Path('/data/dev/wgslsmith_harness/wgslsmith-harness')
+            if use_harness:
+                unmutated = run_wgslsmith_program_harness(
+                    harness,
+                    prog,
+                    inputs,
+                    vk_icd=self.vk_icd, # If vk_icd is set to None, harness uses default driver
+                    timeout=self.run_timeout
+                )
+            else:
+                unmutated = run_wgslsmith_program(
+                    js,
+                    f"{self.dawn}/out/Debug/dawn.node",
+                    vk_icd=self.vk_icd,
+                    timeout=self.run_timeout,
+                )
 
             if unmutated is None or not unmutated.returncode != 0:
                 print('Problem with WGLSsmith program')
