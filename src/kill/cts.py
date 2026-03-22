@@ -11,15 +11,13 @@ from tqdm import tqdm
 from pathlib import Path
 
 from .mutant import Mutant
-from .utils import write_json_atomic, now_iso
+from .utils import write_json_atomic, now_iso, KillStatus
 from .config import TEST_TIMEOUT_SECONDS
 from .base import BaseMutantKiller
 
-class CTSKillStatus:
-    SURVIVED = "SURVIVED"
-    KILLED = "KILLED"
 
-class MutantKiller(BaseMutantKiller):
+
+class CTSMutantKiller(BaseMutantKiller):
     def __init__(
         self,
         mutants: List[Mutant],
