@@ -77,7 +77,7 @@ class WGSLsmithMutantKiller(BaseMutantKiller):
                     prog,
                     inputs,
                     vk_icd=self.vk_icd, # If vk_icd is set to None, harness uses default driver
-                    timeout=self.run_timeout
+                    timeout=300
                 )
             else:
                 unmutated = run_wgslsmith_program(

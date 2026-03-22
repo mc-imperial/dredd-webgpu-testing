@@ -113,6 +113,7 @@ def run_wgslsmith_program_harness(
     tracking: Optional[Path] = None,
     timeout: int = 60,
     env: Optional[dict] = None,
+    device: Optional[str] = None,
     ):
     
     if tracking and mutants:
@@ -129,9 +130,13 @@ def run_wgslsmith_program_harness(
     if mutants:
         run_env["DREDD_ENABLED_MUTATION"] = ",".join(map(str, mutants))
 
-    cmd = [harness, 'run', str(program_wgsl), str(inputs_json)]
+    cmd = [harness, 
+           'run', 
+           str(program_wgsl), 
+           str(inputs_json)]
 
-    print(f'Run cmd: {cmd}')
+    if device:
+        cmd.extend(['--config', device])
     
     result = subprocess.run(
         cmd,
@@ -141,9 +146,6 @@ def run_wgslsmith_program_harness(
         text=True,
         timeout=timeout,
     )
-
-    print(result.stdout)
-    exit()
     
     return result
 
