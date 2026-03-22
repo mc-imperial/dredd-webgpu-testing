@@ -7,7 +7,7 @@ from pathlib import Path
 
 from src.kill.utils import run_wgslsmith_program_harness, gen_wgslsmith_program
 
-TIME_LIMIT = 1 * 60  # 10 minutes in seconds
+TIME_LIMIT = 15 * 60  # 15 minutes in seconds
 
 def main():
     base = Path("/data/dev")
