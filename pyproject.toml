@@ -32,5 +32,6 @@ dependencies = [
   "meson==1.7.0",
   "ply==3.11",
   "PyYAML==6.0.2",
+  "tqdm==4.67.1"
 ]
 

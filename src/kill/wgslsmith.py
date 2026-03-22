@@ -56,7 +56,6 @@ class WGSLsmithMutantKiller(BaseMutantKiller):
                 return
 
             baseline = extract_output(unmutated.stdout)
-
             # Run mutated
             mutated = run_wgslsmith_program(
                 js,
