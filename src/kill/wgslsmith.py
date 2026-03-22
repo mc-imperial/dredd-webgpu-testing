@@ -2,52 +2,71 @@ import json
 import logging
 import random
 import tempfile
+import shutil
 from pathlib import Path
 
 from .base import BaseMutantKiller
 from .mutant import Mutant
-from .utils import write_json_atomic, now_iso, KillStatus
-
-from run.wgslsmith.utils import (
+from .utils import (
+    write_json_atomic,
+    now_iso, 
+    KillStatus,
     gen_wgslsmith_program,
     run_wgslsmith_program,
     extract_output,
 )
+
 from common.run_test import compare_results, KillStatus
+from contextlib import contextmanager
+import random
+
+@contextmanager
+def test_work_dir(debug_root: Path | None, name: str):
+    if debug_root is None:
+        with tempfile.TemporaryDirectory(prefix=name + "_") as tmp:
+            yield Path(tmp)
+    else:
+        debug_root.mkdir(parents=True, exist_ok=True)
+        work = debug_root / name
+        work.mkdir(exist_ok=False)
+        yield work
 
 class WGSLsmithMutantKiller(BaseMutantKiller):
     def __init__(
         self,
         mutants,
-        wgslsmith_root: Path,
+        wgslsmith: Path,
         dawn: Path,
         vk_icd: str,
         output_dir: Path,
         run_timeout: int = 60,
+        debug: bool = False
     ):
         super().__init__(mutants, output_dir)
-        self.wgslsmith_root = wgslsmith_root
+        self.wgslsmith = wgslsmith
         self.dawn = dawn
         self.vk_icd = vk_icd
         self.run_timeout = run_timeout
 
+        if debug:
+            self.debug_dir = Path("/tmp/wgslsmith_debug")
+        else:
+            self.debug_dir = None
+
     def kill_mutant(self, mutant: Mutant) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp = Path(tmp)
+        seed = random.randint(0, 2**32 - 1)
+        test_name = f"wgslsmith_{seed}"
+
+        with test_work_dir(self.debug_dir, test_name) as tmp:
             prog = tmp / "prog.wgsl"
             js = tmp / "prog.js"
 
-            seed = random.randint(0, 2**32 - 1)
-            test_name = f"wgslsmith_{seed}"
-
-            # Generate program
-            if not gen_wgslsmith_program(prog, seed):
+            if not gen_wgslsmith_program(prog, seed=seed):
                 return
 
-            # Run unmutated
             unmutated = run_wgslsmith_program(
                 js,
-                self.dawn,
+                f"{self.dawn}/out/Debug/dawn.node",
                 vk_icd=self.vk_icd,
                 timeout=self.run_timeout,
             )
