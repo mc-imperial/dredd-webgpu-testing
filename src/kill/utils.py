@@ -133,29 +133,15 @@ def run_wgslsmith_program(
         run_env["DREDD_ENABLED_MUTATION"] = ",".join(map(str, mutants))
 
     cmd = ["node", str(program_js), str(dawn_node)]
-
-    process = subprocess.Popen(
+    
+    result = subprocess.run(
         cmd,
         env=run_env,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
+        timeout=timeout,
     )
-
-    output_lines = []
-
-    try:
-        for line in process.stdout:
-            print(line, end="")  # live output
-            output_lines.append(line)
-
-        process.wait(timeout=timeout)
-
-    except subprocess.TimeoutExpired:
-        process.kill()
-        return None
-
-    result_output = "".join(output_lines)
     
     return result
 

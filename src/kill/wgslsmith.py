@@ -65,7 +65,7 @@ class WGSLsmithMutantKiller(BaseMutantKiller):
             if not gen_wgslsmith_program(prog, seed=seed):
                 return
 
-            print('Running WGLSsmith program')
+            print('Running WGSLsmith program')
             unmutated = run_wgslsmith_program(
                 js,
                 f"{self.dawn}/out/Debug/dawn.node",
@@ -73,10 +73,17 @@ class WGSLsmithMutantKiller(BaseMutantKiller):
                 timeout=self.run_timeout,
             )
 
-            if unmutated is None or unmutated.returncode != 0:
+            if unmutated is None or not unmutated.returncode != 0:
+                print('Problem with WGLSsmith program')
                 return
 
+            print('Extracting output from unmutated program')
             baseline = extract_output(unmutated.stdout)
+
+            print('Baseline:')
+            print(baseline)
+            exit()
+            
             # Run mutated
             mutated = run_wgslsmith_program(
                 js,
