@@ -6,49 +6,45 @@ from collections import defaultdict
 from typing import List
 
 from .mutant import Mutant
-from .killer import MutantKiller
+from .cts import CTSMutantKiller           
+from .wgslsmith import WGSLsmithMutantKiller
 
-def main():
-    
+def build_parser() -> argparse.ArgumentParser:
+
     root = Path(os.path.dirname(os.path.abspath(__file__))).parent.parent
 
-    parser = argparse.ArgumentParser()
-    
-    parser.add_argument('info_file_mutated',
-            type=Path,
-            help = "Path to mutated info file")
-    parser.add_argument('vk_icd',
-            type=Path,
-            help = "Path to mutated_mesa vk_icd.json")
-    parser.add_argument('dawn',
-            type=Path,
-            help='Path to Dawn')
-    parser.add_argument('--cts',
-            type=Path,
-            help='Path to CTS',
-            default="")
-    parser.add_argument('--output',
-            type=Path,
-            default=Path(root, 'data', 'mutant_killing'))
-    parser.add_argument('--map',
-            type=Path,
-            help='Path to mutant to mapping csv file that maps each mutant to a set of queries that cover it',
-            default='')
-    parser.add_argument('--sample',
-            type=int,
-            help='Number of mutants to kill',
-            default=3)
+    parser = argparse.ArgumentParser(
+        prog="mutant-killer",
+        description="Kill mutants using different backends",
+    )
 
-    args = parser.parse_args()
+    subparsers = parser.add_subparsers(dest="backend", required=True)
 
-    mutants = load_mutants_from_csv(args.map)[:args.sample]
-    killer = MutantKiller(mutants, 
-                          dawn = args.dawn,
-                          cts = args.cts, 
-                          vk_icd = args.vk_icd, 
-                          output_dir = args.output
-                        )
-    killer.kill_all()
+    # ---------------- CTS ----------------
+    cts = subparsers.add_parser("cts", help="Kill mutants using CTS")
+    cts.add_argument("--info-file-mutated", type=Path, required=True)
+    cts.add_argument("--dawn", required=True)
+    cts.add_argument("--cts", required=True)
+    cts.add_argument("--vk-icd", required=True)
+    cts.add_argument('--map', type=Path, required=True,
+                     help='Path to mutant to mapping csv file that maps each mutant to a set of queries that cover it')
+    cts.add_argument("--out", type=Path, default=Path(root, 'data', 'cts_mutant_killing'))
+    cts.add_argument("--sample", type=int, default=5)
+
+    # ---------------- WGSLsmith ----------------
+    wgslsmith = subparsers.add_parser("wgslsmith", help="Kill mutants using WGSLsmith")
+    wgslsmith.add_argument("--wgslsmith", type=Path, required=True)
+    wgslsmith.add_argument("--dawn", type=Path, required=True)
+    wgslsmith.add_argument("--vk-icd", required=True)
+    wgslsmith.add_argument("--out", type=Path, default=Path(root, 'data', 'wgslsmith_mutant_killing'))
+    wgslsmith.add_argument("--run-timeout", type=int, default=60)
+    wgslsmith.add_argument("--debug",
+                            action=argparse.BooleanOptionalAction,
+                            default=False,
+                            help="Keep per-test working directories for debugging")
+
+    return parser
+
 
 def load_mutants_from_csv(path: Path) -> List[Mutant]:
     """
@@ -75,6 +71,40 @@ def load_mutants_from_csv(path: Path) -> List[Mutant]:
     mutants.sort(key=lambda m: mutant_counts[m.id])
 
     return mutants
+
+def main(argv=None):
+    parser = build_parser()
+    args = parser.parse_args(argv)
+
+    if args.backend == "cts":
+        # TODO: extract mutant loading 
+        mutants = load_mutants_from_csv(args.map)
+        killer = CTSMutantKiller(
+            mutants=mutants,
+            dawn=args.dawn,
+            cts=args.cts,
+            vk_icd=args.vk_icd,
+            output_dir=args.out,
+        )
+
+    elif args.backend == "wgslsmith":
+        #TODO: Load mutants properly
+        mutants = [Mutant(i, '') for i in range(0,5)] # Placeholder
+
+        killer = WGSLsmithMutantKiller(
+            mutants=mutants,
+            wgslsmith=args.wgslsmith,
+            dawn=args.dawn,
+            vk_icd=args.vk_icd,
+            output_dir=args.out,
+            run_timeout=args.run_timeout,
+            debug=args.debug
+        )
+
+    else:
+        parser.error("Unknown backend")
+
+    killer.kill_all()
 
 if __name__=="__main__":
     main()
