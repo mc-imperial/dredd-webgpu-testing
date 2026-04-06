@@ -5,7 +5,7 @@ import os
 
 from pathlib import Path
 
-from src.kill.utils import gen_wgslsmith_program, run_wgslsmith_program
+from src.kill.utils import gen_wgslsmith_program, run_wgslsmith_program_harness
 
 class Shader():
     def __init__(self,
@@ -18,28 +18,30 @@ class Profiler():
                  output: Path,
                  sample: int | None = 1) -> None:
         self.output = output
-        self.shaders = output / 'shaders'
-        self.profile_data = output / 'profile_data'
+        self.shader_dir = output / 'shaders'
+        self.profile_dir = output / 'profile_data'
         self.sample = sample 
+        self.vk_icd = '/data/dev/mesa/build/install/share/vulkan/icd.d/lvp_icd.x86_64.json'
+        self.device = 'dawn:vk:0'
 
-        for dr in [self.output, self.shaders, self.profile_data]:
+        for dr in [self.output, self.shader_dir, self.profile_dir]:
             dr.mkdir(parents=True, exist_ok=True)
 
-        self.shaders = [Shader(p) for p in self.shaders.iterdir() if p.is_dir()]
+        self.shaders = [Shader(p) for p in self.shader_dir.iterdir() if p.is_dir()]
 
         if sample:
             self.shaders = self.shaders[:sample]
 
     def generate_batch(self):
         for i in range(self.sample):
-            print(f'Generating test [{i}/{n}]')
+            print(f'Generating test [{i}/{self.sample}]')
             self.generate()
 
     def generate(self):
         seed = random.randint(0, 2**32 - 1)
         test_name = f"wgslsmith_{seed}"
 
-        test_dir = self.shaders / test_name
+        test_dir = self.shader_dir / test_name
         
         test_dir.mkdir(parents=True, exist_ok=False)
 
@@ -52,6 +54,17 @@ class Profiler():
     def profile(self):
         print(f'Profiling {len(self.shaders)} shaders...')
 
+        for shader in self.shaders:
+
+            result = run_wgslsmith_program_harness(
+                shader.shader,
+                shader.inputs,
+                vk_icd=self.vk_icd, # If vk_icd is set to None, harness uses default driver
+                device=self.device,
+                timeout=300
+            )
+
+            print(result.stdout)
 
 def main():
     args = argparse.ArgumentParser()
