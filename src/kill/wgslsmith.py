@@ -73,9 +73,9 @@ class WGSLsmithMutantKiller(BaseMutantKiller):
             harness = Path('/data/dev/wgslsmith_harness/wgslsmith-harness')
             if use_harness:
                 unmutated = run_wgslsmith_program_harness(
-                    harness,
                     prog,
                     inputs,
+                    harness=harness,
                     vk_icd=self.vk_icd, # If vk_icd is set to None, harness uses default driver
                     timeout=300
                 )

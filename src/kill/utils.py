@@ -105,9 +105,9 @@ def _gen_js_program(
         f.write(boilerplate_code)
 
 def run_wgslsmith_program_harness(
-    harness: Path,
     program_wgsl: Path,
     inputs_json: Path,
+    harness: Path = None,
     vk_icd: Optional[str] = None,
     mutants: Optional[List[int]] = None,
     tracking: Optional[Path] = None,
@@ -130,10 +130,14 @@ def run_wgslsmith_program_harness(
     if mutants:
         run_env["DREDD_ENABLED_MUTATION"] = ",".join(map(str, mutants))
 
-    cmd = [harness, 
-           'run', 
-           str(program_wgsl), 
-           str(inputs_json)]
+    if harness:
+        cmd = [harness] 
+    else:
+        cmd = ['wgslsmith', 'harness']
+
+    cmd.extend(['run', 
+            str(program_wgsl), 
+            str(inputs_json)])
 
     if device:
         cmd.extend(['--config', device])
