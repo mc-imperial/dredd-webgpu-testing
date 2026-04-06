@@ -190,16 +190,22 @@ def run_wgslsmith_program(
     
     return result
 
-def extract_output(stdout: str) -> list[int]:
+def extract_output(s: str) -> list[int]:
     """
     Extract integer output array from WGSLsmith program stdout.
     """
-    s = stdout.replace("\n", "").replace(" ", "")
 
-    start = s.find("[", s.find("result")) + 1
+    if s is None:
+        return ['none']
+
+    if 'timeout' in s:
+        return ['timeout']
+
+    start = s.find("[", s.find("0:1 : ")) + 1
     end = s.find("]", start)
 
     if start <= 0 or end <= start:
-        return []
+        print(s)
+        return ['problem']
 
     return [int(x) for x in s[start:end].split(",") if x]
