@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-source ./.env
+source ./env
 
 echo $DREDD_COMMIT
 
