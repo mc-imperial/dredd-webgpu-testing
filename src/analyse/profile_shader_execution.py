@@ -10,7 +10,7 @@ from src.kill.utils import gen_wgslsmith_program, run_wgslsmith_program_harness
 class Shader():
     def __init__(self,
                  base: Path):
-        self.shader = base / 'prog.wgsl'
+        self.shader = base / 'original.wgsl'
         self.inputs = base / 'input.json'
 
 class Profiler():
@@ -22,7 +22,7 @@ class Profiler():
         self.profile_dir = output / 'profile_data'
         self.sample = sample 
         self.vk_icd = '/data/dev/mesa/build/install/share/vulkan/icd.d/lvp_icd.x86_64.json'
-        self.device = 'dawn:vk:0'
+        self.device = 'dawn:vk:7425'
 
         for dr in [self.output, self.shader_dir, self.profile_dir]:
             dr.mkdir(parents=True, exist_ok=True)
@@ -55,11 +55,11 @@ class Profiler():
         print(f'Profiling {len(self.shaders)} shaders...')
 
         for shader in self.shaders:
-
+            print(f'Shader: {shader.shader.parent.name}')
             result = run_wgslsmith_program_harness(
                 shader.shader,
                 shader.inputs,
-                vk_icd=self.vk_icd, # If vk_icd is set to None, harness uses default driver
+                #vk_icd=self.vk_icd, # If vk_icd is set to None, harness uses default driver
                 device=self.device,
                 timeout=300
             )

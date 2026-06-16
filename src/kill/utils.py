@@ -145,9 +145,9 @@ def run_wgslsmith_program_harness(
     result = subprocess.run(
         cmd,
         env=run_env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
+        #stdout=subprocess.PIPE,
+        #stderr=subprocess.STDOUT,
+        #text=True,
         timeout=timeout,
     )
     
