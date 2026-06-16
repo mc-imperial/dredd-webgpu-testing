@@ -1,0 +1,18 @@
+# Config variables for build
+
+# Dredd
+DREDD_COMMIT=c715ae9b39ce5adfb40e08de1fc642745f8c20ef
+
+# Mesa
+MESA_COMMIT=c715ae9b39ce5adfb40e08de1fc642745f8c20ef
+
+# Dawn
+DAWN_COMMIT=c715ae9b39ce5adfb40e08de1fc642745f8c20ef
+
+# WGSLsmith
+WGSLSMITH_COMMIT=c715ae9b39ce5adfb40e08de1fc642745f8c20ef
+
+# WebGPU CTS
+CTS_COMMIT=c715ae9b39ce5adfb40e08de1fc642745f8c20ef
+
+# Filepaths
