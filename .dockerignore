@@ -1,0 +1,16 @@
+.git
+.gitmodules
+
+__pycache__
+*.pyc
+
+venv
+.venv
+
+node_modules
+
+build
+builddir
+dist
+
+results
