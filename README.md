@@ -2,6 +2,14 @@
 
 Generate new tests for the WebGPU CTS using mutation testing and fuzzing.
 
+# Dockerised setup
+
+To build the image and run the container:
+```
+./setup/build_image.sh
+./setup/run_image.sh
+```
+
 # Build 
 
 Prerequisites:
@@ -22,15 +30,14 @@ pip install .
 
 # Build modified CTS and Dawn for mutant touching analysis
 
-For efficient killing, we want to know which CTS tests `touch` which mutants. By `touch`, we mean that the code containing the mutant is executed during the test execution. This will allow us to target our testing later on.
+For efficient killing, we want to know which CTS tests `reach` which mutants. By `reach`, we mean that the code containing the mutant is executed during the test execution. This will allow us to target our testing later on.
 
 For this, we need to use instrumented versions of the CTS and the Dawn harness for running the CTS, which will allow us to track precisely which test is executing code containing each mutant.
 
 Get the instrumented CTS here:
 ```
-git clone https://github.com/ambergorzynski/webgpu_cts.git
-cd webgpu_cts
-git checkout mutant_tracking
+git clone https://github.com/gpuweb/cts.git
+cd cts
 npm install
 ```
 
