@@ -2,15 +2,24 @@ import json
 import os
 import subprocess
 import time
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
+
+@dataclass
+class CTSRunConfig:
+    cts: Path
+    dawn: Path
+    query: str
+    vk_icd: Path
+    mesa_shader_cache: bool
 
 @dataclass
 class CTSRunResult:
     """Results and metadata from a single CTS execution."""
 
+    config: CTSRunConfig
     outdir: Path
-    elapsed_time: float
+    time_seconds: float
     returncode: int
 
 class CTS:
@@ -24,11 +33,14 @@ class CTS:
         vk_icd: Path,
         mesa_shader_cache: bool = False,
     ):
-        self.cts = Path(cts)
-        self.dawn = Path(dawn)
-        self.query = query
-        self.vk_icd = Path(vk_icd)
-        self.mesa_shader_cache = mesa_shader_cache
+
+        self.config = CTSRunConfig(
+            cts=Path(cts),
+            dawn=Path(dawn),
+            query=query,
+            vk_icd=Path(vk_icd),
+            mesa_shader_cache=mesa_shader_cache,
+        )
 
     def run(self, outdir: Path) -> CTSRunResult:
         """Run the CTS and save its output to ``outdir``."""
@@ -40,18 +52,18 @@ class CTS:
         run_file = outdir / "run.json"
 
         cmd = [
-            f"{self.dawn}/tools/run",
+            f"{self.config.dawn}/tools/run",
             "run-cts",
             "--verbose",
-            f"--bin={self.dawn}/out/Debug",
-            f"--cts={self.cts}",
-            self.query,
+            f"--bin={self.config.dawn}/out/Debug",
+            f"--cts={self.config.cts}",
+            self.config.query,
         ]
 
         env = os.environ.copy()
-        env["VK_ICD_FILENAMES"] = str(self.vk_icd)
+        env["VK_ICD_FILENAMES"] = str(self.config.vk_icd)
 
-        if self.mesa_shader_cache:
+        if self.config.mesa_shader_cache:
             env["MESA_SHADER_CACHE_DISABLE"] = "true"
 
         print("Running CTS:")
@@ -81,19 +93,14 @@ class CTS:
         print(f"CTS completed in {elapsed_time:.2f} seconds")
 
         run = CTSRunResult(
+            config=self.config,
             outdir=outdir,
             elapsed_time=elapsed_time,
             returncode=process.returncode,
         )
 
         run_file.write_text(
-            json.dumps(
-                {
-                    "elapsed_time": run.elapsed_time,
-                    "returncode": run.returncode,
-                },
-                indent=2,
-            )
+            json.dumps(asdict(run), indent=2, default=str)
         )
 
         return run
