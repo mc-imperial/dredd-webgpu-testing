@@ -55,13 +55,12 @@ def main() -> int:
         cts = CTS(
             cts=Path(os.environ["CTS"]),
             dawn=Path(os.environ["DAWN"]),
-            query=args.query,
             vk_icd=Path(args.vk_icd),
         )
 
         output = Path(args.outdir, "run_001")
 
-        run = cts.run(output)
+        run = cts.run(query=query, outdir=output)
 
         results = run.get_test_results()
 
