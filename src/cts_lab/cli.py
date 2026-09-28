@@ -59,7 +59,7 @@ def main() -> int:
             vk_icd=Path(args.vk_icd),
         )
 
-        cts.run(args.outdir)
+        run = cts.run(Path(args.outdir, "run_001"))
 
         return 0
 

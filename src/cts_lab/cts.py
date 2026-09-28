@@ -1,7 +1,17 @@
 import json
 import os
 import subprocess
+import time
+from dataclasses import dataclass
 from pathlib import Path
+
+@dataclass
+class CTSRunResult:
+    """Results and metadata from a single CTS execution."""
+
+    outdir: Path
+    elapsed_time: float
+    returncode: int
 
 class CTS:
     """Run the WebGPU Conformance Test Suite and analyse its results."""
@@ -20,13 +30,14 @@ class CTS:
         self.vk_icd = Path(vk_icd)
         self.mesa_shader_cache = mesa_shader_cache
 
-    def run(self, outdir: Path) -> subprocess.CompletedProcess:
+    def run(self, outdir: Path) -> CTSRunResult:
         """Run the CTS and save its output to ``outdir``."""
 
         outdir = Path(outdir)
         outdir.mkdir(parents=True, exist_ok=True)
 
         stdout_file = outdir / "stdout.txt"
+        run_file = outdir / "run.json"
 
         cmd = [
             f"{self.dawn}/tools/run",
@@ -46,6 +57,8 @@ class CTS:
         print("Running CTS:")
         print(" ".join(cmd))
 
+        start_time = time.perf_counter()
+
         with stdout_file.open("w") as f:
             process = subprocess.Popen(
                 cmd,
@@ -63,10 +76,27 @@ class CTS:
 
             returncode = process.wait()
 
-        return subprocess.CompletedProcess(
-            args=cmd,
-            returncode=returncode,
+        elapsed_time = time.perf_counter() - start_time
+
+        print(f"CTS completed in {elapsed_time:.2f} seconds")
+
+        run = CTSRunResult(
+            outdir=outdir,
+            elapsed_time=elapsed_time,
+            returncode=process.returncode,
         )
+
+        run_file.write_text(
+            json.dumps(
+                {
+                    "elapsed_time": run.elapsed_time,
+                    "returncode": run.returncode,
+                },
+                indent=2,
+            )
+        )
+
+        return run
 
     @staticmethod
     def extract_status(status_part: str) -> str:
