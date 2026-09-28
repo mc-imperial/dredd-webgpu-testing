@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+# Run the full CTS.
+
 set -euo pipefail
 
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)

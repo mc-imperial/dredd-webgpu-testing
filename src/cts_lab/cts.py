@@ -65,6 +65,15 @@ class CTSRunResult:
 
         return "unknown"
 
+@dataclass
+class CTSIsolatedRunResult:
+    results: list[CTSRunResult]
+    time_seconds: float
+
+    @property
+    def total_tests(self) -> int:
+        return len(self.results)
+
 class CTS:
     """Run the WebGPU Conformance Test Suite and analyse its results."""
 
@@ -148,3 +157,41 @@ class CTS:
         )
 
         return run
+
+class CTSIsolatedRunner:
+    def __init__(self, cts: CTS, outdir: Path):
+        self.cts = cts
+        self.outdir = Path(outdir)
+
+    def run_tests(self, test_names: list[str]) -> CTSIsolatedRunResult:
+        results = []
+        run_file = self.outdir / "run_info.json"
+
+        start_time = time.perf_counter()
+
+        for test_name in test_names:
+            outdir = self.outdir / self._test_dirname(test_name)
+
+            result = self.cts.run(
+                query=test_name,
+                outdir=outdir,
+            )
+
+            results.append(result)
+
+        time_seconds = time.perf_counter() - start_time
+
+        result = CTSIsolatedRunResult(
+            results=results,
+            time_seconds=time_seconds,
+        )
+
+        run_file.write_text(
+            json.dumps(asdict(result), indent=2, default=str)
+        )
+
+        return result
+
+    @staticmethod
+    def _test_dirname(test_name: str) -> str:
+        return test_name.replace(":", "_").replace(",", "_")
