@@ -1,4 +1,8 @@
 import argparse
+import os
+from pathlib import Path
+
+from cts_lab.cts import CTS
 
 def main() -> int:
     parser = argparse.ArgumentParser(
@@ -26,16 +30,37 @@ def main() -> int:
     )
 
     run_parser.add_argument(
-        "--query",
+        "--vk-icd",
         required=True,
+        help="VK_ICD_FILENAMES environment variable."
+    )
+
+    run_parser.add_argument(
+        "--outdir",
+        required=True,
+        help="Output root directory."
+    )
+
+    run_parser.add_argument(
+        "--query",
+        default="webgpu:*",
         help="CTS test query.",
     )
 
     args = parser.parse_args()
 
     if args.command == "run":
-        # Call your experiment/CTS code here.
         print(f"Running CTS with query: {args.query}")
+
+        cts = CTS(
+            cts=Path(os.environ["CTS"]),
+            dawn=Path(os.environ["DAWN"]),
+            query=args.query,
+            vk_icd=Path(args.vk_icd),
+        )
+
+        cts.run(args.outdir)
+
         return 0
 
     parser.print_help()

@@ -3,7 +3,6 @@ import os
 import subprocess
 from pathlib import Path
 
-
 class CTS:
     """Run the WebGPU Conformance Test Suite and analyse its results."""
 
@@ -27,7 +26,7 @@ class CTS:
         outdir = Path(outdir)
         outdir.mkdir(parents=True, exist_ok=True)
 
-        stdout = outdir / "stdout.txt"
+        stdout_file = outdir / "stdout.txt"
 
         cmd = [
             f"{self.dawn}/tools/run",
@@ -40,8 +39,6 @@ class CTS:
 
         env = os.environ.copy()
         env["VK_ICD_FILENAMES"] = str(self.vk_icd)
-        env["CC"] = "/usr/bin/clang-17"
-        env["CXX"] = "/usr/bin/clang++-17"
 
         if self.mesa_shader_cache:
             env["MESA_SHADER_CACHE_DISABLE"] = "true"
@@ -49,17 +46,27 @@ class CTS:
         print("Running CTS:")
         print(" ".join(cmd))
 
-        result = subprocess.run(
-            cmd,
-            env=env,
-            check=False,
-            text=True,
-            capture_output=True,
+        with stdout_file.open("w") as f:
+            process = subprocess.Popen(
+                cmd,
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+            )
+
+            for line in process.stdout:
+                print(line, end="")
+                f.write(line)
+                f.flush()
+
+            returncode = process.wait()
+
+        return subprocess.CompletedProcess(
+            args=cmd,
+            returncode=returncode,
         )
-
-        stdout.write_text(result.stdout)
-
-        return result
 
     @staticmethod
     def extract_status(status_part: str) -> str:
