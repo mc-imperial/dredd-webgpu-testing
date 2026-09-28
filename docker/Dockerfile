@@ -140,7 +140,7 @@ ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
 WORKDIR ${PROJECT_ROOT}
 
 RUN pip install --upgrade pip \
-    && pip install .
+    && pip install -e .
 
 # ---------------------------------------------------------------------------
 # Default command

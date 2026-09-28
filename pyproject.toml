@@ -1,24 +1,18 @@
 [build-system]
-requires = ["setuptools"]
+requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
-[metadata]
-name = "dredd_webpgu_testing"
-version = "0.0.1"
-
-[tool.setuptools.packages]
-find = {}  # Scan the project directory with the default parameters
-
 [project]
-name = "dredd_webgpu_testing"
-version = "0.0.1"
+name = "cts-lab"
+version = "0.1.0"
 authors = [
-  { name="Amber Gorzynski", email="amber.gorzynski22@imperial.ac.uk" },
-  { name="Alastair F. Donaldson", email="alastair.donaldson@imperial.ac.uk" },
+  { name = "Amber Gorzynski", email = "amber.gorzynski22@imperial.ac.uk" },
+  { name = "Alastair F. Donaldson", email = "alastair.donaldson@imperial.ac.uk" },
 ]
-description = "Runner scripts for research involving the Dredd mutation testing tool applied to WebGPU"
+description = "Research tooling for analysis and augmentation of WebGPU Conformance Test Suites"
 readme = "README.md"
 requires-python = ">=3.10"
+
 dependencies = [
   "numpy==2.2.2",
   "pandas==2.2.3",
@@ -32,6 +26,11 @@ dependencies = [
   "meson==1.7.0",
   "ply==3.11",
   "PyYAML==6.0.2",
-  "tqdm==4.67.1"
+  "tqdm==4.67.1",
 ]
 
+[project.scripts]
+cts-lab = "cts_lab.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
