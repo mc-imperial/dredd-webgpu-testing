@@ -9,7 +9,6 @@ from pathlib import Path
 class CTSRunConfig:
     cts: Path
     dawn: Path
-    query: str
     vk_icd: Path
     mesa_shader_cache: bool
 
@@ -21,6 +20,7 @@ class CTSRunResult:
     run_file: Path
     stdout_file: Path
     config: CTSRunConfig
+    query: str
     time_seconds: float
     returncode: int
 
@@ -72,7 +72,6 @@ class CTS:
         self,
         cts: Path,
         dawn: Path,
-        query: str,
         vk_icd: Path,
         mesa_shader_cache: bool = False,
     ):
@@ -80,12 +79,11 @@ class CTS:
         self.config = CTSRunConfig(
             cts=Path(cts),
             dawn=Path(dawn),
-            query=query,
             vk_icd=Path(vk_icd),
             mesa_shader_cache=mesa_shader_cache,
         )
 
-    def run(self, outdir: Path) -> CTSRunResult:
+    def run(self, query: str, outdir: Path) -> CTSRunResult:
         """Run the CTS and save its output to ``outdir``."""
 
         outdir = Path(outdir)
@@ -100,7 +98,7 @@ class CTS:
             "--verbose",
             f"--bin={self.config.dawn}/out/Debug",
             f"--cts={self.config.cts}",
-            self.config.query,
+            query,
         ]
 
         env = os.environ.copy()
@@ -140,6 +138,7 @@ class CTS:
             run_file=run_file,
             stdout_file=stdout_file,
             config=self.config,
+            query=query,
             time_seconds=time_seconds,
             returncode=process.returncode,
         )
