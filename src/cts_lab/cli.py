@@ -59,7 +59,11 @@ def main() -> int:
             vk_icd=Path(args.vk_icd),
         )
 
-        run = cts.run(Path(args.outdir, "run_001"))
+        output = Path(args.outdir, "run_001")
+
+        run = cts.run(output)
+
+        results = run.get_test_results()
 
         return 0
 

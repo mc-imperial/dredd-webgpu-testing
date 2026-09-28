@@ -26,9 +26,13 @@ class CTSRunResult:
     time_seconds: float
     returncode: int
 
+    @property
+    def individual_test_results(self) -> Path:
+        return Path(self.outdir, "individual_test_results.json")
+
     def get_test_results(self) -> dict[str, str]:
 
-        with self.stdout.open() as f:
+        with self.stdout_file.open() as f:
             lines = f.readlines()
 
         tests = [
@@ -36,13 +40,32 @@ class CTSRunResult:
             if line.startswith("webgpu:")
         ]
 
-        return {
+        results = {
             test.split(" - ", 1)[0]: self.extract_status(
                 test.split(" - ", 1)[1]
             )
             for test in tests
             if " - " in test
         }
+
+        self.individual_test_results.write_text(
+            json.dumps(results, indent=2, default=str)
+        )
+
+        return results
+
+    @staticmethod
+    def extract_status(status_part: str) -> str:
+        status_part = status_part.rstrip(":").lower()
+
+        if "pass" in status_part:
+            return "pass"
+        elif "fail" in status_part:
+            return "fail"
+        elif "skip" in status_part:
+            return "skip"
+
+        return "unknown"
 
 class CTS:
     """Run the WebGPU Conformance Test Suite and analyse its results."""
@@ -110,16 +133,16 @@ class CTS:
 
             returncode = process.wait()
 
-        elapsed_time = time.perf_counter() - start_time
+        time_seconds = time.perf_counter() - start_time
 
-        print(f"CTS completed in {elapsed_time:.2f} seconds")
+        print(f"CTS completed in {time_seconds:.2f} seconds")
 
         run = CTSRunResult(
             outdir=outdir,
             run_file=run_file,
             stdout_file=stdout_file,
             config=self.config,
-            elapsed_time=elapsed_time,
+            time_seconds=time_seconds,
             returncode=process.returncode,
         )
 
@@ -128,62 +151,3 @@ class CTS:
         )
 
         return run
-
-    @staticmethod
-    def extract_status(status_part: str) -> str:
-        """Return the result status from a CTS output line."""
-
-        status_part = status_part.rstrip(":").lower()
-
-        if "pass" in status_part:
-            return "pass"
-        elif "fail" in status_part:
-            return "fail"
-        elif "skip" in status_part:
-            return "skip"
-
-        return "unknown"
-
-    def get_tests_with_results(
-        self,
-        outdir: Path,
-    ) -> dict[str, str]:
-        """
-        Parse CTS stdout from ``outdir`` and return test results.
-
-        Results are cached in ``results.json`` within the run directory.
-        """
-
-        outdir = Path(outdir)
-
-        stdout = outdir / "stdout.txt"
-        results = outdir / "results.json"
-
-        if results.exists():
-            with results.open("r") as f:
-                result = json.load(f)
-
-            print(f"Loaded results from existing file: {results}")
-            return result
-
-        with stdout.open("r") as f:
-            lines = f.readlines()
-
-        tests = [
-            line
-            for line in lines
-            if line.startswith("webgpu:")
-        ]
-
-        result = {
-            test.split(" - ", 1)[0]: self.extract_status(
-                test.split(" - ", 1)[1]
-            )
-            for test in tests
-            if " - " in test
-        }
-
-        with results.open("w") as f:
-            json.dump(result, f, indent=2)
-
-        return result
