@@ -2,11 +2,10 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-
-set -a
-source "$SCRIPT_DIR/env"
-set +a
+PROJECT_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 
 docker run --rm -it \
+    -v "$PROJECT_ROOT:${PROJECT_ROOT}" \
+    -w "$PROJECT_ROOT" \
     dredd-webgpu-testing:dev \
     /bin/bash
