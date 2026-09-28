@@ -5,6 +5,8 @@ import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+
+
 @dataclass
 class CTSRunConfig:
     cts: Path
@@ -16,11 +18,31 @@ class CTSRunConfig:
 @dataclass
 class CTSRunResult:
     """Results and metadata from a single CTS execution."""
-
-    config: CTSRunConfig
+    
     outdir: Path
+    run_file: Path
+    stdout_file: Path
+    config: CTSRunConfig
     time_seconds: float
     returncode: int
+
+    def get_test_results(self) -> dict[str, str]:
+
+        with self.stdout.open() as f:
+            lines = f.readlines()
+
+        tests = [
+            line for line in lines
+            if line.startswith("webgpu:")
+        ]
+
+        return {
+            test.split(" - ", 1)[0]: self.extract_status(
+                test.split(" - ", 1)[1]
+            )
+            for test in tests
+            if " - " in test
+        }
 
 class CTS:
     """Run the WebGPU Conformance Test Suite and analyse its results."""
@@ -48,8 +70,8 @@ class CTS:
         outdir = Path(outdir)
         outdir.mkdir(parents=True, exist_ok=True)
 
+        run_file = outdir / "run_info.json"
         stdout_file = outdir / "stdout.txt"
-        run_file = outdir / "run.json"
 
         cmd = [
             f"{self.config.dawn}/tools/run",
@@ -93,8 +115,10 @@ class CTS:
         print(f"CTS completed in {elapsed_time:.2f} seconds")
 
         run = CTSRunResult(
-            config=self.config,
             outdir=outdir,
+            run_file=run_file,
+            stdout_file=stdout_file,
+            config=self.config,
             elapsed_time=elapsed_time,
             returncode=process.returncode,
         )
