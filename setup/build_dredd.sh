@@ -1,15 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-TARGET="$1"
-
 echo "=== Setup ==="
 
 mkdir -p "$BASE"
 
-git clone https://github.com/mc-imperial/dredd.git "$TARGET"
+git clone https://github.com/mc-imperial/dredd.git "$DREDD"
 
-cd "$TARGET"
+cd "$DREDD"
 
 git checkout "$DREDD_COMMIT"
 git submodule update --init --recursive

@@ -12,6 +12,7 @@ docker build \
     --build-arg DREDD_COMMIT="$DREDD_COMMIT" \
     --build-arg CTS_COMMIT="$CTS_COMMIT" \
     --build-arg DAWN_COMMIT="$DAWN_COMMIT" \
+    --build-arg DEPOT_TOOLS_COMMIT="$DEPOT_TOOLS_COMMIT" \
     -f "$SCRIPT_DIR/../docker/Dockerfile" \
     -t dredd-webgpu-testing:dev \
     "$SCRIPT_DIR/.."

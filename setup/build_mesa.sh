@@ -1,19 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-TARGET="$1"
-
 echo "=== Setup ==="
 
 cd "$BASE"
 
-git clone https://gitlab.freedesktop.org/mesa/mesa.git "$TARGET"
+git clone https://gitlab.freedesktop.org/mesa/mesa.git "$MESA"
 
-cd "$TARGET"
+cd "$MESA"
 git checkout "$MESA_COMMIT"
 
 meson setup build \
-    --prefix="$TARGET/build/install" \
+    --prefix="$MESA/build/install" \
     -Dgallium-drivers=llvmpipe \
     -Dvulkan-drivers=swrast \
     -Dincludedir=include \
