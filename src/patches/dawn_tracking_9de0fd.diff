@@ -1,5 +1,5 @@
 diff --git a/tools/src/cmd/run-cts/node/cmd.go b/tools/src/cmd/run-cts/node/cmd.go
-index befe7979bb..1799fb75a8 100644
+index 36a625e609..f07929fbe0 100644
 --- a/tools/src/cmd/run-cts/node/cmd.go
 +++ b/tools/src/cmd/run-cts/node/cmd.go
 @@ -61,6 +61,7 @@ type flags struct {
@@ -22,8 +22,8 @@ index befe7979bb..1799fb75a8 100644
  	}
  	fmt.Printf("Testing %d test cases...\n", len(testCases))
  
--	var runner func(ctx context.Context, testCases []common.TestCase, results chan<- common.Result, fsReader oswrapper.FilesystemReader)
-+	var runner func(ctx context.Context, testCases []common.TestCase, results chan<- common.Result, fsReader oswrapper.FilesystemReader, tracking bool)
+-	var runner func(ctx context.Context, testCases []common.TestCase, results chan<- common.Result, fsReaderWriter oswrapper.FilesystemReaderWriter)
++	var runner func(ctx context.Context, testCases []common.TestCase, results chan<- common.Result, fsReaderWriter oswrapper.FilesystemReaderWriter, tracking bool)
  	if c.flags.isolated {
  		fmt.Println("Running in parallel isolated...")
  		runner = c.runTestCasesWithCmdline
@@ -37,23 +37,23 @@ index befe7979bb..1799fb75a8 100644
  	}()
  
 diff --git a/tools/src/cmd/run-cts/node/cmdline.go b/tools/src/cmd/run-cts/node/cmdline.go
-index 4c3e8302d8..07c1fa3330 100644
+index 04f817ab8b..9e25077ebe 100644
 --- a/tools/src/cmd/run-cts/node/cmdline.go
 +++ b/tools/src/cmd/run-cts/node/cmdline.go
-@@ -50,7 +50,7 @@ import (
+@@ -49,7 +49,7 @@ import (
  // between tests.
  // Up to c.flags.numRunners tests will be run concurrently.
  func (c *cmd) runTestCasesWithCmdline(
--	ctx context.Context, testCases []common.TestCase, results chan<- common.Result, fsReader oswrapper.FilesystemReader) {
-+	ctx context.Context, testCases []common.TestCase, results chan<- common.Result, fsReader oswrapper.FilesystemReader, tracking bool) {
+-	ctx context.Context, testCases []common.TestCase, results chan<- common.Result, fsReaderWriter oswrapper.FilesystemReaderWriter) {
++	ctx context.Context, testCases []common.TestCase, results chan<- common.Result, fsReaderWriter oswrapper.FilesystemReaderWriter, tracking bool) {
  	// Create a chan of test indices.
  	// This will be read by the test runner goroutines.
  	testCaseIndices := make(chan int, 256)
 diff --git a/tools/src/cmd/run-cts/node/server.go b/tools/src/cmd/run-cts/node/server.go
-index abc7c33c0e..deea348b1b 100644
+index 6ae6013e22..cbf8ff36de 100644
 --- a/tools/src/cmd/run-cts/node/server.go
 +++ b/tools/src/cmd/run-cts/node/server.go
-@@ -47,13 +47,60 @@ import (
+@@ -47,13 +47,59 @@ import (
  	"dawn.googlesource.com/dawn/tools/src/utils"
  )
  
@@ -91,22 +91,21 @@ index abc7c33c0e..deea348b1b 100644
 +	f.Sync()
 +}
 +
-+
  // TODO(crbug.com/416755658): Add unittest coverage when there is a way to fake
  // the node process.
  // runTestCasesWithServers spawns c.flags.NumRunners server instances to run all
  // the test cases in testCases. The results of the tests are streamed to results.
  // Blocks until all the tests have been run.
  func (c *cmd) runTestCasesWithServers(
--	ctx context.Context, testCases []common.TestCase, results chan<- common.Result, fsReader oswrapper.FilesystemReader) {
-+	ctx context.Context, testCases []common.TestCase, results chan<- common.Result, fsReader oswrapper.FilesystemReader, tracking bool) {
+-	ctx context.Context, testCases []common.TestCase, results chan<- common.Result, fsReaderWriter oswrapper.FilesystemReaderWriter) {
++	ctx context.Context, testCases []common.TestCase, results chan<- common.Result, fsReaderWriter oswrapper.FilesystemReaderWriter, tracking bool) {
 +
 +	testIDMap := make(map[string]string)
 +
-+	if (tracking) {
++	if tracking {
 +		// Create mapping from test to id (used to name the test file)
-+		for i:= 0; i < len(testCases); i++ {
-+			testIDMap[string(testCases[i])] = fmt.Sprintf("test_id_%d",i)
++		for i := 0; i < len(testCases); i++ {
++			testIDMap[string(testCases[i])] = fmt.Sprintf("test_id_%d", i)
 +		}
 +		// Store test case index mapping in file
 +		saveMappingToFile("/home/ubuntu/dev/dredd-webgpu-testing/data/mapping_test_to_id.json", testIDMap)
@@ -115,36 +114,36 @@ index abc7c33c0e..deea348b1b 100644
  	// Create a chan of test indices.
  	// This will be read by the test runner goroutines.
  	testCaseIndices := make(chan int, 256)
-@@ -71,7 +118,7 @@ func (c *cmd) runTestCasesWithServers(
+@@ -71,7 +117,7 @@ func (c *cmd) runTestCasesWithServers(
  		wg.Add(1)
  		go func() {
  			defer wg.Done()
--			if err := c.runServer(ctx, id, testCases, testCaseIndices, results, fsReader); err != nil {
-+			if err := c.runServer(ctx, id, testCases, testCaseIndices, results, fsReader, testIDMap); err != nil {
+-			if err := c.runServer(ctx, id, testCases, testCaseIndices, results, fsReaderWriter); err != nil {
++			if err := c.runServer(ctx, id, testCases, testCaseIndices, results, fsReaderWriter, testIDMap); err != nil {
  				results <- common.Result{
  					Status: common.Fail,
  					Error:  fmt.Errorf("Test server error: %w", err),
-@@ -96,7 +143,8 @@ func (c *cmd) runServer(
+@@ -96,7 +142,8 @@ func (c *cmd) runServer(
  	testCases []common.TestCase,
  	testCaseIndices <-chan int,
  	results chan<- common.Result,
--	fsReader oswrapper.FilesystemReader) error {
-+	fsReader oswrapper.FilesystemReader,
+-	fsReaderWriter oswrapper.FilesystemReaderWriter) error {
++	fsReaderWriter oswrapper.FilesystemReaderWriter,
 +	testIDMap map[string]string) error {
  
  	var port int
  	testCaseLog := &bytes.Buffer{}
-@@ -135,6 +183,9 @@ func (c *cmd) runServer(
+@@ -135,6 +182,9 @@ func (c *cmd) runServer(
  		if c.flags.blockAllFeatures {
  			args = append(args, "--block-all-features")
  		}
 +		if c.flags.mutantTracking {
-+			args= append(args, "--mutant-tracking")
++			args = append(args, "--mutant-tracking")
 +		}
  		if c.flags.debugCTS {
  			args = append(args, "--debug")
  		}
-@@ -216,7 +267,17 @@ func (c *cmd) runServer(
+@@ -216,7 +266,17 @@ func (c *cmd) runServer(
  			CoverageData string
  			DurationMS   float32
  		}
