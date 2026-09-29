@@ -168,9 +168,9 @@ class CTSIsolatedRunner:
         run_file = self.outdir / "run_info.json"
 
         start_time = time.perf_counter()
-
-        for test_name in test_names:
-            outdir = self.outdir / self._test_dirname(test_name)
+        
+        for test_id, test_name in enumerate(test_names):
+            outdir = self.outdir / str(test_id)
 
             result = self.cts.run(
                 query=test_name,
@@ -191,7 +191,3 @@ class CTSIsolatedRunner:
         )
 
         return result
-
-    @staticmethod
-    def _test_dirname(test_name: str) -> str:
-        return test_name.replace(":", "_").replace(",", "_")
