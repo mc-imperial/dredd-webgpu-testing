@@ -7,8 +7,8 @@ set -euo pipefail
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
 QUERY="webgpu:*"
-VK_ICD_FILENAMES="$MESA/build/install/share/vulkan/icd.d/lvp_icd.x86_64.json"
-OUTDIR="results/e3/"
+VK_ICD_FILENAMES="$MESA_TRACKED/build/install/share/vulkan/icd.d/lvp_icd.x86_64.json"
+OUTDIR="results/e3/$TIMESTAMP"
 
 mkdir -p $OUTDIR
 
