@@ -1,7 +1,7 @@
 from pathlib import Path
 import json
 
-root = Path("results/e2/20260928_230448")
+root = Path("results/e2/20260929_094741")
 other_file = Path("results/e1/20260928_210609/run_001/individual_test_results.json")
 
 def hms(seconds):
