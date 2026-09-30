@@ -6,4 +6,5 @@ source "${SCRIPT_DIR}/mesa_dredd_common.sh"
 
 prepare_mesa \
     "${MESA_TRACKED}" \
-    --only-track-mutant-coverage
+    --only-track-mutant-coverage \
+    --allow-reset-of-tracking-counters
