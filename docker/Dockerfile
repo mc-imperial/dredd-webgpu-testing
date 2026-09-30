@@ -21,6 +21,8 @@ ENV BASE=/data
 ENV PROJECT_ROOT=/workspace/dredd-webgpu-testing
 ENV DEPOT_TOOLS="${BASE}/depot_tools"
 ENV MESA="${BASE}/mesa"
+ENV MESA_MUTATED="${BASE}/mesa_mutated"
+ENV MESA_TRACKED="${BASE}/mesa_tracked"
 ENV DREDD="${BASE}/dredd"
 ENV CTS="${BASE}/cts"
 ENV DAWN="${BASE}/dawn"
@@ -120,9 +122,15 @@ RUN sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/ubuntu.s
     && rm -rf /var/lib/apt/lists/*
 
 RUN ${PROJECT_ROOT}/setup/build_dawn.sh
-RUN ${PROJECT_ROOT}/setup/build_mesa.sh
 RUN ${PROJECT_ROOT}/setup/build_dredd.sh
 RUN ${PROJECT_ROOT}/setup/build_cts.sh
+
+RUN ${PROJECT_ROOT}/setup/build_mesa.sh $MESA
+RUN ${PROJECT_ROOT}/setup/build_mesa.sh $MESA_MUTATED
+RUN ${PROJECT_ROOT}/setup/build_mesa.sh $MESA_TRACKED
+
+RUN ${PROJECT_ROOT}/setup/mutate_mesa.sh
+RUN ${PROJECT_ROOT}/setup/track_mesa.sh
 
 # ---------------------------------------------------------------------------
 # Project

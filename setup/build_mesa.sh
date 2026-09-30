@@ -1,17 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [[ $# -ne 1 ]]; then
+    echo "Usage: $0 <target-mesa-dir>" >&2
+    exit 1
+fi
+
+TARGET_DIR="$1"
+
 echo "=== Setup ==="
 
-cd "$BASE"
+git clone https://gitlab.freedesktop.org/mesa/mesa.git "$TARGET_DIR"
 
-git clone https://gitlab.freedesktop.org/mesa/mesa.git "$MESA"
-
-cd "$MESA"
+cd "$TARGET_DIR"
 git checkout "$MESA_COMMIT"
 
 meson setup build \
-    --prefix="$MESA/build/install" \
+    --prefix="$TARGET_DIR/build/install" \
     -Dgallium-drivers=llvmpipe \
     -Dvulkan-drivers=swrast \
     -Dincludedir=include \
