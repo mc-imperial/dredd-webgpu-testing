@@ -47,7 +47,7 @@ index 0c13a4ff..6df3b874 100644
 +          throw new Error('DREDD_MUTANT_TRACKING_DIR must be set when mutant tracking is enabled');
 +        }
 +        process.env.DREDD_MUTANT_TRACKING_FILE =
-+          mutantTrackingDir + '/tracking_files/' + testname + '.txt';
++          mutantTrackingDir + '/' + testname + '.txt';
 +      }
 +    }
 +
