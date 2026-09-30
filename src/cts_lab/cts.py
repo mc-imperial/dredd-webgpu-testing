@@ -117,7 +117,9 @@ class CTS:
 
         if tracking:
             cmd.append('--mutant-tracking')
-            env["DREDD_MUTANT_TRACKING_DIR"] = str(outdir / "tracking")
+            tracking_dir = outdir / "tracking"
+            tracking_dir.mkdir(parents=True, exist_ok=True)
+            env["DREDD_MUTANT_TRACKING_DIR"] = str(tracking_dir)
 
         cmd.append(query)
 
