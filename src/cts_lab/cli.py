@@ -90,6 +90,12 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
         help="Output directory."
     )
 
+    parser.add_argument(
+        "--track-mutants",
+        action="store_true",
+        help="Track mutants during CTS run",
+    )
+
 def run_command(args) -> int:
     cts = CTS(
         cts=Path(args.cts),
@@ -102,6 +108,7 @@ def run_command(args) -> int:
     run = cts.run(
         query=args.query,
         outdir=Path(args.outdir),
+        tracking=args.track_mutants
     )
 
     run.get_test_results()

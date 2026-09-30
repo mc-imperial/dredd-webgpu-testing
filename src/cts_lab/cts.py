@@ -20,6 +20,7 @@ class CTSRunResult:
     run_file: Path
     stdout_file: Path
     config: CTSRunConfig
+    tracking: bool
     query: str
     time_seconds: float
     returncode: int
@@ -92,10 +93,13 @@ class CTS:
             mesa_shader_cache=mesa_shader_cache,
         )
 
-    def run(self, query: str, outdir: Path) -> CTSRunResult:
+    def run(self, 
+        query: str, 
+        outdir: Path,
+        tracking: bool = False) -> CTSRunResult:
         """Run the CTS and save its output to ``outdir``."""
 
-        outdir = Path(outdir)
+        outdir = Path(outdir).resolve()
         outdir.mkdir(parents=True, exist_ok=True)
 
         run_file = outdir / "run_info.json"
@@ -106,11 +110,17 @@ class CTS:
             "run-cts",
             "--verbose",
             f"--bin={self.config.dawn}/out/Debug",
-            f"--cts={self.config.cts}",
-            query,
+            f"--cts={self.config.cts}"
         ]
 
         env = os.environ.copy()
+
+        if tracking:
+            cmd.append('--mutant-tracking')
+            env["DREDD_MUTANT_TRACKING_DIR"] = str(outdir / "tracking")
+
+        cmd.append(query)
+
         env["VK_ICD_FILENAMES"] = str(self.config.vk_icd)
 
         if self.config.mesa_shader_cache:
@@ -148,6 +158,7 @@ class CTS:
             stdout_file=stdout_file,
             config=self.config,
             query=query,
+            tracking=tracking,
             time_seconds=time_seconds,
             returncode=process.returncode,
         )
