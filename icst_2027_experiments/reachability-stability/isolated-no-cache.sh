@@ -17,11 +17,13 @@ OUTDIR="results/reachability-stability/isolated-no-cache/servers-${SERVERS}/repe
 
 mkdir -p "$OUTDIR"
 
-cts-lab isolate \
+cts-lab run \
     --cts "$CTS" \
     --dawn "$DAWN" \
     --vk-icd "$VK_ICD_FILENAMES" \
     --outdir "$OUTDIR" \
     --test-json "$INDIVIDUAL_TEST_JSON" \
     --mesa-shader-cache-off \
-    --track-mutants
+    --track-mutants \
+    --n-dawn-runners 1 \
+    --test-level 'individual-tests'
