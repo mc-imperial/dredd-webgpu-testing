@@ -11,7 +11,9 @@ TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 QUERY="webgpu:*"
 VK_ICD_FILENAMES="$MESA/build/install/share/vulkan/icd.d/lvp_icd.x86_64.json"
 TEST_JSON="results/e1/20260928_210609/run_001/individual_test_results.json"
-OUTDIR="results/e2/$TIMESTAMP"
+
+WORKING_DIR=20260929_094741
+OUTDIR="results/e2/$WORKING_DIR"
 
 mkdir -p $OUTDIR
 
