@@ -102,7 +102,7 @@ class CTS:
         mesa_shader_cache_on: bool,
         dawn_servers: int,
         dawn_isolate: bool,
-        source_individual_tests: Path | None) -> CTSRunResult:
+        source_individual_tests: Path | None = None) -> CTSRunResult:
         """Run the CTS and save its output to ``outdir``."""
 
         outdir = Path(outdir).resolve()
