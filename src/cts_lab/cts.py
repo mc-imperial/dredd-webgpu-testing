@@ -2,6 +2,7 @@ import json
 import os
 import subprocess
 import time
+import shutil
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -177,12 +178,17 @@ class CTSIsolatedRunner:
         self.outdir = Path(outdir)
 
     def run_tests(self, test_names: list[str]) -> CTSIsolatedRunResult:
+        start_idx = self._get_start_test_index(test_names)
+
         results = []
         run_file = self.outdir / "run_info.json"
 
         start_time = time.perf_counter()
-        
-        for test_id, test_name in enumerate(test_names):
+
+        for test_id, test_name in enumerate(
+            test_names[start_idx:],
+            start=start_idx,
+        ):
             outdir = self.outdir / str(test_id)
 
             result = self.cts.run(
@@ -204,3 +210,102 @@ class CTSIsolatedRunner:
         )
 
         return result
+
+    def _get_existing_test_dirs(self) -> list[Path]:
+        """Return existing test directories in zero-indexed order.
+
+        Raises:
+            RuntimeError: If test directories are not contiguous starting at 0.
+        """
+        test_dirs = sorted(
+            (
+                path
+                for path in self.outdir.iterdir()
+                if path.is_dir() and path.name.isdigit()
+            ),
+            key=lambda path: int(path.name),
+        )
+
+        actual_indices = [int(path.name) for path in test_dirs]
+        expected_indices = list(range(len(test_dirs)))
+
+        if actual_indices != expected_indices:
+            raise RuntimeError(
+                "Existing test directories are not contiguous. "
+                f"Expected {expected_indices}, got {actual_indices}."
+            )
+
+        return test_dirs
+
+
+    def _validate_run_info(
+        self,
+        test_idx: int,
+        test_names: list[str],
+    ) -> None:
+        """Validate run_info.json for a completed test."""
+        test_dir = self.outdir / str(test_idx)
+        run_info_file = test_dir / "run_info.json"
+
+        if not run_info_file.is_file():
+            raise RuntimeError(
+                f"Expected {run_info_file} to exist."
+            )
+
+        try:
+            run_info = json.loads(run_info_file.read_text())
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(
+                f"Could not parse {run_info_file} as JSON."
+            ) from exc
+
+        if "query" not in run_info:
+            raise RuntimeError(
+                f"{run_info_file} does not contain a 'query' entry."
+            )
+
+        actual_query = run_info["query"]
+        expected_query = test_names[test_idx]
+
+        if actual_query != expected_query:
+            raise RuntimeError(
+                f"Test directory {test_idx} does not match the supplied "
+                f"test list.\n"
+                f"  Expected: {expected_query!r}\n"
+                f"  Found:    {actual_query!r}\n"
+                f"  File:     {run_info_file}"
+            )
+
+    def _get_start_test_index(
+        self,
+        test_names: list[str],
+    ) -> int:
+        if not test_names:
+            raise ValueError("test_names must not be empty.")
+
+        test_dirs = self._get_existing_test_dirs()
+
+        if len(test_dirs) > len(test_names):
+            raise RuntimeError(
+                f"Found {len(test_dirs)} existing test directories, but only "
+                f"{len(test_names)} tests were supplied."
+            )
+
+        if not test_dirs:
+            return 0
+
+        last_idx = len(test_dirs) - 1
+        last_dir = test_dirs[-1]
+        run_info_file = last_dir / "run_info.json"
+
+        if not run_info_file.is_file():
+            # Last test crashed/incomplete. Remove it and rerun it.
+            shutil.rmtree(last_dir)
+            return last_idx
+
+        self._validate_run_info(
+            test_idx=last_idx,
+            test_names=test_names,
+        )
+
+        return last_idx + 1
