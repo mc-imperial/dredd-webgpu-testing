@@ -81,7 +81,7 @@ def insert_tracking_multiple_files(header: str, folder: str, fn_decorator: str, 
 
 def insert_tracking(mutation_info: Path, dest : Path, mesa_tracked: str):
     
-    git_reset(dest, mesa_tracked)
+    #git_reset(dest, mesa_tracked)
 
     fn_names = ['lvp_CreateComputePipelines(',
                 'lvp_CreateGraphicsPipelines(']
@@ -96,7 +96,7 @@ def insert_tracking(mutation_info: Path, dest : Path, mesa_tracked: str):
     with open(dest, 'r') as f:
         file = f.read()
 
-    decl_location = file.find('\n', file.find('#define MAX_DYNAMIC_STATES 72')) + 1
+    decl_location = file.find('\n', file.find('#include "gallivm/lp_bld_debug.h"')) + 1
 
     for fn in fn_names:
         location = file.find(fn)

@@ -179,4 +179,6 @@ def get_files_for_mutation(compile_commands : Path,
 
     return mutated
 if __name__=="__main__":
-    main()
+    info_file = '/data/mesa_tracked/build/mutation-info.json'
+    insert_tracking(info_file,'/data/mesa_tracked/src/gallium/frontends/lavapipe/lvp_pipeline.c','/data/mesa_tracked')
+    #main()

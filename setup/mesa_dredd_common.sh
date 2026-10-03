@@ -7,7 +7,7 @@ select_mesa_sources() {
     local builddir="$1"
 
     jq -r '.[].file' "${builddir}/compile_commands.json" |
-        grep -E '/(compiler/(spirv|nir)/[^/]+\.(c|cc|cpp))' |
+        grep -E '/(compiler/nir/[^/]+\.(c|cc|cpp))' |
         sort
 }
 
@@ -86,7 +86,7 @@ prepare_mesa() {
     meson compile -C "${builddir}"
 
     echo "==> Install Mesa"
-    meson -C  install "${builddir}"
+    meson install -C "${builddir}"
 
     echo "=== Done ==="
 }
