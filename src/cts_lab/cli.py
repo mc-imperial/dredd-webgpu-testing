@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from cts_lab.cts import CTS, CTSIsolatedRunner
+from cts_lab.queries import to_file_level_queries
 
 def main() -> int:
     parser = argparse.ArgumentParser(
@@ -23,43 +24,6 @@ def main() -> int:
     )
 
     add_common_arguments(run_parser)
-
-    run_parser.add_argument(
-        "--query",
-        default="webgpu:*",
-        help="CTS test query.",
-    )
-    
-    run_parser.add_argument(
-        "--n-dawn-runners",
-        type=int,
-        required=True,
-        help="Number of parallel Dawn runners used to run the CTS. Set using an internal Dawn flag.",
-    )
-
-    # ------------------------------------------------------------------
-    # isolate
-    # ------------------------------------------------------------------
-
-    isolate_parser = subparsers.add_parser(
-        "isolate",
-        help="Run CTS tests individually from a test manifest.",
-    )
-
-    add_common_arguments(isolate_parser)
-
-    isolate_parser.add_argument(
-        "--test-json",
-        required=True,
-        help="JSON file containing tests to run. Output of run command.",
-    )
-
-    isolate_parser.add_argument(
-        "--n",
-        type=int,
-        required=False,
-        help="Number of tests to execute."
-    )
 
     args = parser.parse_args()
 
@@ -123,6 +87,39 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
         help="Turn Mesa shader cache OFF.",
     )
 
+    parser.add_argument(
+        "--query",
+        default="webgpu:*",
+        help="CTS test query.",
+    )
+    
+    parser.add_argument(
+        "--n-dawn-runners",
+        type=int,
+        required=True,
+        help="Number of parallel Dawn runners used to run the CTS. Set using an internal Dawn flag.",
+    )
+
+    parser.add_argument(
+        "--test-json",
+        required=False,
+        help="JSON file containing tests to run. Output of run command.",
+    )
+
+    parser.add_argument(
+        "--test-level",
+        choices=["subtree-root", "test-file", "individual-tests"],
+        default="subtree-root",
+        help="Level of granularity at which to run tests in the query: subtree-root runs the full query, 'test-file' runs subtrees at the test file level, and 'individual-test' runs individual parameterised tests.",
+    )
+
+    parser.add_argument(
+        "--n",
+        type=int,
+        required=False,
+        help="Number of tests to execute. For debug purposes."
+    )
+
 
 def run_command(args) -> int:
     cts = CTS(
@@ -131,8 +128,21 @@ def run_command(args) -> int:
         vk_icd=Path(args.vk_icd),
     )
 
-    print(f"Running CTS with query: {args.query}")
 
+    if args.test_level=="subtree-root":
+        
+        print(f"Running CTS from subtree root with query: {args.query}")
+
+        run_from_root(cts, args)
+
+    else:
+
+        print(f"Running CTS in isolated subtree mode at the level: {args.test_level}")
+
+        run_subtrees(cts, args)
+
+def run_from_root(cts: CTS, args) -> int:
+    
     run = cts.run(
         query=args.query,
         outdir=Path(args.outdir),
@@ -146,12 +156,7 @@ def run_command(args) -> int:
 
     return run.returncode
 
-def isolate_command(args) -> int:
-    cts = CTS(
-        cts=Path(args.cts),
-        dawn=Path(args.dawn),
-        vk_icd=Path(args.vk_icd)
-    )
+def run_subtrees(cts, args) -> int:
 
     source_individual_tests = Path(args.test_json).resolve()
 
@@ -159,7 +164,12 @@ def isolate_command(args) -> int:
         source_individual_tests.read_text()
     )
 
-    tests = [test for test, result in manifest.items()]
+    all_tests = [test for test, result in manifest.items()]
+
+    if args.test_level == "individual-tests":
+        tests = all_tests
+    elif args.test_level == "test-file":
+        tests = to_file_level_queries(all_tests)
 
     if args.n:
         tests = tests[:args.n]
