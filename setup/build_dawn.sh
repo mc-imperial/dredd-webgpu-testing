@@ -31,11 +31,4 @@ ninja
 
 echo "=== Dawn build complete ==="
 
-echo "=== Apply patch for mutant tracking ==="
-
-cd "$DAWN"
-
-git apply "${PROJECT_ROOT}/setup/patches/dawn_tracking_9de0fd.diff
-
-echo "=== Patch applied ==="
 
