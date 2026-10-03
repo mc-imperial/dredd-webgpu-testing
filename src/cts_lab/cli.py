@@ -29,6 +29,13 @@ def main() -> int:
         default="webgpu:*",
         help="CTS test query.",
     )
+    
+    run_parser.add_argument(
+        "--n-dawn-runners",
+        type=int,
+        required=True,
+        help="Number of parallel Dawn runners used to run the CTS. Set using an internal Dawn flag.",
+    )
 
     # ------------------------------------------------------------------
     # isolate
@@ -93,7 +100,13 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--track-mutants",
         action="store_true",
-        help="Track mutants during CTS run",
+        help="Track mutants during CTS run.",
+    )
+
+    parser.add_argument(
+        "--dawn-isolate",
+        action="store_true",
+        help="Use Dawn internal isolate flag to run tests in isolated processes.",
     )
     
     cache_group = parser.add_mutually_exclusive_group(required=True)
@@ -116,7 +129,6 @@ def run_command(args) -> int:
         cts=Path(args.cts),
         dawn=Path(args.dawn),
         vk_icd=Path(args.vk_icd),
-        mesa_shader_cache=args.mesa_shader_cache_on
     )
 
     print(f"Running CTS with query: {args.query}")
@@ -124,7 +136,10 @@ def run_command(args) -> int:
     run = cts.run(
         query=args.query,
         outdir=Path(args.outdir),
-        tracking=args.track_mutants
+        tracking=args.track_mutants,
+        mesa_shader_cache_on=args.mesa_shader_cache_on,
+        dawn_servers=args.n_dawn_runners,
+        dawn_isolate=args.dawn_isolate
     )
 
     run.get_test_results()
@@ -135,7 +150,7 @@ def isolate_command(args) -> int:
     cts = CTS(
         cts=Path(args.cts),
         dawn=Path(args.dawn),
-        vk_icd=Path(args.vk_icd),
+        vk_icd=Path(args.vk_icd)
     )
 
     manifest = json.loads(
@@ -149,7 +164,10 @@ def isolate_command(args) -> int:
 
     cts_runner = CTSIsolatedRunner(
         cts=cts,
-        outdir=args.outdir
+        outdir=args.outdir,        
+        tracking=args.track_mutants,
+        mesa_shader_cache_on=args.mesa_shader_cache_on
+
     )
 
     results : list[CTSRunResult] = cts_runner.run_tests(tests)

@@ -7,11 +7,10 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 @dataclass
-class CTSRunConfig:
+class CTSConfig:
     cts: Path
     dawn: Path
     vk_icd: Path
-    mesa_shader_cache: bool
 
 @dataclass
 class CTSRunResult:
@@ -20,8 +19,11 @@ class CTSRunResult:
     outdir: Path
     run_file: Path
     stdout_file: Path
-    config: CTSRunConfig
+    config: CTSConfig
     tracking: bool
+    mesa_shader_cache_on: bool
+    dawn_servers: int
+    dawn_isolate: bool
     query: str
     time_seconds: float
     returncode: int
@@ -83,21 +85,22 @@ class CTS:
         self,
         cts: Path,
         dawn: Path,
-        vk_icd: Path,
-        mesa_shader_cache: bool,
+        vk_icd: Path
     ):
 
-        self.config = CTSRunConfig(
+        self.config = CTSConfig(
             cts=Path(cts),
             dawn=Path(dawn),
-            vk_icd=Path(vk_icd),
-            mesa_shader_cache=mesa_shader_cache,
+            vk_icd=Path(vk_icd)
         )
 
     def run(self, 
         query: str, 
         outdir: Path,
-        tracking: bool = False) -> CTSRunResult:
+        tracking: bool,
+        mesa_shader_cache_on: bool,
+        dawn_servers: int,
+        dawn_isolate: bool) -> CTSRunResult:
         """Run the CTS and save its output to ``outdir``."""
 
         outdir = Path(outdir).resolve()
@@ -106,15 +109,26 @@ class CTS:
         run_file = outdir / "run_info.json"
         stdout_file = outdir / "stdout.txt"
 
+        env = os.environ.copy()
+
+        env["VK_ICD_FILENAMES"] = str(self.config.vk_icd)
+
+        if mesa_shader_cache_on:
+            env["MESA_SHADER_CACHE_DISABLE"] = "false"
+        else:
+            env["MESA_SHADER_CACHE_DISABLE"] = "true"
+
         cmd = [
             f"{self.config.dawn}/tools/run",
             "run-cts",
             "--verbose",
             f"--bin={self.config.dawn}/out/Debug",
-            f"--cts={self.config.cts}"
+            f"--cts={self.config.cts}",
+            f"--j={dawn_servers}"   
         ]
 
-        env = os.environ.copy()
+        if dawn_isolate:
+            cmd.append('--isolate')
 
         if tracking:
             cmd.append('--mutant-tracking')
@@ -123,13 +137,6 @@ class CTS:
             env["DREDD_MUTANT_TRACKING_DIR"] = str(tracking_dir)
 
         cmd.append(query)
-
-        env["VK_ICD_FILENAMES"] = str(self.config.vk_icd)
-
-        if self.config.mesa_shader_cache:
-            env["MESA_SHADER_CACHE_DISABLE"] = "false"
-        else:
-            env["MESA_SHADER_CACHE_DISABLE"] = "true"
 
         print("Running CTS:")
         print(" ".join(cmd))
@@ -164,6 +171,9 @@ class CTS:
             config=self.config,
             query=query,
             tracking=tracking,
+            mesa_shader_cache_on=mesa_shader_cache_on,
+            dawn_servers=dawn_servers,
+            dawn_isolate=dawn_isolate,
             time_seconds=time_seconds,
             returncode=process.returncode,
         )
@@ -175,9 +185,15 @@ class CTS:
         return run
 
 class CTSIsolatedRunner:
-    def __init__(self, cts: CTS, outdir: Path):
+    def __init__(self, 
+        cts: CTS, 
+        outdir: Path,
+        tracking: bool,
+        mesa_shader_cache_on: bool):
         self.cts = cts
         self.outdir = Path(outdir)
+        self.tracking = tracking
+        self.mesa_shader_cache_on = mesa_shader_cache_on
 
     def run_tests(self, test_names: list[str]) -> CTSIsolatedRunResult:
         start_idx = self._get_start_test_index(test_names)
@@ -196,6 +212,10 @@ class CTSIsolatedRunner:
             result = self.cts.run(
                 query=test_name,
                 outdir=outdir,
+                tracking=self.tracking,
+                mesa_shader_cache_on=self.mesa_shader_cache_on,
+                dawn_servers=1, # Always one server needed for single tests
+                dawn_isolate=False # For now use server approach in this isolated runner, rather than Dawn isolation
             )
 
             results.append(result)
