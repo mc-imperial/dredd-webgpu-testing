@@ -28,6 +28,7 @@ class CTSRunResult:
     time_seconds: float
     returncode: int
     source_individual_tests: Path | None
+    test_level: str
 
     @property
     def individual_test_results(self) -> Path:
@@ -200,7 +201,8 @@ class CTSIsolatedRunner:
 
     def run_tests(self, 
         test_names: list[str],
-        source_individual_tests: Path) -> CTSIsolatedRunResult:
+        source_individual_tests: Path,
+        test_level: str) -> CTSIsolatedRunResult:
         start_idx = self._get_start_test_index(test_names)
 
         results = []
@@ -221,7 +223,8 @@ class CTSIsolatedRunner:
                 mesa_shader_cache_on=self.mesa_shader_cache_on,
                 dawn_servers=1, # Always one server needed for single tests
                 dawn_isolate=False, # For now use server approach in this isolated runner, rather than Dawn isolation
-                source_individual_tests=source_individual_tests
+                source_individual_tests=source_individual_tests,
+                test_level=test_level
             )
 
             results.append(result)

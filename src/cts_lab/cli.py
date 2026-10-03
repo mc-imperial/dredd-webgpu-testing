@@ -183,6 +183,7 @@ def run_subtrees(cts, args) -> int:
 
     results : list[CTSRunResult] = cts_runner.run_tests(
         test_names=tests, 
-        source_individual_tests=source_individual_tests)
+        source_individual_tests=source_individual_test,
+        test_level=args.test_level)
 
     return 0
