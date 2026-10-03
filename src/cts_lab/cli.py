@@ -95,12 +95,28 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Track mutants during CTS run",
     )
+    
+    cache_group = parser.add_mutually_exclusive_group(required=True)
+
+    cache_group.add_argument(
+        "--mesa-shader-cache-on",
+        action="store_true",
+        help="Turn Mesa shader cache ON.",
+    )
+
+    cache_group.add_argument(
+        "--mesa-shader-cache-off",
+        action="store_true",
+        help="Turn Mesa shader cache OFF.",
+    )
+
 
 def run_command(args) -> int:
     cts = CTS(
         cts=Path(args.cts),
         dawn=Path(args.dawn),
         vk_icd=Path(args.vk_icd),
+        mesa_shader_cache=args.mesa_shader_cache_on
     )
 
     print(f"Running CTS with query: {args.query}")

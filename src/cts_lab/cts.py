@@ -84,7 +84,7 @@ class CTS:
         cts: Path,
         dawn: Path,
         vk_icd: Path,
-        mesa_shader_cache: bool = False,
+        mesa_shader_cache: bool,
     ):
 
         self.config = CTSRunConfig(

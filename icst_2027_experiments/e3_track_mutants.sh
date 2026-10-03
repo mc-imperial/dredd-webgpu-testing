@@ -18,4 +18,5 @@ cts-lab run \
     --vk-icd "$VK_ICD_FILENAMES" \
     --outdir "$OUTDIR" \
     --query "webgpu:shader,execution,flow_control,for,*" \
-    --track-mutants 
+    --track-mutants \
+    --mesa-shader-cache-off

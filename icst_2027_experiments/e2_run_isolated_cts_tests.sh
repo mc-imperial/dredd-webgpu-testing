@@ -22,4 +22,5 @@ cts-lab isolate \
     --dawn "$DAWN" \
     --vk-icd "$VK_ICD_FILENAMES" \
     --outdir "$OUTDIR" \
-    --test-json "$TEST_JSON" 
+    --test-json "$TEST_JSON" \
+    --mesa-shader-cache-off

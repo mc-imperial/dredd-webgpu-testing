@@ -17,4 +17,5 @@ cts-lab run \
     --dawn "$DAWN" \
     --vk-icd "$VK_ICD_FILENAMES" \
     --query "$QUERY" \
-    --outdir "$OUTDIR"
+    --outdir "$OUTDIR" \
+    --mesa-shader-cache-off
