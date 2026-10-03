@@ -153,8 +153,10 @@ def isolate_command(args) -> int:
         vk_icd=Path(args.vk_icd)
     )
 
+    source_individual_tests = Path(args.test_json).resolve()
+
     manifest = json.loads(
-        Path(args.test_json).read_text()
+        source_individual_tests.read_text()
     )
 
     tests = [test for test, result in manifest.items()]
@@ -166,10 +168,11 @@ def isolate_command(args) -> int:
         cts=cts,
         outdir=args.outdir,        
         tracking=args.track_mutants,
-        mesa_shader_cache_on=args.mesa_shader_cache_on
-
+        mesa_shader_cache_on=args.mesa_shader_cache_on    
     )
 
-    results : list[CTSRunResult] = cts_runner.run_tests(tests)
+    results : list[CTSRunResult] = cts_runner.run_tests(
+        test_names=tests, 
+        source_individual_tests=source_individual_tests)
 
     return 0

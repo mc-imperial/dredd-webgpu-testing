@@ -27,6 +27,7 @@ class CTSRunResult:
     query: str
     time_seconds: float
     returncode: int
+    source_individual_tests: Path | None
 
     @property
     def individual_test_results(self) -> Path:
@@ -100,7 +101,8 @@ class CTS:
         tracking: bool,
         mesa_shader_cache_on: bool,
         dawn_servers: int,
-        dawn_isolate: bool) -> CTSRunResult:
+        dawn_isolate: bool,
+        source_individual_tests: Path | None) -> CTSRunResult:
         """Run the CTS and save its output to ``outdir``."""
 
         outdir = Path(outdir).resolve()
@@ -176,6 +178,7 @@ class CTS:
             dawn_isolate=dawn_isolate,
             time_seconds=time_seconds,
             returncode=process.returncode,
+            source_individual_tests=source_individual_tests
         )
 
         run_file.write_text(
@@ -190,12 +193,14 @@ class CTSIsolatedRunner:
         outdir: Path,
         tracking: bool,
         mesa_shader_cache_on: bool):
-        self.cts = cts
-        self.outdir = Path(outdir)
-        self.tracking = tracking
-        self.mesa_shader_cache_on = mesa_shader_cache_on
+            self.cts = cts
+            self.outdir = Path(outdir)
+            self.tracking = tracking
+            self.mesa_shader_cache_on = mesa_shader_cache_on
 
-    def run_tests(self, test_names: list[str]) -> CTSIsolatedRunResult:
+    def run_tests(self, 
+        test_names: list[str],
+        source_individual_tests: Path) -> CTSIsolatedRunResult:
         start_idx = self._get_start_test_index(test_names)
 
         results = []
@@ -215,7 +220,8 @@ class CTSIsolatedRunner:
                 tracking=self.tracking,
                 mesa_shader_cache_on=self.mesa_shader_cache_on,
                 dawn_servers=1, # Always one server needed for single tests
-                dawn_isolate=False # For now use server approach in this isolated runner, rather than Dawn isolation
+                dawn_isolate=False, # For now use server approach in this isolated runner, rather than Dawn isolation
+                source_individual_tests=source_individual_tests
             )
 
             results.append(result)
