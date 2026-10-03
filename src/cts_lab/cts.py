@@ -127,6 +127,8 @@ class CTS:
         env["VK_ICD_FILENAMES"] = str(self.config.vk_icd)
 
         if self.config.mesa_shader_cache:
+            env["MESA_SHADER_CACHE_DISABLE"] = "false"
+        else:
             env["MESA_SHADER_CACHE_DISABLE"] = "true"
 
         print("Running CTS:")
