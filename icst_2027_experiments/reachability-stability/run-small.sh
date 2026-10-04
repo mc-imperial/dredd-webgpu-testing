@@ -2,77 +2,67 @@
 
 set -euo pipefail
 
-source "$(dirname "$0")/common.sh"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
+
+CONTAINER_PROJECT_ROOT=/workspace/dredd-webgpu-testing
+IMAGE=dredd-webgpu-testing:reachability-stability
 
 RESULTS_ROOT="results/small-run"
-export RESULTS_ROOT
+SERVERS=1
+REPEAT=1
 
-# Save experiment config script 
-mkdir -p "$RESULTS_ROOT"
-cp "$(dirname "$0")/common.sh" "$RESULTS_ROOT/common.sh"
+mkdir -p "$PROJECT_ROOT/$RESULTS_ROOT"
+chmod 777 "$PROJECT_ROOT/$RESULTS_ROOT"
 
-TEST_RESULTS=""
-
-run_timed() {
-    local name="$1"
+run_experiment() {
+    local script="$1"
     shift
 
     echo
-    echo "========================================"
-    echo "Running: $name"
-    echo "========================================"
+    echo "============================================================"
+    echo "Running: $script"
+    echo "============================================================"
 
-    local start
-    local end
-    local elapsed
-
-    start=$(date +%s)
-
-    "$@"
-
-    end=$(date +%s)
-    elapsed=$((end - start))
-
-    echo
-    echo "$name took ${elapsed}s"
-
-    printf '%s\t%ss\n' "$name" "$elapsed" >> "$RESULTS_FILE"
+    time docker run --rm \
+        --ulimit core=1073741824:1073741824 \
+        --mount "type=bind,source=$PROJECT_ROOT,target=$CONTAINER_PROJECT_ROOT" \
+        --workdir "$CONTAINER_PROJECT_ROOT" \
+        -e RESULTS_ROOT="$RESULTS_ROOT" \
+        "$IMAGE" \
+        "/bin/bash" \
+        "icst_2027_experiments/reachability-stability/$script" \
+        "$@"
 }
 
-RESULTS_FILE="results/reachability-stability/small-run-timings.txt"
-mkdir -p "$(dirname "$RESULTS_FILE")"
-: > "$RESULTS_FILE"
+run_experiment subtree-no-cache.sh "$SERVERS" "$REPEAT"
 
-run_timed "subtree-no-cache" \
-    ./experiments/subtree-no-cache.sh 1 1
+SUBTREE_RUN="$(
+    find \
+        "$PROJECT_ROOT/$RESULTS_ROOT/reachability-stability/subtree-no-cache/servers-${SERVERS}" \
+        -mindepth 1 \
+        -maxdepth 1 \
+        -type d \
+        | sort \
+        | tail -n 1
+)"
 
-# Find the test_results.json produced by the subtree run.
-TEST_RESULTS=$(find results/reachability-stability/subtree-no-cache/servers-1 \
-    -name test_results.json \
-    -type f \
-    | sort \
-    | tail -n 1)
-
-if [[ -z "$TEST_RESULTS" ]]; then
-    echo "ERROR: Could not find test_results.json"
-    exit 1
-fi
-
-run_timed "subtree-cached" \
-    ./experiments/subtree-cached.sh 1 1
-
-
-run_timed "isolated-dawn-option" \
-    ./experiments/solated-dawn-option.sh 1 1
-
-run_timed "isolated-no-cache" \
-    ./experiments/isolated-no-cache.sh "$TEST_RESULTS" 1 1
-
-run_timed "file-subtrees-no-cache" \
-    ./experiments/file-subtrees-no-cache.sh "$TEST_RESULTS" 1 1
+INDIVIDUAL_TEST_JSON="$SUBTREE_RUN/individual_test_results.json"
 
 echo
-echo "========================================"
-echo "Timing summary"
-echo "========================================"
-cat "$RESULTS_FILE"
+echo "Using test manifest:"
+echo "$INDIVIDUAL_TEST_JSON"
+
+run_experiment subtree-cache.sh "$SERVERS" "$REPEAT"
+
+run_experiment isolated-no-cache.sh \
+    "$SERVERS" \
+    "$REPEAT" \
+    "$CONTAINER_PROJECT_ROOT/${INDIVIDUAL_TEST_JSON#"$PROJECT_ROOT/"}"
+
+run_experiment file-subtrees-no-cache.sh \
+    "$SERVERS" \
+    "$REPEAT" \
+    "$CONTAINER_PROJECT_ROOT/${INDIVIDUAL_TEST_JSON#"$PROJECT_ROOT/"}"
+
+run_experiment isolated-dawn-option.sh "$SERVERS" "$REPEAT"

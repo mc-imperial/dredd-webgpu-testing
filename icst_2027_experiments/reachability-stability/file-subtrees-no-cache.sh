@@ -4,13 +4,15 @@ set -euo pipefail
 
 source "$(dirname "$0")/common.sh"
 
+SCRIPT_NAME="$(basename "$0" .sh)"
+
 SERVERS="${1:?Usage: $0 <servers> <repeat> <individual_test_results.json>}"
 REPEAT="${2:?Usage: $0 <servers> <repeat> <individual_test_results.json>}"
 INDIVIDUAL_TEST_JSON="${3:?Usage: $0 <servers> <repeat> <individual_test_results.json>}"
 
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
-OUTDIR="$RESULTS_ROOT/reachability-stability/file-subtrees-no-cache/servers-${SERVERS}/repeat-${REPEAT}_${TIMESTAMP}"
+OUTDIR="$RESULTS_ROOT/reachability-stability/$SCRIPT_NAME/servers-${SERVERS}/repeat-${REPEAT}_${TIMESTAMP}"
 
 mkdir -p "$OUTDIR"
 
