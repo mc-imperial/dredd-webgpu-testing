@@ -1,0 +1,11 @@
+FROM dredd-webgpu-testing:dev
+
+# Experiment-specific environment
+ENV MESA_TRACKED=/data/mesa_tracked
+
+# Use the current setup scripts from the checkout rather than
+# the version baked into the base image.
+COPY setup/ /workspace/dredd-webgpu-testing/setup/
+
+RUN chmod +x $PROJECT_ROOT/setup/dredd_tracking_reset.sh \
+    && $PROJECT_ROOT/setup/dredd_tracking_reset.sh
