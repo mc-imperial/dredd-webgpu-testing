@@ -4,9 +4,9 @@ set -euo pipefail
 
 source "$(dirname "$0")/common.sh"
 
-SERVERS="${1:?Usage: $0 <servers> <repeat> <test_results.json>}"
-REPEAT="${2:?Usage: $0 <servers> <repeat> <test_results.json>}"
-INDIVIDUAL_TEST_JSON="${3:?Usage: $0 <servers> <repeat> <test_results.json>}"
+SERVERS="${1:?Usage: $0 <servers> <repeat> <individual_test_results.json>}"
+REPEAT="${2:?Usage: $0 <servers> <repeat> <individual_test_results.json>}"
+INDIVIDUAL_TEST_JSON="${3:?Usage: $0 <servers> <repeat> <individual_test_results.json>}"
 
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
