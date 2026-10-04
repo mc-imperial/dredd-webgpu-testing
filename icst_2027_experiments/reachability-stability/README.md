@@ -54,8 +54,6 @@ Each run gets a timestamped output directory.
 
 ## Running isolated tests
 
-## Running isolated tests
-
 The isolated experiment requires a `test_results.json` containing the individual CTS tests to run.
 
 Usage:
@@ -76,6 +74,12 @@ For example:
 The tests listed in `test_results.json` are run individually with Mesa shader caching disabled.
 
 The `test_results.json` can come from a previous `subtree-no-cache.sh` run. It does not need to be produced on the same machine, provided it is copied to the machine running the isolated experiment.
+
+### `isolated-dawn-option.sh`
+
+Runs the subtree with Dawn's built-in `--dawn-isolate` option instead of the custom test-level isolation used by `isolated-no-cache.sh`. It does not require an `individual_test_results.json` input.
+
+**TODO:** adapt the CTS/Dawn instrumentation so that Dawn-isolated runs also save the test → mutant reachability mapping. Currently, the run completes successfully but does not produce the per-test tracking files.
 
 ## Running file-level subtrees
 
