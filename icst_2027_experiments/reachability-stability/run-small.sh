@@ -8,12 +8,16 @@ PROJECT_ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
 CONTAINER_PROJECT_ROOT=/workspace/dredd-webgpu-testing
 IMAGE=dredd-webgpu-testing:reachability-stability
 
-RESULTS_ROOT="results/small-run"
+RUN_TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+
+RESULTS_ROOT="results/small-run/run-${RUN_TIMESTAMP}"
 SERVERS=1
 REPEAT=1
 
 mkdir -p "$PROJECT_ROOT/$RESULTS_ROOT"
 chmod 777 "$PROJECT_ROOT/$RESULTS_ROOT"
+
+cp "$SCRIPT_DIR/common.sh" "$PROJECT_ROOT/$RESULTS_ROOT/common.sh"
 
 run_experiment() {
     local script="$1"
@@ -39,7 +43,7 @@ run_experiment subtree-no-cache.sh "$SERVERS" "$REPEAT"
 
 SUBTREE_RUN="$(
     find \
-        "$PROJECT_ROOT/$RESULTS_ROOT/reachability-stability/subtree-no-cache/servers-${SERVERS}" \
+        "$PROJECT_ROOT/$RESULTS_ROOT/subtree-no-cache/servers-${SERVERS}" \
         -mindepth 1 \
         -maxdepth 1 \
         -type d \
@@ -48,6 +52,12 @@ SUBTREE_RUN="$(
 )"
 
 INDIVIDUAL_TEST_JSON="$SUBTREE_RUN/individual_test_results.json"
+
+if [[ ! -s "$INDIVIDUAL_TEST_JSON" ]]; then
+    echo "ERROR: subtree-no-cache did not produce a valid test manifest:" >&2
+    echo "$INDIVIDUAL_TEST_JSON" >&2
+    exit 1
+fi
 
 echo
 echo "Using test manifest:"

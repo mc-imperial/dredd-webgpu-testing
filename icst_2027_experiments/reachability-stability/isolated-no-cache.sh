@@ -13,10 +13,8 @@ SERVERS="${1:?Usage: $0 <servers> <repeat> <individual_test_results.json>}"
 REPEAT="${2:?Usage: $0 <servers> <repeat> <individual_test_results.json>}"
 INDIVIDUAL_TEST_JSON="${3:?Usage: $0 <servers> <repeat> <individual_test_results.json>}"
 
-TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
-OUTDIR="$RESULTS_ROOT/reachability-stability/$SCRIPT_NAME/servers-${SERVERS}/repeat-${REPEAT}_${TIMESTAMP}"
-
+OUTDIR="$RESULTS_ROOT/$SCRIPT_NAME/servers-${SERVERS}/repeat-${REPEAT}"
 mkdir -p "$OUTDIR"
 
 cts-lab run \
@@ -27,5 +25,5 @@ cts-lab run \
     --test-json "$INDIVIDUAL_TEST_JSON" \
     --mesa-shader-cache-off \
     --track-mutants \
-    --n-dawn-runners 1 \
+    --n-dawn-runners $SERVERS \
     --test-level 'individual-tests'
