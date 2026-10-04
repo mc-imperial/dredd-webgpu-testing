@@ -149,7 +149,8 @@ def run_from_root(cts: CTS, args) -> int:
         tracking=args.track_mutants,
         mesa_shader_cache_on=args.mesa_shader_cache_on,
         dawn_servers=args.n_dawn_runners,
-        dawn_isolate=args.dawn_isolate
+        dawn_isolate=args.dawn_isolate,
+        test_level=args.test_level
     )
 
     run.get_test_results()

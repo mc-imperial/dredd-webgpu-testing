@@ -103,6 +103,7 @@ class CTS:
         mesa_shader_cache_on: bool,
         dawn_servers: int,
         dawn_isolate: bool,
+        test_level: str,
         source_individual_tests: Path | None = None) -> CTSRunResult:
         """Run the CTS and save its output to ``outdir``."""
 
@@ -179,8 +180,9 @@ class CTS:
             dawn_isolate=dawn_isolate,
             time_seconds=time_seconds,
             returncode=process.returncode,
-            source_individual_tests=source_individual_tests
-        )
+            source_individual_tests=source_individual_tests,
+            test_level=test_level
+            )
 
         run_file.write_text(
             json.dumps(asdict(run), indent=2, default=str)
