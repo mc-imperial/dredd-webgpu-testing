@@ -10,7 +10,7 @@ INDIVIDUAL_TEST_JSON="${3:?Usage: $0 <servers> <repeat> <test_results.json>}"
 
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
-OUTDIR="results/reachability-stability/file-subtrees-no-cache/servers-${SERVERS}/repeat-${REPEAT}_${TIMESTAMP}"
+OUTDIR="$RESULTS_ROOT/reachability-stability/file-subtrees-no-cache/servers-${SERVERS}/repeat-${REPEAT}_${TIMESTAMP}"
 
 mkdir -p "$OUTDIR"
 
@@ -19,7 +19,7 @@ cts-lab run \
     --dawn "$DAWN" \
     --vk-icd "$VK_ICD_FILENAMES" \
     --outdir "$OUTDIR" \
-    --query "webgpu:shader,execution,flow_control,for,*" \
+    --query "$QUERY" \
     --mesa-shader-cache-off \
     --n-dawn-runners "$SERVERS" \
     --test-json "$INDIVIDUAL_TEST_JSON" \

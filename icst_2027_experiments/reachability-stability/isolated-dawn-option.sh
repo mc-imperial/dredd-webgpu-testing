@@ -8,7 +8,7 @@ SERVERS="${1:?Usage: $0 <servers> <repeat>}"
 REPEAT="${2:?Usage: $0 <servers> <repeat>}"
 
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-OUTDIR="results/reachability-stability/isolated-dawn-option/servers-${SERVERS}/repeat-${REPEAT}_${TIMESTAMP}"
+OUTDIR="$RESULTS_ROOT/reachability-stability/isolated-dawn-option/servers-${SERVERS}/repeat-${REPEAT}_${TIMESTAMP}"
 mkdir -p "$OUTDIR"
 
 cts-lab run \
@@ -16,7 +16,7 @@ cts-lab run \
     --dawn "$DAWN" \
     --vk-icd "$VK_ICD_FILENAMES" \
     --outdir "$OUTDIR" \
-    --query "webgpu:shader,execution,flow_control,for,*" \
+    --query "$QUERY" \
     --mesa-shader-cache-off \
     --n-dawn-runners $SERVERS \
     --track-mutants \

@@ -13,7 +13,7 @@ INDIVIDUAL_TEST_JSON="${3:?Usage: $0 <servers> <repeat> <test_results.json>}"
 
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
-OUTDIR="results/reachability-stability/isolated-no-cache/servers-${SERVERS}/repeat-${REPEAT}_${TIMESTAMP}"
+OUTDIR="$RESULTS_ROOT/reachability-stability/isolated-no-cache/servers-${SERVERS}/repeat-${REPEAT}_${TIMESTAMP}"
 
 mkdir -p "$OUTDIR"
 
