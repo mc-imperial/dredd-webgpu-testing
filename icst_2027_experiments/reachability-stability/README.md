@@ -54,12 +54,12 @@ Each run gets a timestamped output directory.
 
 ## Running isolated tests
 
-The isolated experiment requires a `test_results.json` containing the individual CTS tests to run.
+The isolated experiment requires a `individual_test_results.json` containing the individual CTS tests to run.
 
 Usage:
 
 ```bash
-./experiments/isolated-no-cache.sh <test_results.json> <servers> <repeat>
+./experiments/isolated-no-cache.sh <servers> <repeat> <individual_test_results.json>
 ```
 
 For example:
@@ -83,12 +83,12 @@ Runs the subtree with Dawn's built-in `--dawn-isolate` option instead of the cus
 
 ## Running file-level subtrees
 
-The file-level experiment also requires a `test_results.json`.
+The file-level experiment requires a `individual_test_results.json`.
 
 Usage:
 
 ```bash
-./experiments/file-subtrees-no-cache.sh <test_results.json> <servers> <repeat>
+./experiments/file-subtrees-no-cache.sh <servers> <repeat> <individual_test_results.json>
 ```
 
 For example:
@@ -100,7 +100,7 @@ For example:
     1
 ```
 
-The individual tests in `test_results.json` are grouped at the CTS **file level** before execution.
+The individual tests in `individual_test_results.json` are grouped at the CTS **file level** before execution.
 
 For example, these individual tests:
 
@@ -130,8 +130,8 @@ For example, one complete configuration can be run manually as:
 ```bash
 ./experiments/subtree-no-cache.sh 1 1
 ./experiments/subtree-cached.sh 1 1
-./experiments/isolated-no-cache.sh <test_results.json> 1 1
-./experiments/file-subtrees-no-cache.sh <test_results.json> 1 1
+./experiments/isolated-no-cache.sh 1 1 <individual_test_results.json> 
+./experiments/file-subtrees-no-cache.sh 1 1 <individual_test_results.json> 
 ```
 
 There is intentionally **no requirement that these commands be run by a single orchestrator or on the same machine**. The experiments can be distributed across machines and run independently.
