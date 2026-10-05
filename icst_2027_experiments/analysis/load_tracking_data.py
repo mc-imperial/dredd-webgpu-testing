@@ -1,79 +1,59 @@
 #!/usr/bin/env python3
 
-"""
-Utilities for extracting CTS test -> mutant reachability data.
-
-This module deliberately contains no analysis logic. It converts the raw
-tracking output of a reachability-stability experiment into Python data
-structures that downstream analyses can operate on.
-
-Supported layouts
------------------
-
-1. Normal/subtree run:
-
-    run/
-        tracking/
-            mapping_test_to_id.json
-            test_id_0.txt
-            test_id_1.txt
-            ...
-
-2. Isolated run:
-
-    run/
-        0/
-            tracking/
-                mapping_test_to_id.json
-                test_id_0.txt
-        1/
-            tracking/
-                mapping_test_to_id.json
-                test_id_0.txt
-        ...
-
-The isolated layout may have one test per directory, but this module does
-not rely on that assumption: it reads whatever mappings are actually present.
-"""
-
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+import time
 from pathlib import Path
-from typing import Iterator
 
 
-@dataclass(frozen=True)
-class TestReachability:
-    """Mutants reached by one CTS test."""
-
-    test: str
-    mutants: frozenset[str]
+def log(message: str) -> None:
+    print(f"[load_tracking] {message}", flush=True)
 
 
-def find_tracking_dirs(run_dir: str | Path) -> list[Path]:
-    """
-    Find all tracking directories belonging to a run.
+def read_mutants(path: Path) -> frozenset[str]:
+    with path.open("r") as f:
+        return frozenset(
+            line.strip()
+            for line in f
+            if line.strip()
+        )
 
-    Handles both:
-      - run/tracking/
-      - run/<test-index>/tracking/
-    """
-    run_dir = Path(run_dir)
 
-    if not run_dir.is_dir():
-        raise FileNotFoundError(f"Run directory does not exist: {run_dir}")
+def load_tracking_dir(tracking_dir: Path) -> dict[str, frozenset[str]]:
+    mapping_path = tracking_dir / "mapping_test_to_id.json"
 
-    # Normal layout: one tracking directory directly under the run.
+    with mapping_path.open("r") as f:
+        mapping = json.load(f)
+
+    result = {}
+
+    for test, test_id in mapping.items():
+        mutant_path = tracking_dir / f"{test_id}.txt"
+
+        if mutant_path.is_file():
+            result[test] = read_mutants(mutant_path)
+        else:
+            result[test] = frozenset()
+
+    return result
+
+
+def find_tracking_dirs(run_dir: Path) -> list[Path]:
+    start = time.monotonic()
+
+    log(f"Scanning for tracking directories: {run_dir}")
+
     direct = run_dir / "tracking"
+
     if (direct / "mapping_test_to_id.json").is_file():
+        log("Found normal subtree tracking layout")
+        log(f"Directory scan: {time.monotonic() - start:.2f}s")
         return [direct]
 
-    # Isolated layout: tracking directory inside each child run directory.
     tracking_dirs = []
 
-    for child in sorted(run_dir.iterdir()):
+    for child in run_dir.iterdir():
         if not child.is_dir():
             continue
 
@@ -82,186 +62,111 @@ def find_tracking_dirs(run_dir: str | Path) -> list[Path]:
         if (tracking / "mapping_test_to_id.json").is_file():
             tracking_dirs.append(tracking)
 
+    elapsed = time.monotonic() - start
+
+    log(
+        f"Found {len(tracking_dirs):,} tracking directories "
+        f"in {elapsed:.2f}s"
+    )
+
     return tracking_dirs
 
 
-def load_tracking_dir(tracking_dir: str | Path) -> dict[str, frozenset[str]]:
-    """
-    Load one tracking directory.
-
-    Returns:
-        {
-            "CTS test name": frozenset({"mutant1", "mutant2", ...}),
-            ...
-        }
-    """
-    tracking_dir = Path(tracking_dir)
-
-    mapping_path = tracking_dir / "mapping_test_to_id.json"
-
-    if not mapping_path.is_file():
-        raise FileNotFoundError(
-            f"Missing mapping_test_to_id.json: {mapping_path}"
-        )
-
-    mapping = json.loads(mapping_path.read_text())
-
-    result: dict[str, frozenset[str]] = {}
-
-    for test, test_id in mapping.items():
-        mutant_path = tracking_dir / f"{test_id}.txt"
-
-        if mutant_path.is_file():
-            mutants = frozenset(
-                line.strip()
-                for line in mutant_path.read_text().splitlines()
-                if line.strip()
-            )
-        else:
-            mutants = frozenset()
-
-        result[test] = mutants
-
-    return result
-
-
 def load_run(run_dir: str | Path) -> dict[str, frozenset[str]]:
-    """
-    Load all test -> mutant mappings from a run.
+    run_dir = Path(run_dir)
 
-    The result is normalized across normal and isolated layouts.
+    total_start = time.monotonic()
 
-    If the same test occurs more than once, the mutant sets are unioned.
-    """
-    result: dict[str, set[str]] = {}
+    log("=" * 60)
+    log(f"Loading run: {run_dir}")
+    log("=" * 60)
+
+    # ---------------------------------------------------------
+    # Step 1: Find tracking directories
+    # ---------------------------------------------------------
+
+    start = time.monotonic()
 
     tracking_dirs = find_tracking_dirs(run_dir)
 
     if not tracking_dirs:
         raise ValueError(
-            f"No tracking directories found in run: {run_dir}"
+            f"No tracking directories found in {run_dir}"
         )
 
-    for tracking_dir in tracking_dirs:
+    log(
+        f"Step 1 complete: found {len(tracking_dirs):,} "
+        f"tracking directories in {time.monotonic() - start:.2f}s"
+    )
+
+    # ---------------------------------------------------------
+    # Step 2: Read tracking data
+    # ---------------------------------------------------------
+
+    start = time.monotonic()
+
+    result: dict[str, set[str]] = {}
+
+    for index, tracking_dir in enumerate(tracking_dirs, start=1):
         tracking = load_tracking_dir(tracking_dir)
 
         for test, mutants in tracking.items():
-            result.setdefault(test, set()).update(mutants)
+            if test not in result:
+                result[test] = set()
 
-    return {
+            result[test].update(mutants)
+
+        # For large isolated runs, report progress every 1000 dirs.
+        if index % 1000 == 0 or index == len(tracking_dirs):
+            elapsed = time.monotonic() - start
+            rate = index / elapsed if elapsed else 0
+
+            log(
+                f"Step 2 progress: {index:,}/{len(tracking_dirs):,} "
+                f"directories "
+                f"({rate:,.0f} dirs/s, {elapsed:.1f}s elapsed)"
+            )
+
+    elapsed = time.monotonic() - start
+
+    log(
+        f"Step 2 complete: loaded {len(result):,} tests "
+        f"in {elapsed:.2f}s"
+    )
+
+    # ---------------------------------------------------------
+    # Step 3: Normalize
+    # ---------------------------------------------------------
+
+    start = time.monotonic()
+
+    normalized = {
         test: frozenset(mutants)
         for test, mutants in result.items()
     }
 
+    elapsed = time.monotonic() - start
 
-def iter_test_reachability(
-    run_dir: str | Path,
-) -> Iterator[TestReachability]:
-    """
-    Yield one TestReachability object per CTS test.
-    """
-    data = load_run(run_dir)
-
-    for test in sorted(data):
-        yield TestReachability(
-            test=test,
-            mutants=data[test],
-        )
-
-
-def to_rows(run_dir: str | Path) -> list[dict]:
-    """
-    Convert a run into one row per test.
-
-    Example row:
-
-        {
-            "test": "...",
-            "mutants": frozenset({"123", "456"}),
-            "n_mutants": 2,
-        }
-    """
-    return [
-        {
-            "test": item.test,
-            "mutants": item.mutants,
-            "n_mutants": len(item.mutants),
-        }
-        for item in iter_test_reachability(run_dir)
-    ]
-
-
-def to_mutant_rows(run_dir: str | Path) -> list[dict]:
-    """
-    Convert a run into one row per test-mutant relationship.
-
-    Example:
-
-        {
-            "test": "...",
-            "mutant": "123",
-        }
-
-    This is particularly convenient for pandas.
-    """
-    rows = []
-
-    for item in iter_test_reachability(run_dir):
-        for mutant in sorted(item.mutants):
-            rows.append(
-                {
-                    "test": item.test,
-                    "mutant": mutant,
-                }
-            )
-
-    return rows
-
-
-def to_dataframe(run_dir: str | Path):
-    """
-    Return a pandas DataFrame with one row per CTS test.
-
-    Columns:
-        test
-        mutants
-        n_mutants
-    """
-    import pandas as pd
-
-    return pd.DataFrame(to_rows(run_dir))
-
-
-def to_mutant_dataframe(run_dir: str | Path):
-    """
-    Return a pandas DataFrame with one row per test-mutant relationship.
-
-    Columns:
-        test
-        mutant
-    """
-    import pandas as pd
-
-    return pd.DataFrame(to_mutant_rows(run_dir))
-
-
-if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(
-        description="Extract CTS test -> mutant reachability data."
-    )
-    parser.add_argument(
-        "run_dir",
-        type=Path,
-        help="Path to an experiment run directory.",
+    log(
+        f"Step 3 complete: normalized {len(normalized):,} tests "
+        f"in {elapsed:.2f}s"
     )
 
-    args = parser.parse_args()
+    # ---------------------------------------------------------
+    # Summary
+    # ---------------------------------------------------------
 
-    df = to_dataframe(args.run_dir)
+    total_elapsed = time.monotonic() - total_start
 
-    print(f"Tests: {len(df)}")
-    print(f"Total test-mutant relationships: {df['n_mutants'].sum()}")
-    print()
-    print(df[["test", "n_mutants"]].to_string(index=False))
+    total_relationships = sum(
+        len(mutants)
+        for mutants in normalized.values()
+    )
+
+    log("-" * 60)
+    log(f"Tests:         {len(normalized):,}")
+    log(f"Relationships: {total_relationships:,}")
+    log(f"Total time:    {total_elapsed:.2f}s")
+    log("-" * 60)
+
+    return normalized

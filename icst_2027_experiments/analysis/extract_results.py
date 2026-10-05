@@ -1,35 +1,44 @@
 #!/usr/bin/env python3
 
 import argparse
+import json
+import sys
 from pathlib import Path
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = SCRIPT_DIR.parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
 
 import pandas as pd
 
-from load_tracking import to_mutant_dataframe
+from icst_2027_experiments.analysis.load_tracking_data import load_run
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Extract reachability data from experiment output."
+        description="Extract CTS test -> mutant reachability data."
     )
     parser.add_argument(
         "output_dir",
         type=Path,
-        help="Root output directory, e.g. results/small-run/",
+        help="Root experiment run directory.",
     )
     parser.add_argument(
         "--output",
         type=Path,
         default=None,
-        help="Output CSV. Defaults to <output_dir>/reachability.csv",
+        help="Output CSV. Defaults to <output_dir>/processed/reachability.csv",
     )
 
     args = parser.parse_args()
 
     output_dir = args.output_dir.resolve()
-    output_path = args.output or output_dir / "reachability.csv"
+    output_path = args.output or (
+        output_dir / "processed" / "reachability.csv"
+    )
 
-    # Find experiment run directories containing tracking output.
+    rows = []
+
     run_dirs = sorted(
         path
         for path in output_dir.rglob("repeat-*")
@@ -39,50 +48,46 @@ def main():
     if not run_dirs:
         raise SystemExit(f"No experiment runs found under {output_dir}")
 
-    frames = []
-
     for run_dir in run_dirs:
         try:
-            df = to_mutant_dataframe(run_dir)
+            tracking = load_run(run_dir)
         except ValueError:
-            # This allows configurations such as dawn-isolate,
-            # which currently have no tracking data.
+            # Configuration has no tracking data.
             continue
 
-        if df.empty:
-            continue
-
-        # Extract experiment metadata from the directory structure.
         parts = run_dir.relative_to(output_dir).parts
 
-        # Expected:
-        #   <configuration>/servers-<n>/repeat-<n>
         configuration = parts[0]
-        servers = parts[-2].removeprefix("servers-")
-        repeat = parts[-1].removeprefix("repeat-")
+        servers = int(parts[-2].removeprefix("servers-"))
+        repeat = int(parts[-1].removeprefix("repeat-"))
 
-        df.insert(0, "configuration", configuration)
-        df.insert(1, "servers", int(servers))
-        df.insert(2, "repeat", int(repeat))
+        for test, mutants in tracking.items():
+            rows.append(
+                {
+                    "configuration": configuration,
+                    "servers": servers,
+                    "repeat": repeat,
+                    "test": test,
+                    "n_mutants": len(mutants),
+                    "mutants": json.dumps(sorted(mutants)),
+                }
+            )
 
-        frames.append(df)
-
-    if not frames:
+    if not rows:
         raise SystemExit("No tracking data found.")
 
-    result = pd.concat(frames, ignore_index=True)
+    df = pd.DataFrame(rows)
 
-    result = result.sort_values(
-        ["configuration", "servers", "repeat", "test", "mutant"]
+    df = df.sort_values(
+        ["configuration", "servers", "repeat", "test"]
     )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    result.to_csv(output_path, index=False)
+    df.to_csv(output_path, index=False)
 
-    print(f"Runs processed: {len(frames)}")
-    print(f"Relationships:  {len(result)}")
-    print(f"Tests:          {result['test'].nunique()}")
-    print(f"Mutants:        {result['mutant'].nunique()}")
+    print(f"Runs processed: {len(run_dirs)}")
+    print(f"Tests:          {len(df)}")
+    print(f"Relationships:  {df['n_mutants'].sum():,}")
     print(f"Output:         {output_path}")
 
 
