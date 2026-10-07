@@ -10,7 +10,7 @@ export MESA_TRACKED="${BASE}/mesa_tracked"
 
 # Get Dredd with tracking reset
 cd $DREDD
-git checkout allow_tracking_array_resetting
+git checkout $DREDD_RESET_COMMIT
 cmake -S . -B build -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DDREDD_CLANG_LLVM_DIR=/usr/lib/llvm-17
