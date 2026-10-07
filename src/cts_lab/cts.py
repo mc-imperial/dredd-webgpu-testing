@@ -139,6 +139,7 @@ class CTS:
             tracking_dir = outdir / "tracking"
             tracking_dir.mkdir(parents=True, exist_ok=True)
             env["DREDD_MUTANT_TRACKING_DIR"] = str(tracking_dir)
+            env["DREDD_MUTANT_TRACKING_FILE"] = str(tracking_dir / f"{outdir.name}.txt")
 
         cmd.append(query)
 
