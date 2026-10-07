@@ -13,11 +13,4 @@ echo "MESA_TRACKED=${MESA_TRACKED}"
 
 ${PROJECT_ROOT}/setup/build_mesa.sh $MESA_TRACKED
 
-${PROJECT_ROOT}/setup/track_mesa.sh
-
-# Patch Dawn and CTS
-cd $CTS
-git apply $PROJECT_ROOT/setup/patches/cts_mutant_tracking_5975f536.diff
-
-cd $DAWN
-git apply $PROJECT_ROOT/setup/patches/dawn_tracking_9de0fd.diff
+${PROJECT_ROOT}/setup/track_mesa.sh --vanilla
