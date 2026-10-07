@@ -129,9 +129,6 @@ RUN ${PROJECT_ROOT}/setup/build_mesa.sh $MESA
 RUN ${PROJECT_ROOT}/setup/build_mesa.sh $MESA_MUTATED
 RUN ${PROJECT_ROOT}/setup/build_mesa.sh $MESA_TRACKED
 
-RUN ${PROJECT_ROOT}/setup/mutate_mesa.sh
-RUN ${PROJECT_ROOT}/setup/track_mesa.sh
-
 # ---------------------------------------------------------------------------
 # Project
 # ---------------------------------------------------------------------------
