@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 set -a
-source "$SCRIPT_DIR/versions.env"
+source "$SCRIPT_DIR/../setup/versions.env"
 set +a
 
 docker build \
