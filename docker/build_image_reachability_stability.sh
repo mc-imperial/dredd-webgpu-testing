@@ -2,7 +2,7 @@
 set -euo pipefail
 
 echo "Building base image..."
-./docker/build-image.sh
+./docker/build_image.sh
 
 echo "Building application image..."
 docker build \
