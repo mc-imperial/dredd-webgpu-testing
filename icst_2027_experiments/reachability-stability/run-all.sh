@@ -77,7 +77,6 @@ case "${1:-all}" in
             "$REPEAT" \
             "$CONTAINER_PROJECT_ROOT/${INDIVIDUAL_TEST_JSON#"$PROJECT_ROOT/"}"
 
-        run_experiment isolated-dawn-option.sh "$SERVERS" "$REPEAT"
         ;;
 
     subtree)
@@ -96,12 +95,8 @@ case "${1:-all}" in
         run_experiment file-subtrees-no-cache.sh "$SERVERS" "$REPEAT"
         ;;
 
-    dawn)
-        run_experiment isolated-dawn-option.sh "$SERVERS" "$REPEAT"
-        ;;
-
     *)
-        echo "Usage: $0 [all|subtree|cache|isolated|file-subtrees|dawn]" >&2
+        echo "Usage: $0 [all|subtree|cache|isolated|file-subtrees]" >&2
         exit 1
         ;;
 esac
