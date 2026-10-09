@@ -10,8 +10,8 @@ IMAGE=dredd-webgpu-testing:reachability-stability
 
 RUN_TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
-RESULTS_ROOT="results/small-run/run-${RUN_TIMESTAMP}"
-SERVERS=1
+RESULTS_ROOT="results/webgpu-shader-run/run-${RUN_TIMESTAMP}"
+SERVERS=4
 REPEAT=1
 
 mkdir -p "$PROJECT_ROOT/$RESULTS_ROOT"
