@@ -1,0 +1,11 @@
+FROM dredd-webgpu-testing:reachability-stability
+
+# Use the current setup scripts from the checkout rather than
+# the version baked into the base image.
+COPY setup/ /workspace/dredd-webgpu-testing/setup/
+
+ENV VIRTUAL_ENV=/opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+RUN chmod +x $PROJECT_ROOT/setup/mutate_mesa.sh \
+    && $PROJECT_ROOT/setup/mutate_mesa.sh
