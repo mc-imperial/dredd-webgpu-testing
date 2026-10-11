@@ -3,7 +3,7 @@ import os
 import json
 from pathlib import Path
 
-from cts_lab.cts import CTS, CTSIsolatedRunner
+from cts_lab.cts import CTS, CTSIsolatedRunner, RunOptions
 from cts_lab.queries import to_file_level_queries
 
 def main() -> int:
@@ -142,19 +142,18 @@ def run_command(args) -> int:
         run_subtrees(cts, args)
 
 def run_from_root(cts: CTS, args) -> int:
-    
-    run = cts.run(
-        query=args.query,
-        outdir=Path(args.outdir),
+    opts = RunOptions(
         tracking=args.track_mutants,
         mesa_shader_cache_on=args.mesa_shader_cache_on,
         dawn_servers=args.n_dawn_runners,
         dawn_isolate=args.dawn_isolate,
-        test_level=args.test_level
+        test_level=args.test_level,
     )
 
-    run.get_test_results()
+    run = cts.run(args.query, Path(args.outdir), opts)
 
+    if run.timed_out:
+        return 124   # conventional timeout exit code; returncode is None here
     return run.returncode
 
 def run_subtrees(cts, args) -> int:

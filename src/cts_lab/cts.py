@@ -3,73 +3,67 @@ import os
 import subprocess
 import time
 import shutil
-from dataclasses import asdict, dataclass
+import threading
+from dataclasses import asdict, dataclass, field
+from collections import Counter
 from pathlib import Path
 
-@dataclass
+@dataclass(frozen=True)
 class CTSConfig:
+    """Fixed paths that don't change between runs."""
     cts: Path
     dawn: Path
     vk_icd: Path
 
+    @property
+    def dawn_bin(self) -> Path:
+        return self.dawn / "out" / "Debug"
+
+    @property
+    def dawn_runner(self) -> Path:
+        return self.dawn / "tools" / "run"
+
+@dataclass(frozen=True)
+class RunOptions:
+    """Per-run settings. Defaults are for a plain, untracked, unmutated run."""
+    dawn_servers: int = 1
+    dawn_isolate: bool = False
+    mesa_shader_cache_on: bool = False
+    tracking: bool = False
+    mutant_id: int | None = None          # sets DREDD_ENABLED_MUTATION
+    timeout: float | None = None          # seconds; None = no limit
+    echo: bool = True                     # mirror CTS output to the terminal
+    extra_env: dict[str, str] = field(default_factory=dict)
+
+    # Metadata only: recorded in run_info.json, not used to run anything.
+    test_level: str | None = None
+    source_individual_tests: Path | None = None
+
 @dataclass
 class CTSRunResult:
     """Results and metadata from a single CTS execution."""
-    
+    query: str
+    options: RunOptions
+    config: CTSConfig
     outdir: Path
     run_file: Path
     stdout_file: Path
-    config: CTSConfig
-    tracking: bool
-    mesa_shader_cache_on: bool
-    dawn_servers: int
-    dawn_isolate: bool
-    query: str
+    tracking_file: Path | None
     time_seconds: float
-    returncode: int
-    source_individual_tests: Path | None
-    test_level: str
+    returncode: int | None
+    timed_out: bool
+    test_results: dict[str, str]   # test name -> "pass" | "fail" | "skip" | "unknown"
 
     @property
     def individual_test_results(self) -> Path:
-        return Path(self.outdir, "individual_test_results.json")
+        return self.outdir / "individual_test_results.json"
 
-    def get_test_results(self) -> dict[str, str]:
+    def status_of(self, test: str) -> str | None:
+        """Status of one test, or None if it never reported (e.g. run timed out)."""
+        return self.test_results.get(test)
 
-        with self.stdout_file.open() as f:
-            lines = f.readlines()
-
-        tests = [
-            line for line in lines
-            if line.startswith("webgpu:")
-        ]
-
-        results = {
-            test.split(" - ", 1)[0]: self.extract_status(
-                test.split(" - ", 1)[1]
-            )
-            for test in tests
-            if " - " in test
-        }
-
-        self.individual_test_results.write_text(
-            json.dumps(results, indent=2, default=str)
-        )
-
-        return results
-
-    @staticmethod
-    def extract_status(status_part: str) -> str:
-        status_part = status_part.rstrip(":").lower()
-
-        if "pass" in status_part:
-            return "pass"
-        elif "fail" in status_part:
-            return "fail"
-        elif "skip" in status_part:
-            return "skip"
-
-        return "unknown"
+    def status_counts(self) -> Counter:
+        return Counter(self.test_results.values())
 
 @dataclass
 class CTSIsolatedRunResult:
@@ -81,30 +75,48 @@ class CTSIsolatedRunResult:
         return len(self.results)
 
 class CTS:
-    """Run the WebGPU Conformance Test Suite and analyse its results."""
+    """Run the WebGPU Conformance Test Suite via Dawn and capture its results."""
+ 
+    def __init__(self, cts: Path, dawn: Path, vk_icd: Path):
+        self.config = CTSConfig(cts=Path(cts), dawn=Path(dawn), vk_icd=Path(vk_icd))
 
-    def __init__(
-        self,
-        cts: Path,
-        dawn: Path,
-        vk_icd: Path
-    ):
+    def build_command(self, query: str, opts: RunOptions) -> list[str]:
+        cmd = [
+            str(self.config.dawn_runner),
+            "run-cts",
+            "--verbose",
+            f"--bin={self.config.dawn_bin}",
+            f"--cts={self.config.cts}",
+            f"--j={opts.dawn_servers}",
+        ]
+        if opts.dawn_isolate:
+            cmd.append("--isolate")
+        if opts.tracking:
+            cmd.append("--mutant-tracking")
+        cmd.append(query)
+        return cmd
+ 
+    def build_env(self, opts: RunOptions, tracking_file: Path | None) -> dict[str, str]:
+        # Always start from a copy of the real environment so PATH etc. survive,
+        # and never mutate a dict the caller owns.
+        env = os.environ.copy()
+        env.update(opts.extra_env)
+ 
+        env["VK_ICD_FILENAMES"] = str(self.config.vk_icd)
+        env["MESA_SHADER_CACHE_DISABLE"] = "false" if opts.mesa_shader_cache_on else "true"
+ 
+        if tracking_file is not None:
+            env["DREDD_MUTANT_TRACKING_DIR"] = str(tracking_file.parent)
+            env["DREDD_MUTANT_TRACKING_FILE"] = str(tracking_file)
+ 
+        if opts.mutant_id is not None:
+            env["DREDD_ENABLED_MUTATION"] = str(opts.mutant_id)
+        else:
+            env.pop("DREDD_ENABLED_MUTATION", None)  # don't inherit one by accident
+ 
+        return env
 
-        self.config = CTSConfig(
-            cts=Path(cts),
-            dawn=Path(dawn),
-            vk_icd=Path(vk_icd)
-        )
-
-    def run(self, 
-        query: str, 
-        outdir: Path,
-        tracking: bool,
-        mesa_shader_cache_on: bool,
-        dawn_servers: int,
-        dawn_isolate: bool,
-        test_level: str,
-        source_individual_tests: Path | None = None) -> CTSRunResult:
+    def run(self, query: str, outdir: Path, opts: RunOptions = RunOptions()) -> CTSRunResult:
         """Run the CTS and save its output to ``outdir``."""
 
         outdir = Path(outdir).resolve()
@@ -113,83 +125,47 @@ class CTS:
         run_file = outdir / "run_info.json"
         stdout_file = outdir / "stdout.txt"
 
-        env = os.environ.copy()
-
-        env["VK_ICD_FILENAMES"] = str(self.config.vk_icd)
-
-        if mesa_shader_cache_on:
-            env["MESA_SHADER_CACHE_DISABLE"] = "false"
-        else:
-            env["MESA_SHADER_CACHE_DISABLE"] = "true"
-
-        cmd = [
-            f"{self.config.dawn}/tools/run",
-            "run-cts",
-            "--verbose",
-            f"--bin={self.config.dawn}/out/Debug",
-            f"--cts={self.config.cts}",
-            f"--j={dawn_servers}"   
-        ]
-
-        if dawn_isolate:
-            cmd.append('--isolate')
-
-        if tracking:
-            cmd.append('--mutant-tracking')
+        tracking_file = None
+        if opts.tracking:
             tracking_dir = outdir / "tracking"
             tracking_dir.mkdir(parents=True, exist_ok=True)
-            env["DREDD_MUTANT_TRACKING_DIR"] = str(tracking_dir)
-            env["DREDD_MUTANT_TRACKING_FILE"] = str(tracking_dir / f"{outdir.name}.txt")
+            tracking_file = tracking_dir / f"{outdir.name}.txt"
+ 
+        cmd = self.build_command(query, opts)
+        env = self.build_env(opts, tracking_file)
 
-        cmd.append(query)
+        print("Running CTS:", " ".join(cmd))
 
-        print("Running CTS:")
-        print(" ".join(cmd))
-
-        start_time = time.perf_counter()
-
-        with stdout_file.open("w") as f:
-            process = subprocess.Popen(
-                cmd,
-                env=env,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1,
-            )
-
-            for line in process.stdout:
-                print(line, end="")
-                f.write(line)
-                f.flush()
-
-            returncode = process.wait()
-
-        time_seconds = time.perf_counter() - start_time
-
-        print(f"CTS completed in {time_seconds:.2f} seconds")
-
-        run = CTSRunResult(
+        returncode, timed_out, time_seconds = _run_streaming(
+            cmd, env, stdout_file, timeout=opts.timeout, echo=opts.echo
+        )
+        
+        status = "timed out" if timed_out else "completed"
+        print(f"CTS {status} in {time_seconds:.2f} seconds")
+ 
+        result = CTSRunResult(
+            query=query,
+            options=opts,
+            config=self.config,
             outdir=outdir,
             run_file=run_file,
             stdout_file=stdout_file,
-            config=self.config,
-            query=query,
-            tracking=tracking,
-            mesa_shader_cache_on=mesa_shader_cache_on,
-            dawn_servers=dawn_servers,
-            dawn_isolate=dawn_isolate,
+            tracking_file=tracking_file,
             time_seconds=time_seconds,
-            returncode=process.returncode,
-            source_individual_tests=source_individual_tests,
-            test_level=test_level
-            )
-
-        run_file.write_text(
-            json.dumps(asdict(run), indent=2, default=str)
+            returncode=returncode,
+            timed_out=timed_out,
+            # Parse even on timeout: tests that finished before the kill still count.
+            test_results=parse_test_results(stdout_file.read_text()),
         )
-
-        return run
+ 
+        result.individual_test_results.write_text(
+            json.dumps(result.test_results, indent=2)
+        )
+        # Per-test results have their own file; keep run_info.json to metadata.
+        info = asdict(result)
+        info.pop("test_results")
+        run_file.write_text(json.dumps(info, indent=2, default=str))
+        return result
 
 class CTSIsolatedRunner:
     def __init__(self, 
@@ -219,16 +195,16 @@ class CTSIsolatedRunner:
         ):
             outdir = self.outdir / str(test_id)
 
-            result = self.cts.run(
-                query=test_name,
-                outdir=outdir,
+            opts = RunOptions(
                 tracking=self.tracking,
                 mesa_shader_cache_on=self.mesa_shader_cache_on,
-                dawn_servers=1, # Always one server needed for single tests
-                dawn_isolate=False, # For now use server approach in this isolated runner, rather than Dawn isolation
+                dawn_servers=1,       # always one server needed for single tests
+                dawn_isolate=False,   # use the server approach here rather than Dawn isolation
                 source_individual_tests=source_individual_tests,
-                test_level=test_level
+                test_level=test_level,
             )
+
+            result = self.cts.run(test_name, outdir, opts)
 
             results.append(result)
 
@@ -270,7 +246,6 @@ class CTSIsolatedRunner:
             )
 
         return test_dirs
-
 
     def _validate_run_info(
         self,
@@ -343,3 +318,85 @@ class CTSIsolatedRunner:
         )
 
         return last_idx + 1
+
+
+def _run_streaming(
+    cmd: list[str],
+    env: dict[str, str],
+    stdout_file: Path,
+    timeout: float | None,
+    echo: bool,
+) -> tuple[int | None, bool, float]:
+    """Run ``cmd``, tee its output to ``stdout_file``, and enforce ``timeout``.
+ 
+    The process is started in its own session so that on timeout we can kill
+    the whole process group (the Dawn runner and every CTS server it spawned),
+    not just the top-level process.
+    """
+    timed_out = threading.Event()
+    start = time.perf_counter()
+ 
+    with stdout_file.open("w") as f:
+        process = subprocess.Popen(
+            cmd,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            start_new_session=True,
+        )
+ 
+        def kill_group():
+            timed_out.set()
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+ 
+        # A timer thread, because reading stdout line-by-line blocks and
+        # can't itself notice that the deadline has passed.
+        timer = threading.Timer(timeout, kill_group) if timeout else None
+        if timer:
+            timer.start()
+ 
+        try:
+            for line in process.stdout:
+                if echo:
+                    print(line, end="")
+                f.write(line)
+                f.flush()
+            process.wait()
+        finally:
+            if timer:
+                timer.cancel()
+ 
+    elapsed = time.perf_counter() - start
+    returncode = None if timed_out.is_set() else process.returncode
+    return returncode, timed_out.is_set(), elapsed
+ 
+ 
+# --------------------------------------------------------------------------- #
+# Output parsing
+# --------------------------------------------------------------------------- #
+ 
+def parse_test_results(stdout: str) -> dict[str, str]:
+    """Parse per-test lines of the form ``webgpu:... - <status>``."""
+    results = {}
+    for line in stdout.splitlines():
+        if not line.startswith("webgpu:") or " - " not in line:
+            continue
+        name, status_part = line.split(" - ", 1)
+        results[name.strip()] = extract_status(status_part)
+    return results
+ 
+ 
+def extract_status(status_part: str) -> str:
+    status_part = status_part.strip().rstrip(":").lower()
+    if "pass" in status_part:
+        return "pass"
+    if "fail" in status_part:
+        return "fail"
+    if "skip" in status_part:
+        return "skip"
+    return "unknown"
