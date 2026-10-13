@@ -17,4 +17,5 @@ cts-lab kill \
     --outdir "$OUTDIR" \
     --mesa-shader-cache-off \
     --mapping "$MAPPING" \
+    --n-dawn-runners 1 \
     "$@"
