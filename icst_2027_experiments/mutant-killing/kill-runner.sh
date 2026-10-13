@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Usage: kill.sh <mutant_id> <query> [timeout_seconds]
+# Usage: kill.sh <mapping.json> <run-name> [extra cts-lab kill args...]
+#   e.g. kill.sh results/.../mutant_to_tests_isolated-no-cache.json first-pass --limit 20
 
 set -euo pipefail
 
@@ -7,38 +8,34 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
 
 CONTAINER_PROJECT_ROOT=/workspace/dredd-webgpu-testing
-IMAGE="${IMAGE:-dredd-webgpu-testing:mutants}"   # image with the mutated Mesa build
+IMAGE="${IMAGE:-dredd-webgpu-testing:mutants}"
 
-USAGE="Usage: $0 <mapping-json> <mutant-id> [timeout_seconds]"
-MAPPING="${1:?$USAGE}"
-MUTANT_ID="${2:?$USAGE}"
-TIMEOUT="${3:-300}"
+USAGE="Usage: $0 <mapping.json> <run-name> [extra cts-lab kill args...]"
+MAPPING="$(realpath "${1:?$USAGE}")"
+RUN_NAME="${2:?$USAGE}"
+shift 2
 
-RUN_TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-RESULTS_ROOT="results/mutant-killing/run-${RUN_TIMESTAMP}"
+if [[ "$MAPPING" != "$PROJECT_ROOT"/* ]]; then
+    echo "ERROR: mapping must be inside $PROJECT_ROOT so the container can see it" >&2
+    exit 1
+fi
 
-mkdir -p "$PROJECT_ROOT/$RESULTS_ROOT"
-chmod 777 "$PROJECT_ROOT/$RESULTS_ROOT"
+# Fixed name (no timestamp) so rerunning the same command resumes.
+OUTDIR="results/mutant-killing/$RUN_NAME"
+mkdir -p "$PROJECT_ROOT/$OUTDIR"
+chmod 777 "$PROJECT_ROOT/$OUTDIR"
+cp "$SCRIPT_DIR/common.sh" "$PROJECT_ROOT/$OUTDIR/common.sh"
 
-# Keep a copy of the settings used, as with the tracking runs.
-cp "$SCRIPT_DIR/common.sh" "$PROJECT_ROOT/$RESULTS_ROOT/common.sh"
-
-echo "============================================================"
-echo "Mapping:  $MAPPING"
-echo "Mutant ID:   $MUTANT_ID"
-echo "Timeout: ${TIMEOUT}s"
+echo "Mapping: $MAPPING"
+echo "Output:  $OUTDIR"
 echo "Image:   $IMAGE"
-echo "Results: $RESULTS_ROOT"
-echo "============================================================"
 
 time docker run --rm --init \
-    --ulimit core=1073741824:1073741824 \
+    --ulimit core=0 \
     --mount "type=bind,source=$PROJECT_ROOT,target=$CONTAINER_PROJECT_ROOT" \
     --workdir "$CONTAINER_PROJECT_ROOT" \
-    -e RESULTS_ROOT="$RESULTS_ROOT" \
     "$IMAGE" \
-    /bin/bash \
-    "icst_2027_experiments/mutant-killing/kill.sh" \
-    "$MAPPING" \
-    "$MUTANT_ID" \
-    "$TIMEOUT"
+    /bin/bash icst_2027_experiments/mutant-killing/kill.sh \
+        "$CONTAINER_PROJECT_ROOT/${MAPPING#"$PROJECT_ROOT/"}" \
+        "$OUTDIR" \
+        "$@"
