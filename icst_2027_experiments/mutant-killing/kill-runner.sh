@@ -9,9 +9,9 @@ PROJECT_ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
 CONTAINER_PROJECT_ROOT=/workspace/dredd-webgpu-testing
 IMAGE="${IMAGE:-dredd-webgpu-testing:mutants}"   # image with the mutated Mesa build
 
-USAGE="Usage: $0 <mutant_id> <query> [timeout_seconds]"
-MUTANT_ID="${1:-1}"
-TEST_QUERY="${2:-'webgpu:shader,execution,flow_control,for,*'}"
+USAGE="Usage: $0 <mapping-json> <mutant-id> [timeout_seconds]"
+MAPPING="${1:?$USAGE}"
+MUTANT_ID="${2:?$USAGE}"
 TIMEOUT="${3:-300}"
 
 RUN_TIMESTAMP=$(date +%Y%m%d_%H%M%S)
@@ -24,8 +24,8 @@ chmod 777 "$PROJECT_ROOT/$RESULTS_ROOT"
 cp "$SCRIPT_DIR/common.sh" "$PROJECT_ROOT/$RESULTS_ROOT/common.sh"
 
 echo "============================================================"
-echo "Mutant:  $MUTANT_ID"
-echo "Query:   $TEST_QUERY"
+echo "Mapping:  $MAPPING"
+echo "Mutant ID:   $MUTANT_ID"
 echo "Timeout: ${TIMEOUT}s"
 echo "Image:   $IMAGE"
 echo "Results: $RESULTS_ROOT"
@@ -39,6 +39,6 @@ time docker run --rm --init \
     "$IMAGE" \
     /bin/bash \
     "icst_2027_experiments/mutant-killing/kill.sh" \
+    "$MAPPING" \
     "$MUTANT_ID" \
-    "$TEST_QUERY" \
     "$TIMEOUT"

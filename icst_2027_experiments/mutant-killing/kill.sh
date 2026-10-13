@@ -6,12 +6,12 @@ source "$(dirname "$0")/common.sh"
 
 SCRIPT_NAME="$(basename "$0" .sh)"
 
-USAGE="Usage: $0 <mutant_id> <query> [timeout_seconds]"
-MUTANT_ID="${1:?$USAGE}"
-KILL_QUERY="${2:?$USAGE}"
+USAGE="Usage: $0 <mapping-json> <mutant-id> [timeout_seconds]"
+MAPPING="${1:?$USAGE}"
+MUTANT_ID="${2:?$USAGE}"
 TIMEOUT="${3:-300}"
 
-OUTDIR="$RESULTS_ROOT/$SCRIPT_NAME/mutant-${MUTANT_ID}"
+OUTDIR="$RESULTS_ROOT/$SCRIPT_NAME"
 mkdir -p "$OUTDIR"
 
 cts-lab kill \
@@ -19,8 +19,7 @@ cts-lab kill \
     --dawn "$DAWN" \
     --vk-icd "$VK_ICD_FILENAMES" \
     --outdir "$OUTDIR" \
-    --query "$KILL_QUERY" \
     --mesa-shader-cache-off \
     --n-dawn-runners 1 \
-    --mutant-id "$MUTANT_ID" \
-    --timeout "$TIMEOUT"
+    --mapping "$MAPPING" \
+    --mutants "$MUTANT_ID"

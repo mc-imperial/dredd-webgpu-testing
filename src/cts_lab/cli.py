@@ -3,8 +3,9 @@ import os
 import json
 from pathlib import Path
 
-from cts_lab.cts import CTS, CTSIsolatedRunner, RunOptions
-from cts_lab.queries import to_file_level_queries
+from .cts import CTS, CTSIsolatedRunner, RunOptions
+from .queries import to_file_level_queries
+from .kill import KillSettings, kill_all, load_mapping
 
 def main() -> int:
     parser = argparse.ArgumentParser(
@@ -36,27 +37,16 @@ def main() -> int:
     # ------------------------------------------------------------------
 
 
-    kill_parser = subparsers.add_parser(
-        "kill",
-        help="Run the WebGPU Conformance Test Suite.",
-    )
-    
+    kill_parser = subparsers.add_parser("kill", help="Kill mutants using the tests that reach them")
     add_common_arguments(kill_parser)
-
-    kill_parser.add_argument(
-        "--mutant-id",
-        type=int,
-        required=True,
-        help="Mutant ID",
-    )
-
-    kill_parser.add_argument(
-        "--timeout",
-        type=int,
-        required=True,
-        help="Mutant killing timeout",
-    )
-
+    kill_parser.add_argument("--mapping", type=Path, required=True)
+    kill_parser.add_argument("--mutants", type=int, nargs="*", help="only these mutant IDs")
+    kill_parser.add_argument("--timeout-factor", type=float, default=5.0)
+    kill_parser.add_argument("--min-timeout", type=float, default=30.0)
+    kill_parser.add_argument("--baseline-timeout", type=float, default=600.0)
+    kill_parser.add_argument("--all-tests", action="store_true",
+                            help="don't stop at the first kill (full kill matrix)")
+                            
     args = parser.parse_args()
 
     cts = CTS(
@@ -216,4 +206,18 @@ def run_subtrees(cts, args) -> int:
     return 0
 
 def kill_command(cts: CTS, args) -> int:
-    raise NotImplementedError(f"Kill mutant {args.mutant_id}!")
+    base_opts = RunOptions(
+        mesa_shader_cache_on=args.mesa_shader_cache_on,
+        dawn_servers=1,
+        dawn_isolate=False,
+        echo=False,              # per-test output still goes to each stdout.txt
+        timeout=args.baseline_timeout,
+    )
+    settings = KillSettings(
+        timeout_factor=args.timeout_factor,
+        min_timeout=args.min_timeout,
+        stop_at_first_kill=not args.all_tests,
+    )
+    kill_all(cts, load_mapping(args.mapping), Path(args.outdir),
+             base_opts, settings, only=args.mutants)
+    return 0
