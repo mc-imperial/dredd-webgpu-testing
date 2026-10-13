@@ -25,15 +25,54 @@ def main() -> int:
 
     add_common_arguments(run_parser)
 
+    run_parser.add_argument(
+        "--track-mutants",
+        action="store_true",
+        help="Track mutants during CTS run.",
+    )
+
+    # ------------------------------------------------------------------
+    # kill
+    # ------------------------------------------------------------------
+
+
+    kill_parser = subparsers.add_parser(
+        "kill",
+        help="Run the WebGPU Conformance Test Suite.",
+    )
+    
+    add_common_arguments(kill_parser)
+
+    kill_parser.add_argument(
+        "--mutant-id",
+        type=int,
+        required=True,
+        help="Mutant ID",
+    )
+
+    kill_parser.add_argument(
+        "--timeout",
+        type=int,
+        required=True,
+        help="Mutant killing timeout",
+    )
+
     args = parser.parse_args()
 
-    if args.command == "run":
-        return run_command(args)
+    cts = CTS(
+        cts=Path(args.cts),
+        dawn=Path(args.dawn),
+        vk_icd=Path(args.vk_icd),
+    )
 
-    if args.command == "isolate":
-        return isolate_command(args)
+    if args.command == "run":
+        return run_command(cts, args)
+
+    if args.command == "kill":
+        return kill_command(cts, args)
 
     parser.print_help()
+
     return 0
 
 def add_common_arguments(parser: argparse.ArgumentParser) -> None:
@@ -59,12 +98,6 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
         "--outdir",
         required=True,
         help="Output directory."
-    )
-
-    parser.add_argument(
-        "--track-mutants",
-        action="store_true",
-        help="Track mutants during CTS run.",
     )
 
     parser.add_argument(
@@ -120,14 +153,7 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
         help="Number of tests to execute. For debug purposes."
     )
 
-
-def run_command(args) -> int:
-    cts = CTS(
-        cts=Path(args.cts),
-        dawn=Path(args.dawn),
-        vk_icd=Path(args.vk_icd),
-    )
-
+def run_command(cts: CTS, args) -> int:
 
     if args.test_level=="subtree-root":
         
@@ -142,18 +168,19 @@ def run_command(args) -> int:
         run_subtrees(cts, args)
 
 def run_from_root(cts: CTS, args) -> int:
-    opts = RunOptions(
+    
+    run = cts.run(
+        query=args.query,
+        outdir=Path(args.outdir),
         tracking=args.track_mutants,
         mesa_shader_cache_on=args.mesa_shader_cache_on,
         dawn_servers=args.n_dawn_runners,
         dawn_isolate=args.dawn_isolate,
-        test_level=args.test_level,
+        test_level=args.test_level
     )
 
-    run = cts.run(args.query, Path(args.outdir), opts)
+    run.get_test_results()
 
-    if run.timed_out:
-        return 124   # conventional timeout exit code; returncode is None here
     return run.returncode
 
 def run_subtrees(cts, args) -> int:
@@ -187,3 +214,6 @@ def run_subtrees(cts, args) -> int:
         test_level=args.test_level)
 
     return 0
+
+def kill_command(cts: CTS, args) -> int:
+    raise NotImplementedError(f"Kill mutant {args.mutant_id}!")
