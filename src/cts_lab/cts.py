@@ -3,6 +3,7 @@ import os
 import subprocess
 import time
 import shutil
+import signal
 import threading
 from dataclasses import asdict, dataclass, field
 from collections import Counter
