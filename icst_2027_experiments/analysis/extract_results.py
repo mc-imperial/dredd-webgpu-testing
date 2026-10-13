@@ -43,15 +43,17 @@ def main():
         output_dir / "processed" / "reachability.csv"
     )
 
+    configurations = args.configuration or [
+        d.name for d in output_dir.iterdir()
+        if d.is_dir() and d.name != "processed"
+    ]
+    
     run_dirs = sorted(
         path
-        for path in output_dir.rglob("repeat-*")
+        for config in configurations
+        for path in (output_dir / config).glob("servers-*/repeat-*")
         if path.is_dir()
     )
-
-    if args.configuration:
-        wanted = set(args.configuration)
-        run_dirs = [d for d in run_dirs if d.relative_to(output_dir).parts[0] in wanted]
 
     if not run_dirs:
         raise SystemExit(f"No experiment runs found under {output_dir}")
