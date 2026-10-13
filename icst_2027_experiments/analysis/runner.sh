@@ -19,7 +19,7 @@ if [[ -f "$OUTPUT" ]]; then
     echo "Skipping extraction."
 else
     echo "Processed dataset does not exist."
-    echo "Extracting reachability data..."
+    echo "Extracting reachability data from $RUN_DIR to $OUTPUT..."
 
     python3 "$SCRIPT_DIR/extract_results.py" \
         "$RUN_DIR" \
