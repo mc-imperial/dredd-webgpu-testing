@@ -134,14 +134,14 @@ class CTS:
         cmd = self.build_command(query, opts)
         env = self.build_env(opts, tracking_file)
 
-        print("Running CTS:", " ".join(cmd))
+        #print("Running CTS:", " ".join(cmd))
 
         returncode, timed_out, time_seconds = _run_streaming(
             cmd, env, stdout_file, timeout=opts.timeout, echo=opts.echo
         )
         
         status = "timed out" if timed_out else "completed"
-        print(f"CTS {status} in {time_seconds:.2f} seconds")
+        #print(f"CTS {status} in {time_seconds:.2f} seconds")
  
         result = CTSRunResult(
             query=query,

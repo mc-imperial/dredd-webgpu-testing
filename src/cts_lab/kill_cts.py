@@ -4,18 +4,22 @@ For each mutant, run the CTS tests that reach it one at a time, first on
 unmutated Mesa (the baseline, cached and shared across mutants) and then with
 the mutant enabled. Stop at the first test that kills the mutant.
 
-Results are appended to ``<outdir>/results.jsonl``, one line per mutant, so an
-interrupted run can be resumed by running the same command again.
+Output, in ``outdir``:
+  results.jsonl         one line per mutant (resumable: rerun to continue)
+  survivors.txt         surviving mutant IDs, appended as they are found
+  baselines.json        cached unmutated result per test
+  baselines/<hash>/     CTS output for each baseline run
+  mutants/<id>/<hash>/  CTS output for each mutated run
 """
 
 import hashlib
 import json
 import time
 from dataclasses import asdict, dataclass, replace
-from enum import Enum
 from pathlib import Path
 
 from .cts import CTS, RunOptions
+from .killing import KillStatus, ResultsLog, mutant_timeout
 
 
 # --------------------------------------------------------------------------- #
@@ -32,7 +36,7 @@ class TestOutcome:
 
 def _test_dir_name(test: str) -> str:
     # Test names contain ':' ',' '=' and can be long, so use a short hash for
-    # the directory name and record the real name inside run_info.json.
+    # the directory name; the real name is recorded in that run's run_info.json.
     return hashlib.sha1(test.encode()).hexdigest()[:12]
 
 
@@ -52,6 +56,17 @@ def run_single_test(cts: CTS, test: str, outdir: Path, opts: RunOptions) -> Test
             status = "not_found"
 
     return TestOutcome(status=status, duration=result.time_seconds, outdir=str(result.outdir))
+
+
+# How a single mutated test run's status maps to a KillStatus.
+# Anything not listed (pass, skip, unknown, not_found) counts as SURVIVED.
+TEST_STATUS_TO_KILL = {
+    "fail": KillStatus.KILL_TEST_FAILURE,
+    "crash": KillStatus.KILL_CRASH,
+    "timeout": KillStatus.KILL_TIMEOUT,
+}
+
+NO_VERDICT = "no_verdict"  # per-test only: the test didn't pass without the mutant
 
 
 # --------------------------------------------------------------------------- #
@@ -104,35 +119,6 @@ class BaselineCache:
 # Killing one mutant
 # --------------------------------------------------------------------------- #
 
-class KillStatus(Enum):
-    """Outcome for a mutant, following dredd_test_runners' KillStatus.
-
-    The Csmith runner's statuses split compiler vs runtime and compare
-    binaries/stdout/stderr. A CTS test compiles and runs shaders inside one
-    process and reports pass/fail itself, so those collapse to the cases below.
-    The member name (e.g. "KILL_CRASH") is what gets written to results.jsonl.
-    """
-    SURVIVED = 1
-    KILL_CRASH = 2           # test process died before reporting a result
-    KILL_TIMEOUT = 3         # exceeded the timeout derived from the baseline
-    KILL_TEST_FAILURE = 4    # test passed without the mutant, failed with it
-    NO_VALID_TESTS = 5       # no reaching test passed without the mutant
-
-    def is_kill(self) -> bool:
-        return self.name.startswith("KILL_")
-
-
-# How a single mutated test run's status maps to a KillStatus.
-# Anything not listed (pass, skip, unknown, not_found) counts as SURVIVED.
-TEST_STATUS_TO_KILL = {
-    "fail": KillStatus.KILL_TEST_FAILURE,
-    "crash": KillStatus.KILL_CRASH,
-    "timeout": KillStatus.KILL_TIMEOUT,
-}
-
-NO_VERDICT = "no_verdict"  # per-test only: the test didn't pass without the mutant
-
-
 @dataclass
 class KillSettings:
     timeout_factor: float = 5.0   # mutant timeout = factor * baseline duration ...
@@ -150,7 +136,7 @@ def kill_mutant(
     outdir: Path,
     settings: KillSettings,
 ) -> dict:
-    """Try to kill one mutant. Returns a JSON-serialisable result record."""
+    """Try to kill one mutant with the CTS. Returns a JSON-serialisable record."""
     start = time.perf_counter()
     mutant_dir = outdir / "mutants" / str(mutant_id)
     per_test = []
@@ -164,7 +150,7 @@ def kill_mutant(
             per_test.append({"test": test, "baseline": baseline.status, "verdict": NO_VERDICT})
             continue
 
-        timeout = max(baseline.duration * settings.timeout_factor, settings.min_timeout)
+        timeout = mutant_timeout(baseline.duration, settings.timeout_factor, settings.min_timeout)
         opts = replace(base_opts, mutant_id=mutant_id, timeout=timeout)
         mutated = run_single_test(cts, test, mutant_dir / _test_dir_name(test), opts)
 
@@ -213,18 +199,18 @@ def kill_mutant(
 # --------------------------------------------------------------------------- #
 
 def load_mapping(path: Path) -> dict[int, list[str]]:
+    """Load mutant_to_tests.json, keeping the file's order."""
     raw = json.loads(Path(path).read_text())
-    return {int(m): tests for m, tests in sorted(raw.items(), key=lambda kv: int(kv[0]))}
+    return {int(m): tests for m, tests in raw.items()}
 
 
-def _done_mutants(results_file: Path) -> set[int]:
-    if not results_file.exists():
-        return set()
-    done = set()
-    for line in results_file.read_text().splitlines():
-        if line.strip():
-            done.add(json.loads(line)["mutant_id"])
-    return done
+def order_mutants(mapping: dict[int, list[str]], order: str) -> list[int]:
+    """'fewest-tests': fewest reaching tests first (ties by ID). 'file': as given."""
+    if order == "fewest-tests":
+        return sorted(mapping, key=lambda m: (len(mapping[m]), m))
+    if order == "file":
+        return list(mapping)
+    raise ValueError(f"unknown order: {order}")
 
 
 def kill_all(
@@ -234,32 +220,42 @@ def kill_all(
     base_opts: RunOptions,
     settings: KillSettings,
     only: list[int] | None = None,
+    order: str = "fewest-tests",
+    limit: int | None = None,
 ) -> dict[str, int]:
-    """Run kill_mutant for every mutant in the mapping, resuming if possible."""
-    outdir = Path(outdir)
-    outdir.mkdir(parents=True, exist_ok=True)
-    results_file = outdir / "results.jsonl"
+    """Run kill_mutant over the mapping, resuming from any previous results.
 
-    # Baselines run without a mutant, with a generous safety-net timeout.
+    ``limit`` caps how many *new* mutants this invocation runs, so you can
+    work through a huge mapping in chunks.
+    """
+    outdir = Path(outdir)
+    log = ResultsLog(outdir)
+
+    # Baselines run without a mutant (base_opts.timeout acts as a safety net).
     baselines = BaselineCache(cts, outdir, replace(base_opts, mutant_id=None))
 
-    mutants = [m for m in (only or mapping) if m in mapping]
-    done = _done_mutants(results_file)
-    todo = [m for m in mutants if m not in done]
-    print(f"{len(mutants)} mutants, {len(done & set(mutants))} already done, {len(todo)} to run")
+    mutants = order_mutants(mapping, order)
+    if only:
+        wanted = set(only)
+        mutants = [m for m in mutants if m in wanted]
+    remaining = [m for m in mutants if not log.is_done(m)]
+    todo = remaining[:limit] if limit is not None else remaining
+
+    print(f"{len(mutants)} mutants selected, {len(mutants) - len(remaining)} already done, "
+          f"{len(todo)} to run now", flush=True)
 
     counts: dict[str, int] = {}
     for i, mutant_id in enumerate(todo, 1):
         result = kill_mutant(
             cts, mutant_id, mapping[mutant_id], baselines, base_opts, outdir, settings
         )
-        with results_file.open("a") as f:
-            f.write(json.dumps(result) + "\n")
+        log.record(result)
 
         counts[result["status"]] = counts.get(result["status"], 0) + 1
         by = f" by {result['killed_by']}" if result["killed_by"] else ""
         print(f"[{i}/{len(todo)}] mutant {mutant_id}: {result['status']}{by} "
-              f"({result['tests_run']}/{result['tests_reaching']} tests, {result['seconds']}s)")
+              f"({result['tests_run']}/{result['tests_reaching']} tests, {result['seconds']}s)",
+              flush=True)
 
-    print("Summary:", counts)
+    print("Summary:", counts, flush=True)
     return counts

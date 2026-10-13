@@ -5,7 +5,7 @@ from pathlib import Path
 
 from .cts import CTS, CTSIsolatedRunner, RunOptions
 from .queries import to_file_level_queries
-from .kill import KillSettings, kill_all, load_mapping
+from .kill_cts import KillSettings, kill_all, load_mapping
 
 def main() -> int:
     parser = argparse.ArgumentParser(
@@ -46,6 +46,8 @@ def main() -> int:
     kill_parser.add_argument("--baseline-timeout", type=float, default=600.0)
     kill_parser.add_argument("--all-tests", action="store_true",
                             help="don't stop at the first kill (full kill matrix)")
+    kill_parser.add_argument("--order", choices=["fewest-tests", "file"], default="fewest-tests")
+    kill_parser.add_argument("--limit", type=int, help="run at most N more mutants")
                             
     args = parser.parse_args()
 
@@ -218,6 +220,8 @@ def kill_command(cts: CTS, args) -> int:
         min_timeout=args.min_timeout,
         stop_at_first_kill=not args.all_tests,
     )
-    kill_all(cts, load_mapping(args.mapping), Path(args.outdir),
-             base_opts, settings, only=args.mutants)
+
+    kill_all(cts, load_mapping(args.mapping), Path(args.outdir), base_opts, settings,
+         only=args.mutants, order=args.order, limit=args.limit)
+    
     return 0
