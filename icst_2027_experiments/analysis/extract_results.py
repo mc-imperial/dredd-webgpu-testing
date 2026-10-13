@@ -10,6 +10,7 @@ PROJECT_ROOT = SCRIPT_DIR.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 import pandas as pd
+from tqdm import tqdm
 
 from icst_2027_experiments.analysis.load_tracking_data import load_run
 
@@ -29,6 +30,11 @@ def main():
         default=None,
         help="Output CSV. Defaults to <output_dir>/processed/reachability.csv",
     )
+    parser.add_argument(
+        "--configuration",
+        action="append",
+        help="Only extract this configuration (repeatable). Default: all.",
+    )
 
     args = parser.parse_args()
 
@@ -37,31 +43,44 @@ def main():
         output_dir / "processed" / "reachability.csv"
     )
 
-    rows = []
-
     run_dirs = sorted(
         path
         for path in output_dir.rglob("repeat-*")
         if path.is_dir()
     )
 
+    if args.configuration:
+        wanted = set(args.configuration)
+        run_dirs = [d for d in run_dirs if d.relative_to(output_dir).parts[0] in wanted]
+
     if not run_dirs:
         raise SystemExit(f"No experiment runs found under {output_dir}")
 
-    for run_dir in run_dirs:
+    rows = []
+    skipped = 0
+    relationships = 0
+
+    progress = tqdm(run_dirs, desc="Extracting runs", unit="run")
+    for run_dir in progress:
+        rel = run_dir.relative_to(output_dir)
+        progress.set_description(f"Loading {rel}")
+
         try:
             tracking = load_run(run_dir)
         except ValueError:
             # Configuration has no tracking data.
+            skipped += 1
+            tqdm.write(f"No tracking data, skipped: {rel}")
             continue
 
-        parts = run_dir.relative_to(output_dir).parts
+        parts = rel.parts
 
         configuration = parts[0]
         servers = int(parts[-2].removeprefix("servers-"))
         repeat = int(parts[-1].removeprefix("repeat-"))
 
         for test, mutants in tracking.items():
+            relationships += len(mutants)
             rows.append(
                 {
                     "configuration": configuration,
@@ -73,19 +92,26 @@ def main():
                 }
             )
 
+        progress.set_postfix(tests=f"{len(rows):,}", relationships=f"{relationships:,}")
+
     if not rows:
         raise SystemExit("No tracking data found.")
 
-    df = pd.DataFrame(rows)
+    with tqdm(total=3, desc="Writing CSV", unit="step") as steps:
+        steps.set_postfix_str("building table")
+        df = pd.DataFrame(rows)
+        steps.update()
 
-    df = df.sort_values(
-        ["configuration", "servers", "repeat", "test"]
-    )
+        steps.set_postfix_str("sorting")
+        df = df.sort_values(["configuration", "servers", "repeat", "test"])
+        steps.update()
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    df.to_csv(output_path, index=False)
+        steps.set_postfix_str(f"writing {output_path.name}")
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        df.to_csv(output_path, index=False)
+        steps.update()
 
-    print(f"Runs processed: {len(run_dirs)}")
+    print(f"Runs processed: {len(run_dirs) - skipped} ({skipped} skipped, no tracking data)")
     print(f"Tests:          {len(df)}")
     print(f"Relationships:  {df['n_mutants'].sum():,}")
     print(f"Output:         {output_path}")
