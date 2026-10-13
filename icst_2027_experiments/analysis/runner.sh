@@ -3,7 +3,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
-RUN_DIR="${1:?Usage: $0 <run-dir>}"
+RUN_DIR="${1:?Usage: $0 <run-dir> [configuration]}"
+CONFIGURATION="${2:-isolated-no-cache}"
 
 RUN_DIR="$(cd "$RUN_DIR" && pwd)"
 PROCESSED_DIR="$RUN_DIR/processed"
@@ -52,6 +53,31 @@ echo "============================================================"
 
 python3 "$SCRIPT_DIR/summarise_comparisons.py" \
     "$COMPARISONS"
+
+echo
+echo "============================================================"
+echo "Building mutant-to-tests mapping ($CONFIGURATION)"
+echo "============================================================"
+
+MAPPING="$PROCESSED_DIR/mutant_to_tests_${CONFIGURATION}.json"
+
+if [[ -f "$MAPPING" ]]; then
+    echo "Mapping already exists, skipping:"
+    echo "$MAPPING"
+else
+    python3 "$SCRIPT_DIR/mutants_to_tests.py" \
+        "$OUTPUT" \
+        "$CONFIGURATION" \
+        --output "$MAPPING" \
+        --histogram
+fi
+
+if ! jq -e 'length > 0' "$MAPPING" > /dev/null; then
+    echo "ERROR: mapping is empty. Is '$CONFIGURATION' a configuration in $OUTPUT?" >&2
+    echo "Configurations present:" >&2
+    python3 -c 'import csv,sys; csv.field_size_limit(2**31-1); print(*sorted({r["configuration"] for r in csv.DictReader(open(sys.argv[1]))}), sep="\n")' "$OUTPUT" >&2
+    exit 1
+fi
 
 echo
 echo "Processed results:"

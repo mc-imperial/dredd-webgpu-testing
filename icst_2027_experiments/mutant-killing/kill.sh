@@ -6,9 +6,9 @@ source "$(dirname "$0")/common.sh"
 
 SCRIPT_NAME="$(basename "$0" .sh)"
 
-USAGE="Usage: $0 <mapping-json> <mutant-id> [timeout_seconds]"
+USAGE="Usage: $0 <mapping-json> <n-mutants> [timeout_seconds]"
 MAPPING="${1:?$USAGE}"
-MUTANT_ID="${2:?$USAGE}"
+LIMIT="${2:?USAGE}"
 TIMEOUT="${3:-300}"
 
 OUTDIR="$RESULTS_ROOT/$SCRIPT_NAME"
@@ -22,4 +22,4 @@ cts-lab kill \
     --mesa-shader-cache-off \
     --n-dawn-runners 1 \
     --mapping "$MAPPING" \
-    --mutants "$MUTANT_ID"
+    --limit "$LIMIT"
