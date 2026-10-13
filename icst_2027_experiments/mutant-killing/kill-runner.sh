@@ -30,7 +30,7 @@ echo "Mapping: $MAPPING"
 echo "Output:  $OUTDIR"
 echo "Image:   $IMAGE"
 
-time docker run --rm --init \
+time docker run --rm --init ${DOCKER_NAME:+--name "$DOCKER_NAME"} \
     --ulimit core=0 \
     --mount "type=bind,source=$PROJECT_ROOT,target=$CONTAINER_PROJECT_ROOT" \
     --workdir "$CONTAINER_PROJECT_ROOT" \
