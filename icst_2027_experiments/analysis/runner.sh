@@ -29,31 +29,17 @@ MAPPING="$PROCESSED_DIR/mutant_to_tests_${CONFIGURATION}.json"
 
 echo
 echo "============================================================"
-echo "Extracting reachability for $CONFIGURATION"
-echo "============================================================"
-
-if [[ -f "$CONFIG_CSV" ]]; then
-    echo "Already exists, skipping: $CONFIG_CSV"
-else
-    python3 "$SCRIPT_DIR/extract_results.py" \
-        "$RUN_DIR" \
-        --configuration "$CONFIGURATION" \
-        --output "$CONFIG_CSV"
-fi
-
-echo
-echo "============================================================"
 echo "Building mutant-to-tests mapping for $CONFIGURATION"
 echo "============================================================"
 
 if [[ -f "$MAPPING" ]]; then
     echo "Already exists, skipping: $MAPPING"
 else
-    python3 "$SCRIPT_DIR/mutants_to_tests.py" \
-        "$CONFIG_CSV" \
-        "$CONFIGURATION" \
+    python3 "$SCRIPT_DIR/build_mutant_mapping.py" \
+        "$RUN_DIR" \
+        --configuration "$CONFIGURATION" \
         --output "$MAPPING" \
-        --histogram
+        --max-tests 20
 fi
 
 if ! jq -e 'length > 0' "$MAPPING" > /dev/null; then
