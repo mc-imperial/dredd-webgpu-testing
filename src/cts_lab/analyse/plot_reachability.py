@@ -5,11 +5,13 @@ Input: the <mapping>_counts.csv written by build_mutant_mapping.py
        (columns: tests_reaching_mutant, n_mutants; one row per exact count).
 
 Output (next to the input):
-  <stem>_summary.txt   headline numbers + binned table
-  <stem>_binned.csv    the binned table
-  <stem>_hist.png      histogram of the binned table
+  <stem>_summary.txt     headline numbers, thresholds, percentiles, binned table
+  <stem>_thresholds.csv  share of mutants reached by <= N tests, for each threshold N
+  <stem>_binned.csv      the binned table (widening bins: 1, 2, 3-5, 6-10, ...)
+  <stem>_hist.png        histogram of the binned table
 
 Usage: plot_reachability.py <mapping>_counts.csv [--total-mutants N]
+                            [--thresholds 1,5,10,...] [--log-y]
   --total-mutants: all mutants Dredd created, so unreached mutants (reached by
   0 tests, which never appear in the counts file) can be reported too.
 """
@@ -38,6 +40,9 @@ def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("counts_csv", type=Path)
     p.add_argument("--total-mutants", type=int, default=None)
+    p.add_argument("--thresholds", default="1,2,5,10,20,50,100,200,500,1000",
+                   help="comma-separated N values for the 'reached by <= N tests' table")
+    p.add_argument("--log-y", action="store_true", help="log scale for the mutant counts")
     args = p.parse_args()
 
     with args.counts_csv.open() as f:
@@ -59,12 +64,28 @@ def main():
         unreached = args.total_mutants - reached
         lines.append(f"Mutants reached by 0 tests:   {unreached:,} "
                      f"({unreached / args.total_mutants:.1%} of {args.total_mutants:,})")
+    mean = float((k * n).sum() / reached)
     lines += [
-        f"Tests per mutant: median {pct(0.5)}, 90th pct {pct(0.9)}, max {int(k.max())}",
-        f"Reached by exactly 1 test: {share(1):.1%}",
-        f"Reached by <= 5 tests:     {share(5):.1%}",
-        f"Reached by <= 20 tests:    {share(20):.1%}",
         "",
+        "Tests reaching each mutant:",
+        f"  mean {mean:,.1f}, median {pct(0.5)}, max {int(k.max()):,}",
+        "  percentiles: " + ", ".join(f"p{q} = {pct(q / 100):,}" for q in (25, 50, 75, 90, 95, 99)),
+        "",
+        "Reached by at most N tests:",
+        f"  {'N':>6}  {'mutants':>10}  {'share':>6}   {'more than N':>11}",
+    ]
+    thresholds = sorted({int(t) for t in args.thresholds.split(",") if t.strip()})
+    threshold_rows = []
+    for t in thresholds:
+        if t > k.max():
+            break
+        at_most = int(n[k <= t].sum())
+        threshold_rows.append((t, at_most, at_most / reached, (reached - at_most) / reached))
+        lines.append(f"  {t:>6,}  {at_most:>10,}  {at_most / reached:>6.1%}   {(reached - at_most) / reached:>11.1%}")
+
+    lines += [
+        "",
+        "Binned (bins widen to the right):",
         f"{'tests reaching':>15}  {'mutants':>10}  {'share':>6}  {'cumulative':>10}",
     ]
 
@@ -87,42 +108,64 @@ def main():
         w.writerows(binned)
     print(summary)
 
-    # Plot.
+    draw(binned, f"{stem}_hist.png", "How many CTS tests reach each mutant",
+         "Number of tests reaching the mutant (bins widen to the right)", args.log_y)
+    written = [f"{stem}_summary.txt", f"{stem}_binned.csv", f"{stem}_hist.png"]
+
+    with open(f"{stem}_thresholds.csv", "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["max_tests", "n_mutants_at_most", "share_at_most", "share_more_than"])
+        w.writerows((t, c, round(a, 4), round(b, 4)) for t, c, a, b in threshold_rows)
+    written.insert(1, f"{stem}_thresholds.csv")
+
+    print("\nWrote " + ", ".join(written))
+
+
+def draw(bins, path, title, xlabel, log_y=False):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    labels = [b[0] for b in binned]
-    values = [b[1] for b in binned]
+    labels = [b[0] for b in bins]
+    values = [b[1] for b in bins]
     fig, ax = plt.subplots(figsize=(9, 4.5), dpi=150)
     fig.patch.set_facecolor(SURFACE)
     ax.set_facecolor(SURFACE)
 
     x = np.arange(len(values))
-    ax.bar(x, values, width=0.8, color=SERIES, edgecolor=SURFACE, linewidth=2, zorder=2)
+    ax.bar(x, values, width=0.85, color=SERIES, edgecolor=SURFACE, linewidth=2, zorder=2)
 
-    ax.set_xticks(x, labels, rotation=0 if len(labels) <= 10 else 45,
-                  ha="center" if len(labels) <= 10 else "right", color=INK_2, fontsize=9)
+    # Thin out tick labels when there are many bins.
+    step = max(1, int(np.ceil(len(labels) / 14)))
+    ticks = [i for i in range(len(labels)) if i % step == 0]
+    rotate = len(ticks) > 10
+    ax.set_xticks(ticks, [labels[i] for i in ticks], rotation=45 if rotate else 0,
+                  ha="right" if rotate else "center", color=INK_2, fontsize=9)
     ax.tick_params(axis="y", colors=INK_2, labelsize=9, length=0)
     ax.tick_params(axis="x", length=0)
-    ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:,.0f}"))
+    if log_y:
+        ax.set_yscale("log")
+    else:
+        ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:,.0f}"))
     ax.grid(axis="y", color=GRID, linewidth=0.8, zorder=0)
     for side in ("top", "right", "left"):
         ax.spines[side].set_visible(False)
     ax.spines["bottom"].set_color(GRID)
 
-    ax.set_xlabel("Number of tests reaching the mutant", color=INK_2, fontsize=10)
-    ax.set_ylabel("Mutants", color=INK_2, fontsize=10)
-    ax.set_title("How many CTS tests reach each mutant", color=INK, fontsize=12, loc="left", pad=12)
+    ax.set_xlabel(xlabel, color=INK_2, fontsize=10)
+    ax.set_ylabel("Mutants" + (" (log scale)" if log_y else ""), color=INK_2, fontsize=10)
+    ax.set_title(title, color=INK, fontsize=12, loc="left", pad=12)
 
-    # Label only the tallest bar and the first bar, to keep it uncluttered.
-    for i in sorted({0, int(np.argmax(values))}):
+    label_at = {0, int(np.argmax(values))}
+    for i in sorted(label_at):
         ax.annotate(f"{values[i]:,}", (x[i], values[i]), textcoords="offset points", xytext=(0, 4),
                     ha="center", color=INK, fontsize=8)
 
     fig.tight_layout()
-    fig.savefig(f"{stem}_hist.png", facecolor=SURFACE)
-    print(f"\nWrote {stem}_summary.txt, {stem}_binned.csv, {stem}_hist.png")
+    fig.savefig(path, facecolor=SURFACE)
+    plt.close(fig)
+
+
 
 
 if __name__ == "__main__":
