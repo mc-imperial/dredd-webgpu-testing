@@ -6,7 +6,7 @@ Input: the <mapping>_counts.csv written by build_mutant_mapping.py
 
 Output (next to the input):
   <stem>_summary.txt     headline numbers, thresholds, percentiles, binned table
-  <stem>_thresholds.csv  mutants reached by < N, <= N and > N tests, for each threshold N
+  <stem>_thresholds.csv  mutants reached by <= N and > N tests, for each threshold N
   <stem>_binned.csv      the binned table (widening bins: 1, 2, 3-5, 6-10, ...)
   <stem>_hist.png        histogram of the binned table
 
@@ -59,37 +59,44 @@ def main():
     def share(limit):
         return n[k <= limit].sum() / reached
 
-    lines = [f"Mutants reached by >= 1 test: {reached:,}"]
+    lines = [f"Mutants reached by at least 1 test: {reached:,}"]
     if args.total_mutants:
         unreached = args.total_mutants - reached
-        lines.append(f"Mutants reached by 0 tests:   {unreached:,} "
-                     f"({unreached / args.total_mutants:.1%} of {args.total_mutants:,})")
+        lines.append(f"Mutants reached by no test:         {unreached:,} "
+                     f"({unreached / args.total_mutants:.1%} of all {args.total_mutants:,} mutants)")
+    lines.append(f"All percentages below are out of the {reached:,} mutants reached by at least 1 test.")
+
     mean = float((k * n).sum() / reached)
     lines += [
         "",
-        "Tests reaching each mutant:",
-        f"  mean {mean:,.1f}, median {pct(0.5)}, max {int(k.max()):,}",
-        "  percentiles: " + ", ".join(f"p{q} = {pct(q / 100):,}" for q in (25, 50, 75, 90, 95, 99)),
+        "HOW MANY TESTS REACH A MUTANT",
+        f"  Average {mean:,.1f} tests, median {pct(0.5):,}, maximum {int(k.max()):,}.",
+    ]
+    for q in (25, 50, 75, 90, 95, 99):
+        lines.append(f"  {q:>2}% of mutants are reached by at most {pct(q / 100):,} tests")
+
+    lines += [
         "",
-        "Reached by fewer than N / at most N / more than N tests:",
-        f"  {'N':>6}  {'< N':>10} {'share':>6}  {'<= N':>10} {'share':>6}  {'> N':>6}",
+        "MUTANTS BY TEST-COUNT THRESHOLD",
+        "  For each N: how many mutants are reached by at most N tests, and by more than N.",
+        "",
+        f"  {'':>6}  {'at most N tests':>19}  {'more than N tests':>19}",
+        f"  {'N':>6}  {'mutants':>10} {'%':>8}  {'mutants':>10} {'%':>8}",
     ]
     thresholds = sorted({int(t) for t in args.thresholds.split(",") if t.strip()})
     threshold_rows = []
     for t in thresholds:
         if t > k.max():
             break
-        fewer = int(n[k < t].sum())
         at_most = int(n[k <= t].sum())
-        threshold_rows.append((t, fewer, fewer / reached, at_most, at_most / reached,
-                               (reached - at_most) / reached))
-        lines.append(f"  {t:>6,}  {fewer:>10,} {fewer / reached:>6.1%}  {at_most:>10,} "
-                     f"{at_most / reached:>6.1%}  {(reached - at_most) / reached:>6.1%}")
+        more = reached - at_most
+        threshold_rows.append((t, at_most, at_most / reached, more, more / reached))
+        lines.append(f"  {t:>6,}  {at_most:>10,} {at_most / reached:>8.1%}  {more:>10,} {more / reached:>8.1%}")
 
     lines += [
         "",
-        "Binned (bins widen to the right):",
-        f"{'tests reaching':>15}  {'mutants':>10}  {'share':>6}  {'cumulative':>10}",
+        "MUTANTS BY TEST-COUNT RANGE (ranges widen to the right)",
+        f"  {'tests reaching':>15}  {'mutants':>10}  {'% in range':>10}  {'% up to here':>12}",
     ]
 
     # Bin.
@@ -100,15 +107,18 @@ def main():
         count = int(n[(k >= lo) & (k < hi)].sum())
         running += count
         binned.append((bin_label(lo, hi), count))
-        lines.append(f"{bin_label(lo, hi):>15}  {count:>10,}  {count / reached:>6.1%}  {running / reached:>10.1%}")
+        lines.append(f"  {bin_label(lo, hi):>15}  {count:>10,}  {count / reached:>10.1%}  {running / reached:>12.1%}")
 
     stem = args.counts_csv.with_suffix("")
     summary = "\n".join(lines)
     Path(f"{stem}_summary.txt").write_text(summary + "\n")
     with open(f"{stem}_binned.csv", "w", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["tests_reaching_mutant", "n_mutants"])
-        w.writerows(binned)
+        w.writerow(["tests_reaching_mutant", "n_mutants", "pct_in_range", "pct_up_to_here"])
+        running = 0
+        for label, count in binned:
+            running += count
+            w.writerow([label, count, round(100 * count / reached, 2), round(100 * running / reached, 2)])
     print(summary)
 
     draw(binned, f"{stem}_hist.png", "How many CTS tests reach each mutant",
@@ -117,10 +127,9 @@ def main():
 
     with open(f"{stem}_thresholds.csv", "w", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["n", "mutants_fewer_than_n", "share_fewer_than_n",
-                    "mutants_at_most_n", "share_at_most_n", "share_more_than_n"])
-        w.writerows((t, f, round(fs, 4), a, round(as_, 4), round(m, 4))
-                    for t, f, fs, a, as_, m in threshold_rows)
+        w.writerow(["n", "mutants_at_most_n", "pct_at_most_n", "mutants_more_than_n", "pct_more_than_n"])
+        w.writerows((t, a, round(100 * as_, 2), m, round(100 * ms, 2))
+                    for t, a, as_, m, ms in threshold_rows)
     written.insert(1, f"{stem}_thresholds.csv")
 
     print("\nWrote " + ", ".join(written))
