@@ -40,7 +40,9 @@ def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("counts_csv", type=Path)
     p.add_argument("--total-mutants", type=int, default=None)
-    p.add_argument("--thresholds", default="1,2,5,10,20,50,100,200,500,1000",
+    p.add_argument("--total-tests", type=int, default=None,
+                   help="number of tests in the run (default: the most tests reaching any mutant)")
+    p.add_argument("--thresholds", default="1,2,5,10,20,50,100,200,500,1000,5000,10000,100000",
                    help="comma-separated N values for the 'reached by <= N tests' table")
     p.add_argument("--log-y", action="store_true", help="log scale for the mutant counts")
     args = p.parse_args()
@@ -80,8 +82,8 @@ def main():
         "MUTANTS BY TEST-COUNT THRESHOLD",
         "  For each N: how many mutants are reached by at most N tests, and by more than N.",
         "",
-        f"  {'':>6}  {'at most N tests':>19}  {'more than N tests':>19}",
-        f"  {'N':>6}  {'mutants':>10} {'%':>8}  {'mutants':>10} {'%':>8}",
+        f"  {'':>7}  {'at most N tests':>19}  {'more than N tests':>19}",
+        f"  {'N':>7}  {'mutants':>10} {'%':>8}  {'mutants':>10} {'%':>8}",
     ]
     thresholds = sorted({int(t) for t in args.thresholds.split(",") if t.strip()})
     threshold_rows = []
@@ -91,7 +93,20 @@ def main():
         at_most = int(n[k <= t].sum())
         more = reached - at_most
         threshold_rows.append((t, at_most, at_most / reached, more, more / reached))
-        lines.append(f"  {t:>6,}  {at_most:>10,} {at_most / reached:>8.1%}  {more:>10,} {more / reached:>8.1%}")
+        lines.append(f"  {t:>7,}  {at_most:>10,} {at_most / reached:>8.1%}  {more:>10,} {more / reached:>8.1%}")
+
+    # Final row: all tests. Everything is "at most all", so the useful number is
+    # how many mutants are reached by every single test.
+    total_tests = args.total_tests or int(k.max())
+    every = int(n[k >= total_tests].sum())
+    threshold_rows.append(("all", reached, 1.0, 0, 0.0))
+    lines.append(f"  {'all':>7}  {reached:>10,} {1:>8.1%}  {0:>10,} {0:>8.1%}")
+    lines += [
+        "",
+        f"  Reached by every one of the {total_tests:,} tests: {every:,} mutants ({every / reached:.1%})"
+        + ("" if args.total_tests else "\n  (assuming the most-reaching mutant is reached by all tests;"
+                                      " pass --total-tests to set it)"),
+    ]
 
     lines += [
         "",
