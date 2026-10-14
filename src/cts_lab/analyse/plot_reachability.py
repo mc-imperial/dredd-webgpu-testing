@@ -6,7 +6,7 @@ Input: the <mapping>_counts.csv written by build_mutant_mapping.py
 
 Output (next to the input):
   <stem>_summary.txt     headline numbers, thresholds, percentiles, binned table
-  <stem>_thresholds.csv  share of mutants reached by <= N tests, for each threshold N
+  <stem>_thresholds.csv  mutants reached by < N, <= N and > N tests, for each threshold N
   <stem>_binned.csv      the binned table (widening bins: 1, 2, 3-5, 6-10, ...)
   <stem>_hist.png        histogram of the binned table
 
@@ -71,17 +71,20 @@ def main():
         f"  mean {mean:,.1f}, median {pct(0.5)}, max {int(k.max()):,}",
         "  percentiles: " + ", ".join(f"p{q} = {pct(q / 100):,}" for q in (25, 50, 75, 90, 95, 99)),
         "",
-        "Reached by at most N tests:",
-        f"  {'N':>6}  {'mutants':>10}  {'share':>6}   {'more than N':>11}",
+        "Reached by fewer than N / at most N / more than N tests:",
+        f"  {'N':>6}  {'< N':>10} {'share':>6}  {'<= N':>10} {'share':>6}  {'> N':>6}",
     ]
     thresholds = sorted({int(t) for t in args.thresholds.split(",") if t.strip()})
     threshold_rows = []
     for t in thresholds:
         if t > k.max():
             break
+        fewer = int(n[k < t].sum())
         at_most = int(n[k <= t].sum())
-        threshold_rows.append((t, at_most, at_most / reached, (reached - at_most) / reached))
-        lines.append(f"  {t:>6,}  {at_most:>10,}  {at_most / reached:>6.1%}   {(reached - at_most) / reached:>11.1%}")
+        threshold_rows.append((t, fewer, fewer / reached, at_most, at_most / reached,
+                               (reached - at_most) / reached))
+        lines.append(f"  {t:>6,}  {fewer:>10,} {fewer / reached:>6.1%}  {at_most:>10,} "
+                     f"{at_most / reached:>6.1%}  {(reached - at_most) / reached:>6.1%}")
 
     lines += [
         "",
@@ -114,8 +117,10 @@ def main():
 
     with open(f"{stem}_thresholds.csv", "w", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["max_tests", "n_mutants_at_most", "share_at_most", "share_more_than"])
-        w.writerows((t, c, round(a, 4), round(b, 4)) for t, c, a, b in threshold_rows)
+        w.writerow(["n", "mutants_fewer_than_n", "share_fewer_than_n",
+                    "mutants_at_most_n", "share_at_most_n", "share_more_than_n"])
+        w.writerows((t, f, round(fs, 4), a, round(as_, 4), round(m, 4))
+                    for t, f, fs, a, as_, m in threshold_rows)
     written.insert(1, f"{stem}_thresholds.csv")
 
     print("\nWrote " + ", ".join(written))
