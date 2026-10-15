@@ -23,6 +23,7 @@ class KillStatus(Enum):
     KILL_TIMEOUT = 3         # exceeded the timeout derived from the baseline
     KILL_TEST_FAILURE = 4    # test passed without the mutant, failed with it
     NO_VALID_TESTS = 5       # no reaching test passed without the mutant
+    KILL_OUTPUT_MISMATCH = 6  # fuzzing: program ran, but its outputs section differs
 
     def is_kill(self) -> bool:
         return self.name.startswith("KILL_")

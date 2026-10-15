@@ -6,6 +6,7 @@ from pathlib import Path
 from .cts import CTS, CTSIsolatedRunner, RunOptions
 from .queries import to_file_level_queries
 from .kill_cts import KillSettings, kill_all, load_mapping
+from .kill_fuzz import FuzzSettings, fuzz
 
 def main() -> int:
     parser = argparse.ArgumentParser(
@@ -48,23 +49,32 @@ def main() -> int:
                             help="don't stop at the first kill (full kill matrix)")
     kill_parser.add_argument("--order", choices=["fewest-tests", "file"], default="fewest-tests")
     kill_parser.add_argument("--limit", type=int, help="run at most N more mutants")
-                            
+
+    fuzz_parser = subparsers.add_parser("fuzz", help="Kill CTS survivors with wgslsmith programs")
+    fuzz_parser.add_argument("--wgslsmith", type=Path, required=True)
+    fuzz_parser.add_argument("--mutated-icd", type=Path, required=True)
+    fuzz_parser.add_argument("--tracked-icd", type=Path, required=True)
+    fuzz_parser.add_argument("--survivors", type=Path, nargs="+", required=True)
+    fuzz_parser.add_argument("--outdir", type=Path, required=True)
+    fuzz_parser.add_argument("--programs", type=int, help="stop after N programs")
+    fuzz_parser.add_argument("--hours", type=float, help="stop after this many hours")
+    fuzz_parser.add_argument("--first-seed", type=int, default=0)
+    fuzz_parser.add_argument("--min-timeout", type=float, default=10.0)    
+
     args = parser.parse_args()
 
-    cts = CTS(
-        cts=Path(args.cts),
-        dawn=Path(args.dawn),
-        vk_icd=Path(args.vk_icd),
-    )
-
     if args.command == "run":
-        return run_command(cts, args)
+        return run_command(args)
 
     if args.command == "kill":
-        return kill_command(cts, args)
+        return kill_command(args)
 
-    parser.print_help()
-
+    if args.command == "fuzz":
+        s = FuzzSettings(wgslsmith=args.wgslsmith, mutated_icd=args.mutated_icd,
+                        tracked_icd=args.tracked_icd, min_timeout=args.min_timeout)
+        fuzz(s, args.survivors, args.outdir, max_programs=args.programs,
+            hours=args.hours, first_seed=args.first_seed)
+            
     return 0
 
 def add_common_arguments(parser: argparse.ArgumentParser) -> None:
@@ -145,7 +155,13 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
         help="Number of tests to execute. For debug purposes."
     )
 
-def run_command(cts: CTS, args) -> int:
+def run_command(args) -> int:
+
+    cts = CTS(
+        cts=Path(args.cts),
+        dawn=Path(args.dawn),
+        vk_icd=Path(args.vk_icd),
+    )
 
     if args.test_level=="subtree-root":
         
@@ -207,7 +223,14 @@ def run_subtrees(cts, args) -> int:
 
     return 0
 
-def kill_command(cts: CTS, args) -> int:
+def kill_command(args) -> int:
+
+    cts = CTS(
+        cts=Path(args.cts),
+        dawn=Path(args.dawn),
+        vk_icd=Path(args.vk_icd),
+    )
+
     base_opts = RunOptions(
         mesa_shader_cache_on=args.mesa_shader_cache_on,
         dawn_servers=1,

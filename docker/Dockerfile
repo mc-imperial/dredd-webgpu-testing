@@ -26,6 +26,7 @@ ENV MESA_TRACKED="${BASE}/mesa_tracked"
 ENV DREDD="${BASE}/dredd"
 ENV CTS="${BASE}/cts"
 ENV DAWN="${BASE}/dawn"
+ENV WGSLSMITH="${BASE}/wgslsmith"
 
 ENV PATH="${DEPOT_TOOLS}:${PATH}"
 
