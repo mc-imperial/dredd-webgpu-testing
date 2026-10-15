@@ -15,4 +15,4 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 COPY setup/ /workspace/dredd-webgpu-testing/setup/
 
 RUN chmod +x $PROJECT_ROOT/setup/build_wgslsmith.sh \
-    && ./$PROJECT_ROOT/setup/build_wgslsmith.sh
+    && $PROJECT_ROOT/setup/build_wgslsmith.sh
