@@ -81,16 +81,25 @@ def _run(cmd: list[str], env: dict[str, str], timeout: float) -> tuple[int | Non
     start = time.perf_counter()
     proc = subprocess.Popen(cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             text=True, start_new_session=True)
-    try:
-        out, _ = proc.communicate(timeout=timeout)
-        return proc.returncode, out, time.perf_counter() - start
-    except subprocess.TimeoutExpired:
+    def kill_group():
         try:
             os.killpg(proc.pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
+
+    try:
+        out, _ = proc.communicate(timeout=timeout)
+        return proc.returncode, out, time.perf_counter() - start
+    except subprocess.TimeoutExpired:
+        kill_group()
         out, _ = proc.communicate()
         return None, out or "", time.perf_counter() - start
+    except BaseException:
+        # Ctrl-C etc.: the child is in its own process group, so it would not get
+        # the signal itself -- kill it before stopping.
+        kill_group()
+        proc.wait()
+        raise
 
 
 def extract_outputs(text: str) -> str | None:
@@ -238,13 +247,17 @@ def try_seed(s: FuzzSettings, seed: int, targets: set[int], killed: set[int],
                    baseline_seconds=round(base.seconds, 2))
         timeout = mutant_timeout(base.seconds, s.timeout_factor, s.min_timeout)
 
+        print(f"  seed {seed}: reaches {len(reached):,} mutants, of which {len(candidates)} "
+              f"{'is a survivor' if len(candidates) == 1 else 'are survivors'} not yet killed (timeout {timeout:.0f}s each)", flush=True)
+
         kills = []
-        for m in candidates:
+        for i, m in enumerate(candidates, 1):
             if m in killed:  # killed meanwhile (not possible single-process, but cheap)
                 continue
             mut = run_program(s, prog, input_json, s.mutated_icd, timeout,
                               {"DREDD_ENABLED_MUTATION": str(m)})
             status = classify(base, mut)
+            print(f"    [{i}/{len(candidates)}] mutant ID {m}: {status.name} ({mut.seconds:.1f}s)", flush=True)
             if status.is_kill():
                 evidence = outdir / "kills" / str(m)
                 evidence.mkdir(parents=True, exist_ok=True)
@@ -306,7 +319,8 @@ def fuzz(s: FuzzSettings, survivors_files: list[Path], outdir: Path,
         note = ""
         if "padding_only" in k:
             note = {True: " (padding only)", False: " (data)", None: " (layout unknown: check by hand)"}[k["padding_only"]]
-        print(f"    KILL {k['mutant_id']}: {k['status']}{note}", flush=True)
+        if note:
+            print(f"      -> {note.strip(' ()')}", flush=True)
 
     deadline = time.time() + hours * 3600 if hours else None
     seed, n = first_seed, 0
@@ -318,7 +332,12 @@ def fuzz(s: FuzzSettings, survivors_files: list[Path], outdir: Path,
             print("All targets killed.", flush=True)
             break
 
-        rec = try_seed(s, seed, targets, killed, outdir, on_kill)
+        try:
+            rec = try_seed(s, seed, targets, killed, outdir, on_kill)
+        except KeyboardInterrupt:
+            print(f"\nInterrupted during seed {seed}. Kills so far are saved; "
+                  f"rerun the same command to resume (seed {seed} will be retried).", flush=True)
+            return
         with programs_file.open("a") as f:
             f.write(json.dumps(rec) + "\n")
         n += 1
