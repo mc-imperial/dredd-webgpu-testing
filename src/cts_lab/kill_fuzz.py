@@ -79,8 +79,11 @@ class RunResult:
 def _run(cmd: list[str], env: dict[str, str], timeout: float) -> tuple[int | None, str, float]:
     """Run a command in its own process group; kill the whole group on timeout."""
     start = time.perf_counter()
+    # Mutants can make the program print arbitrary bytes (e.g. corrupted IR dumps),
+    # so decode leniently: invalid bytes become U+FFFD instead of raising.
     proc = subprocess.Popen(cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                            text=True, start_new_session=True)
+                            text=True, encoding="utf-8", errors="replace",
+                            start_new_session=True)
     def kill_group():
         try:
             os.killpg(proc.pid, signal.SIGKILL)
@@ -332,12 +335,19 @@ def fuzz(s: FuzzSettings, survivors_files: list[Path], outdir: Path,
             print("All targets killed.", flush=True)
             break
 
+        seed_start = time.perf_counter()
         try:
             rec = try_seed(s, seed, targets, killed, outdir, on_kill)
         except KeyboardInterrupt:
             print(f"\nInterrupted during seed {seed}. Kills so far are saved; "
                   f"rerun the same command to resume (seed {seed} will be retried).", flush=True)
             return
+        except Exception as e:
+            # One odd program must not stop a long campaign: record it and move on.
+            # Kills found before the error are already saved.
+            print(f"  seed {seed}: ERROR {type(e).__name__}: {e}", flush=True)
+            rec = {"seed": seed, "outcome": "error", "error": f"{type(e).__name__}: {e}"[:500],
+                   "seconds": round(time.perf_counter() - seed_start, 2)}
         with programs_file.open("a") as f:
             f.write(json.dumps(rec) + "\n")
         n += 1
