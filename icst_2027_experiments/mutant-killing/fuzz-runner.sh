@@ -13,7 +13,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
 
 CONTAINER_PROJECT_ROOT=/workspace/dredd-webgpu-testing
-IMAGE="${IMAGE:-dredd-webgpu-testing:fuzz}"   # image with wgslsmith + mutated and tracking Mesa
+IMAGE="${IMAGE:-dredd-webgpu-testing:wgslsmith}"   # image with wgslsmith + mutated and tracking Mesa
 
 USAGE="Usage: $0 <survivors.txt> <run-name> [extra cts-lab fuzz args...]"
 SURVIVORS="$(realpath "${1:?$USAGE}")"
