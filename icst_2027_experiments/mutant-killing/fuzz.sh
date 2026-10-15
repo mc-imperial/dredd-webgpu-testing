@@ -7,6 +7,7 @@
 # Rerunning the same command resumes (skips seeds already tried).
 
 set -euo pipefail
+ulimit -c 0   # no core dumps from crashing mutants
 
 USAGE="Usage: $0 <survivors.txt> <outdir> [extra cts-lab fuzz args...]"
 SURVIVORS="${1:?$USAGE}"
