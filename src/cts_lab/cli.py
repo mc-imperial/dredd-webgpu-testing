@@ -176,15 +176,19 @@ def run_command(args) -> int:
         run_subtrees(cts, args)
 
 def run_from_root(cts: CTS, args) -> int:
-    
+
+    opts = RunOptions(
+        dawn_servers=args.n_dawn_runners,
+        dawn_isolate=args.dawn_isolate,
+        mesa_shader_cache_on=args.mesa_shader_cache_on,
+        tracking=args.track_mutants,
+        test_level=args.test_level,
+    )
+
     run = cts.run(
         query=args.query,
         outdir=Path(args.outdir),
-        tracking=args.track_mutants,
-        mesa_shader_cache_on=args.mesa_shader_cache_on,
-        dawn_servers=args.n_dawn_runners,
-        dawn_isolate=args.dawn_isolate,
-        test_level=args.test_level
+        opts=opts,
     )
 
     run.get_test_results()
