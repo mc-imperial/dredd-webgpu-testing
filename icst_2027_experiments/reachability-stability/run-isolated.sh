@@ -22,7 +22,7 @@ IMAGE=dredd-webgpu-testing:reachability-stability
 RUN_TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
 RESULTS_ROOT="results/webgpu-shader-run/run-${RUN_TIMESTAMP}"
-SERVERS=4
+SERVERS=1
 
 # Resolve the manifest to an absolute host path
 if [[ ! -s "$MANIFEST_ARG" ]]; then
