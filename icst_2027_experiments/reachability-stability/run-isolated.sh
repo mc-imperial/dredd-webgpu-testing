@@ -3,14 +3,15 @@
 set -euo pipefail
 
 usage() {
-    echo "Usage: $0 <run-id>" >&2
-    echo "  e.g. $0 20261016_134500   (or run-20261016_134500)" >&2
+    echo "Usage: $0 <repeat-id> <manifest.json>" >&2
+    echo "  e.g. $0 3 results/webgpu-shader-run/run-.../individual_test_results.json" >&2
     exit 1
 }
 
-[[ $# -eq 1 ]] || usage
+[[ $# -eq 2 ]] || usage
 
-RUN_ID="${1#run-}"
+REPEAT="$1"
+MANIFEST_ARG="$2"
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
@@ -18,46 +19,36 @@ PROJECT_ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
 CONTAINER_PROJECT_ROOT=/workspace/dredd-webgpu-testing
 IMAGE=dredd-webgpu-testing:reachability-stability
 
-RESULTS_ROOT="results/webgpu-shader-run/run-${RUN_ID}"
-SERVERS=1
-REPEAT=1
+RUN_TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
-if [[ ! -d "$PROJECT_ROOT/$RESULTS_ROOT" ]]; then
-    echo "ERROR: run directory not found:" >&2
-    echo "$PROJECT_ROOT/$RESULTS_ROOT" >&2
+RESULTS_ROOT="results/webgpu-shader-run/run-${RUN_TIMESTAMP}"
+SERVERS=4
+
+# Resolve the manifest to an absolute host path
+if [[ ! -s "$MANIFEST_ARG" ]]; then
+    echo "ERROR: manifest not found or empty: $MANIFEST_ARG" >&2
     exit 1
 fi
+MANIFEST="$(cd -- "$(dirname -- "$MANIFEST_ARG")" && pwd)/$(basename -- "$MANIFEST_ARG")"
 
-# Keep the run's original common.sh if it already has one
-if [[ ! -f "$PROJECT_ROOT/$RESULTS_ROOT/common.sh" ]]; then
-    cp "$SCRIPT_DIR/common.sh" "$PROJECT_ROOT/$RESULTS_ROOT/common.sh"
-fi
-
-SUBTREE_RUN="$(
-    find \
-        "$PROJECT_ROOT/$RESULTS_ROOT/subtree-no-cache/servers-${SERVERS}" \
-        -mindepth 1 \
-        -maxdepth 1 \
-        -type d \
-        2>/dev/null \
-        | sort \
-        | tail -n 1
-)"
-
-INDIVIDUAL_TEST_JSON="$SUBTREE_RUN/individual_test_results.json"
-
-if [[ -z "$SUBTREE_RUN" || ! -s "$INDIVIDUAL_TEST_JSON" ]]; then
-    echo "ERROR: no valid subtree-no-cache test manifest found in run ${RUN_ID}:" >&2
-    echo "$INDIVIDUAL_TEST_JSON" >&2
+# The manifest must be inside the project so the container can see it
+if [[ "$MANIFEST" != "$PROJECT_ROOT/"* ]]; then
+    echo "ERROR: manifest must be inside $PROJECT_ROOT" >&2
     exit 1
 fi
+CONTAINER_MANIFEST="$CONTAINER_PROJECT_ROOT/${MANIFEST#"$PROJECT_ROOT/"}"
+
+mkdir -p "$PROJECT_ROOT/$RESULTS_ROOT"
+chmod 777 "$PROJECT_ROOT/$RESULTS_ROOT"
+
+cp "$SCRIPT_DIR/common.sh" "$PROJECT_ROOT/$RESULTS_ROOT/common.sh"
 
 echo "Using test manifest:"
-echo "$INDIVIDUAL_TEST_JSON"
+echo "$MANIFEST"
 
 echo
 echo "============================================================"
-echo "Running: isolated-no-cache.sh (run ${RUN_ID})"
+echo "Running: isolated-no-cache.sh (repeat ${REPEAT})"
 echo "============================================================"
 
 time docker run --rm \
@@ -70,4 +61,4 @@ time docker run --rm \
     "icst_2027_experiments/reachability-stability/isolated-no-cache.sh" \
     "$SERVERS" \
     "$REPEAT" \
-    "$CONTAINER_PROJECT_ROOT/${INDIVIDUAL_TEST_JSON#"$PROJECT_ROOT/"}"
+    "$CONTAINER_MANIFEST"
