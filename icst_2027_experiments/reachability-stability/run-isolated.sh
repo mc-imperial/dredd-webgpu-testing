@@ -21,7 +21,7 @@ PROJECT_ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
 CONTAINER_PROJECT_ROOT=/workspace/dredd-webgpu-testing
 IMAGE=dredd-webgpu-testing:reachability-stability
 
-SERVERS=4
+SERVERS="${SERVERS:-4}"   # override with e.g. SERVERS=1 ./run-isolated.sh ...
 
 if [[ -n "$RESUME_DIR" ]]; then
     # Resume into an existing run folder (path relative to the project root)
