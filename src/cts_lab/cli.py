@@ -191,8 +191,6 @@ def run_from_root(cts: CTS, args) -> int:
         opts=opts,
     )
 
-    run.get_test_results()
-
     return run.returncode
 
 def run_subtrees(cts, args) -> int:
