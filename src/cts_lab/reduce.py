@@ -2,8 +2,8 @@
 
 wgslsmith's own `reduce mismatch` keeps programs whose output differs *between
 implementations*; here the interesting property is "unmutated Mesa runs it
-cleanly, the mutant doesn't". So C-Vise does the reducing, with check() below
-as its interestingness test. It mirrors wgslsmith's test.rs:
+cleanly, the mutant doesn't". So C-Vise and/or Perses (wgslsmith's fork, with a
+WGSL grammar) do the reducing, with check() below as their interestingness test. It mirrors wgslsmith's test.rs:
 
   - the candidate is the *un-reconditioned* program (regenerated from the seed)
     and is reconditioned before every run, so the reducer can't remove the
@@ -23,13 +23,15 @@ kills, so later reductions can skip mutants already covered.
 
 Usage (inside the container):
   python3 -m cts_lab.reduce one   results/fuzz/run1 221889 [more IDs...]
+  python3 -m cts_lab.reduce --reducer perses,cvise one results/fuzz/run1 221889
   python3 -m cts_lab.reduce batch results/fuzz/run1 --limit 20 --survivors .../survivors.txt
 
 Output, per mutant, in <outdir>/<mutant>/:
   original.wgsl      the killing program from fuzzing (reconditioned)
-  prog.wgsl          what C-Vise reduced (un-reconditioned); prog.wgsl.orig = start
+  unreconditioned.wgsl  the regenerated seed: where reduction starts
+  prog.wgsl          the reduced program (un-reconditioned)
   reduced.wgsl       the final, reconditioned program -> the test candidate
-  input.json, test.sh, cvise.log, clean.txt, mutant.txt, result.json
+  input.json, test.sh, reduce.log, clean.txt, mutant.txt, result.json
 and <outdir>/reductions.jsonl collects all result.json records.
 """
 
@@ -139,10 +141,14 @@ def prepare(s: FuzzSettings, run_dir: Path, kill: dict, work: Path, mode: str,
 
     # Preferred: regenerate the same seed without --recondition, and recondition in each check.
     unrec = work / "unreconditioned.wgsl"
+    t0 = time.perf_counter()
+    print(f"  checking the kill reproduces from regenerated seed {kill['seed']} "
+          f"(unmutated run, then mutant run)...", flush=True)
     rc, _, _ = _run([str(s.wgslsmith), "gen", str(kill["seed"]), *s.gen_args, "-o", str(unrec)],
                     os.environ.copy(), 60)
     if rc == 0 and unrec.exists():
         ok, why = interesting(s, unrec, m, mode, input_json, True, crash_regex)
+        print(f"    {'yes' if ok else 'no'} ({why}, {time.perf_counter() - t0:.0f}s)", flush=True)
         if ok:
             shutil.copy(unrec, work / "prog.wgsl")
             return True
@@ -151,7 +157,10 @@ def prepare(s: FuzzSettings, run_dir: Path, kill: dict, work: Path, mode: str,
 
     # Fallback: reduce the reconditioned program as is. The reducer may then remove
     # safety checks, so verify() and a look by hand matter more.
+    t0 = time.perf_counter()
+    print("  checking the kill reproduces from the original fuzz program...", flush=True)
     ok, why = interesting(s, work / "original.wgsl", m, mode, input_json, False, crash_regex)
+    print(f"    {'yes' if ok else 'no'} ({why}, {time.perf_counter() - t0:.0f}s)", flush=True)
     if not ok:
         raise RuntimeError(f"kill does not reproduce: {why}")
     shutil.copy(work / "original.wgsl", work / "prog.wgsl")
@@ -215,8 +224,50 @@ def verify(s: FuzzSettings, final: Path, input_json: str, mutant: int, work: Pat
     return out
 
 
+def run_reducer(name: str, work: Path, jobs: int, timeout: int, perses_jar: Path | None,
+                log) -> int:
+    """Run one reducer on work/prog.wgsl in place, echoing its output. Returns the exit code."""
+    if name in ("cvise", "creduce"):
+        cmd = [name, "--n", str(jobs), "--not-c", "--timeout", str(timeout), "./test.sh", "prog.wgsl"]
+        out_dir = None
+    elif name == "perses":
+        # As wgslsmith's reducer.rs runs it, but into a separate output directory.
+        out_dir = work / "perses_out"
+        shutil.rmtree(out_dir, ignore_errors=True)
+        # "test.sh", not "./test.sh": Perses compares parent folders literally, and the
+        # parent of ".../221889/./test.sh" is ".../221889/.", which it treats as different.
+        cmd = ["java", "-jar", str(perses_jar), "-i", "prog.wgsl", "-t", "test.sh",
+               "-o", out_dir.name, "--threads", str(jobs)]
+    elif name == "wgsl":
+        # Our own WGSL-aware pass (paired edits Perses/C-Vise can't make); runs in-process.
+        from .wgsl_pass import reduce_dir
+
+        def emit(msg):
+            log.write(msg + "\n")
+            log.flush()
+            print(msg, flush=True)
+        return reduce_dir(work, emit)
+    else:
+        raise SystemExit(f"unknown reducer {name}")
+
+    proc = subprocess.Popen(cmd, cwd=work, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            text=True, errors="replace", bufsize=1)
+    for line in proc.stdout:
+        log.write(line)
+        log.flush()
+        print("    " + line.rstrip(), flush=True)
+    rc = proc.wait()
+
+    if out_dir is not None and rc == 0:
+        result = out_dir / "prog.wgsl"
+        if result.exists():
+            shutil.copy(work / "prog.wgsl", work / f"prog.before-{name}.wgsl")
+            shutil.copy(result, work / "prog.wgsl")
+    return rc
+
+
 def reduce_one(s: FuzzSettings, run_dir: Path, mutant: int, outroot: Path, *, jobs: int,
-               reducer: str, reducer_timeout: int, crash_regex: str | None,
+               reducer: str, reducer_timeout: int, perses_jar: Path | None, crash_regex: str | None,
                targets: set[int] | None, kills: dict[int, dict]) -> dict | None:
     work = outroot / str(mutant)
     if (work / "result.json").exists():
@@ -243,22 +294,21 @@ def reduce_one(s: FuzzSettings, run_dir: Path, mutant: int, outroot: Path, *, jo
     write_test_script(s, work, mutant, mode, recondition, crash_regex, s.baseline_timeout)
     before = (work / "prog.wgsl").read_text()
 
-    cmd = [reducer, "--n", str(jobs), "--not-c", "--timeout", str(reducer_timeout),
-           "./test.sh", "prog.wgsl"]
-    print(f"  running {reducer} with {jobs} jobs (log: {work / 'cvise.log'})", flush=True)
-    # Show C-Vise's progress lines (pass name, % reduced, bytes left) and keep them in the log.
-    with (work / "cvise.log").open("w") as log:
-        proc = subprocess.Popen(cmd, cwd=work, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                text=True, errors="replace", bufsize=1)
-        for line in proc.stdout:
-            log.write(line)
-            log.flush()
-            print("    " + line.rstrip(), flush=True)
-        rc = proc.wait()
+    stages = []
+    with (work / "reduce.log").open("w") as log:
+        for name in reducer.split(","):
+            size_before = (work / "prog.wgsl").stat().st_size
+            print(f"  running {name} with {jobs} jobs (log: {work / 'reduce.log'})", flush=True)
+            log.write(f"===== {name} =====\n")
+            rc = run_reducer(name, work, jobs, reducer_timeout, perses_jar, log)
+            size_after = (work / "prog.wgsl").stat().st_size
+            stages.append({"reducer": name, "exit": rc, "bytes_before": size_before,
+                           "bytes_after": size_after})
+            if rc != 0:
+                print(f"  {name} failed (exit {rc}); see {work / 'reduce.log'}", flush=True)
+                return None
+            print(f"  {name}: {size_before:,} -> {size_after:,} bytes", flush=True)
     reduce_secs = time.perf_counter() - start
-    if rc != 0:
-        print(f"  {reducer} failed (exit {rc}); see {work / 'cvise.log'}", flush=True)
-        return None
 
     final = work / "reduced.wgsl"
     if recondition:
@@ -275,7 +325,7 @@ def reduce_one(s: FuzzSettings, run_dir: Path, mutant: int, outroot: Path, *, jo
               "reconditioned_in_checks": recondition,
               "lines_before": len(before.splitlines()), "lines_after": len(after.splitlines()),
               "final_lines": len(final.read_text().splitlines()),
-              "reduce_seconds": round(reduce_secs, 1)}
+              "reduce_seconds": round(reduce_secs, 1), "stages": stages}
     result.update(verify(s, final, (work / "input.json").read_text().strip(), mutant, work, targets))
 
     (work / "result.json").write_text(json.dumps(result, indent=2) + "\n")
@@ -315,7 +365,11 @@ def main(argv=None):
     p.add_argument("--outdir", type=Path, default=Path("results/reduce"))
     p.add_argument("--jobs", type=int, default=max(1, (os.cpu_count() or 2) // 2),
                    help="parallel checks in C-Vise (default: half the cores)")
-    p.add_argument("--reducer", default="cvise", help="cvise or creduce")
+    p.add_argument("--reducer", default="cvise",
+                   help="cvise, creduce, perses or wgsl (our WGSL-aware pass), or several in sequence, "
+                        "e.g. perses,cvise,wgsl")
+    p.add_argument("--perses-jar", type=Path,
+                   default=os.environ.get("PERSES_JAR", "/data/perses_deploy.jar"))
     p.add_argument("--reducer-timeout", type=int, default=120, help="seconds per interestingness check")
     p.add_argument("--clean-timeout", type=float, default=10.0,
                    help="timeout for an unmutated run during reduction (s)")
@@ -334,12 +388,20 @@ def main(argv=None):
     s = FuzzSettings(wgslsmith=args.wgslsmith, mutated_icd=args.mutated_icd,
                      tracked_icd=args.tracked_icd, gen_args=list(SMALL_PROGRAM),
                      baseline_timeout=args.clean_timeout)
-    if shutil.which(args.reducer) is None:
-        raise SystemExit(f"{args.reducer} not found: use the reduce image (Dockerfile.reduce)")
+    for name in args.reducer.split(","):
+        if name == "perses":
+            if shutil.which("java") is None or not args.perses_jar.exists():
+                raise SystemExit(f"perses needs java and {args.perses_jar}: rebuild the wgslsmith image "
+                                 "(Dockerfile.wgslsmith) or pass --perses-jar")
+        elif name == "wgsl":
+            continue
+        elif shutil.which(name) is None:
+            raise SystemExit(f"{name} not found: rebuild the wgslsmith image (Dockerfile.wgslsmith)")
     targets = load_targets(args.survivors) if args.survivors else None
     kills = _kill_records(args.run_dir)
     args.outdir.mkdir(parents=True, exist_ok=True)
     common = dict(jobs=args.jobs, reducer=args.reducer, reducer_timeout=args.reducer_timeout,
+                  perses_jar=args.perses_jar,
                   crash_regex=args.crash_regex, targets=targets, kills=kills)
 
     if args.cmd == "one":

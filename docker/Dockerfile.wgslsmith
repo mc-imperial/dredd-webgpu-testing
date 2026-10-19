@@ -4,11 +4,41 @@ FROM dredd-webgpu-testing:mutants
 ENV WGSLSMITH="${BASE}/wgslsmith"
 ENV WGSLSMITH_COMMIT=cb4d9a80551445f6e9a15d12437de2a1dfc41a8d
 
-# WGSLsmith prerequisites that are not already in the base image
-RUN apt-get update && apt-get install -y libxtst-dev && rm -rf /var/lib/apt/lists/*
+# WGSLsmith prerequisites that are not already in the base image, plus the
+# reducers used by cts_lab/reduce.py: C-Vise, and Java for Perses.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libxtst-dev \
+        cvise \
+        openjdk-17-jdk-headless git curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
 ENV PATH="/root/.cargo/bin:${PATH}"
+
+# Perses from wgslsmith's fork (it has the WGSL grammar). Built before the COPY
+# below so that changing the setup scripts doesn't rebuild it.
+# The fork has no .bazelversion and uses a WORKSPACE file, which Bazel 8+ no longer
+# reads, so pin a Bazel from its era for Bazelisk to fetch. If 5.4.1 fails, try
+# --build-arg PERSES_BAZEL_VERSION=6.5.0 (or 4.2.2).
+# The fork's WORKSPACE also lists JCenter, which shut down; kotlinx-html 0.7.x is
+# now only in JetBrains' own repository, so the sed below swaps that in.
+# The fork's WGSL grammar predates literal suffixes (e.g. -809f) and 'const', so it is
+# replaced with the updated copy in setup/patches/WGSL.g4 (changes marked [dredd]).
+COPY setup/patches/WGSL.g4 /tmp/perses-WGSL.g4
+ARG PERSES_BAZEL_VERSION=5.4.1
+ENV USE_BAZEL_VERSION=${PERSES_BAZEL_VERSION}
+RUN curl -fsSL -o /usr/local/bin/bazel \
+        https://github.com/bazelbuild/bazelisk/releases/download/v1.20.0/bazelisk-linux-amd64 \
+    && chmod +x /usr/local/bin/bazel \
+    && git clone https://github.com/wgslsmith/perses /data/perses \
+    && cd /data/perses \
+    && sed -i 's#https://jcenter.bintray.com/\?#https://maven.pkg.jetbrains.space/public/p/kotlinx-html/maven#' WORKSPACE \
+    && grep -q "maven.pkg.jetbrains.space" WORKSPACE \
+    && cp /tmp/perses-WGSL.g4 src/org/perses/grammar/wgsl/WGSL.g4 \
+    && bazel build //src/org/perses:perses_deploy.jar \
+    && cp bazel-bin/src/org/perses/perses_deploy.jar /data/perses_deploy.jar \
+    && bazel clean --expunge
+ENV PERSES_JAR=/data/perses_deploy.jar
 
 # Use the current setup scripts from the checkout rather than
 # the version baked into the base image.
