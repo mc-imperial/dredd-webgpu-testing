@@ -11,4 +11,4 @@ git submodule update --init --depth 1 external/wgpu
 mkdir -p build/dawn
 git -C "$DAWN" rev-parse HEAD > build/dawn/gclient_sync_hash
 
-./build.py --no-reducer --dawn-path "$DAWN"
+./build.py --dawn-path "$DAWN"
