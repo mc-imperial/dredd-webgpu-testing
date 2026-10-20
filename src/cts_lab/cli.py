@@ -59,7 +59,9 @@ def main() -> int:
     fuzz_parser.add_argument("--programs", type=int, help="stop after N programs")
     fuzz_parser.add_argument("--hours", type=float, help="stop after this many hours")
     fuzz_parser.add_argument("--first-seed", type=int, default=0)
-    fuzz_parser.add_argument("--min-timeout", type=float, default=10.0)    
+    fuzz_parser.add_argument("--min-timeout", type=float, default=10.0) 
+    kill_parser.add_argument("--hours", type=float, default=None,
+                         help="stop starting new mutants after this many hours (rerun to resume)")   
 
     args = parser.parse_args()
 
@@ -247,6 +249,6 @@ def kill_command(args) -> int:
     )
 
     kill_all(cts, load_mapping(args.mapping), Path(args.outdir), base_opts, settings,
-         only=args.mutants, order=args.order, limit=args.limit)
+         only=args.mutants, order=args.order, limit=args.limit, hours=args.hours)
     
     return 0

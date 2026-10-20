@@ -222,11 +222,13 @@ def kill_all(
     only: list[int] | None = None,
     order: str = "fewest-tests",
     limit: int | None = None,
+    hours: float | None = None,
 ) -> dict[str, int]:
     """Run kill_mutant over the mapping, resuming from any previous results.
 
-    ``limit`` caps how many *new* mutants this invocation runs, so you can
-    work through a huge mapping in chunks.
+    ``limit`` caps how many *new* mutants this invocation runs, and ``hours``
+    how long it may run (checked before starting each mutant, so the mutant in
+    progress is always finished). Either way, rerunning resumes.
     """
     outdir = Path(outdir)
     log = ResultsLog(outdir)
@@ -244,8 +246,14 @@ def kill_all(
     print(f"{len(mutants)} mutants selected, {len(mutants) - len(remaining)} already done, "
           f"{len(todo)} to run now", flush=True)
 
+    start = time.monotonic()
+    deadline = start + hours * 3600 if hours else None
     counts: dict[str, int] = {}
+    stopped_early = False
     for i, mutant_id in enumerate(todo, 1):
+        if deadline is not None and time.monotonic() >= deadline:
+            stopped_early = True
+            break
         result = kill_mutant(
             cts, mutant_id, mapping[mutant_id], baselines, base_opts, outdir, settings
         )
@@ -257,5 +265,18 @@ def kill_all(
               f"({result['tests_run']}/{result['tests_reaching']} tests, {result['seconds']}s)",
               flush=True)
 
+    ran = sum(counts.values())
+    elapsed = (time.monotonic() - start) / 3600
+    killed = sum(n for s, n in counts.items() if s.startswith("KILL"))
+    print(flush=True)
+    print(f"{f'Time limit of {hours:g} h reached' if stopped_early else 'Finished'} "
+          f"after {elapsed:.1f} h: ran {ran:,} mutants this session "
+          f"({killed:,} killed, {counts.get('SURVIVED', 0):,} survived).", flush=True)
+    print(f"Overall: {len(mutants) - len(remaining) + ran:,} of {len(mutants):,} mutants done, "
+          f"{len(remaining) - ran:,} still to run.", flush=True)
+    if todo[ran:]:
+        nxt = todo[ran]
+        print(f"Next up: mutant {nxt} ({len(mapping[nxt])} reaching tests). "
+              f"Rerun the same command to continue.", flush=True)
     print("Summary:", counts, flush=True)
     return counts

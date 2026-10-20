@@ -147,7 +147,6 @@ def iter_tests(tests: list[str], files_by_test: dict[str, list[str]], workers: i
             for offset, ids in enumerate(pool.map(lambda t: test_mutants(files_by_test[t]), chunk)):
                 yield start + offset, ids
 
-
 # --------------------------------------------------------------------------- #
 # Main
 # --------------------------------------------------------------------------- #
