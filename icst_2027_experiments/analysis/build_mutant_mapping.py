@@ -21,6 +21,12 @@ Output:
   <output stem>_per_mutant.csv  mutant_id,n_tests                (all mutants)
   (both written after pass 1, so available even if pass 2 is skipped)
 
+To build another mapping (e.g. a higher --max-tests) without repeating pass 1,
+reuse the per-mutant counts from an earlier run:
+  build_mutant_mapping.py <run-dir> --configuration isolated-no-cache \\
+      --counts-from processed/mutant_to_tests_isolated-no-cache_per_mutant.csv \\
+      --output processed/mutant_to_tests_isolated-no-cache_max100.json --max-tests 100
+
 Usage:
   build_mutant_mapping.py <run-dir> --configuration isolated-no-cache \\
       --output processed/mutant_to_tests_isolated-no-cache.json [--max-tests 20]
@@ -159,6 +165,9 @@ def main():
     parser.add_argument("--force", action="store_true",
                         help="Run pass 2 even if it looks like it won't fit in memory")
     parser.add_argument("--workers", type=int, default=8, help="Reader threads")
+    parser.add_argument("--counts-from", type=Path, default=None,
+                        help="Skip pass 1: load per-mutant counts from an earlier run's "
+                             "<stem>_per_mutant.csv (same run directory and configuration)")
     args = parser.parse_args()
 
     start = time.monotonic()
@@ -166,6 +175,24 @@ def main():
     tests = sorted(files_by_test)
     log(f"{len(tests):,} distinct tests ({time.monotonic() - start:.1f}s)")
 
+    if args.counts_from is not None:
+        counts = load_counts(args.counts_from)
+        log(f"Pass 1 skipped: counts for {np.count_nonzero(counts):,} mutants loaded from {args.counts_from}")
+    else:
+        counts = count_pass(args, tests, files_by_test, start)
+    run_pass2(args, tests, files_by_test, counts, start)
+
+
+def load_counts(path: Path) -> np.ndarray:
+    with path.open() as f:
+        rows = [(int(m), int(n)) for m, n in csv.reader(f) if m != "mutant_id"]
+    ids = np.array([m for m, _ in rows], dtype=np.int64)
+    counts = np.zeros(int(ids.max()) + 1 if ids.size else 1, dtype=np.uint32)
+    counts[ids] = [n for _, n in rows]
+    return counts
+
+
+def count_pass(args, tests, files_by_test, start) -> np.ndarray:
     # ---- Pass 1: tests per mutant ------------------------------------------
     counts = np.zeros(1 << 16, dtype=np.uint32)
     relationships = 0
@@ -201,8 +228,11 @@ def main():
 
     if args.counts_only:
         log("--counts-only: skipping the mapping")
-        return
+        raise SystemExit(0)
+    return counts
 
+
+def run_pass2(args, tests, files_by_test, counts, start) -> None:
     selected = counts > 0
     if args.max_tests is not None:
         selected &= counts <= args.max_tests

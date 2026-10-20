@@ -48,6 +48,30 @@ if ! jq -e 'length > 0' "$MAPPING" > /dev/null; then
 fi
 echo "Mutants in mapping: $(jq 'length' "$MAPPING")"
 
+# ------------------------------------------------------------------
+# Distribution of how many tests reach each mutant (fast: uses the
+# counts file the mapping step already wrote; covers ALL mutants,
+# not just the --max-tests ones in the mapping)
+# ------------------------------------------------------------------
+COUNTS="${MAPPING%.json}_counts.csv"
+
+echo
+echo "============================================================"
+echo "Reachability distribution for $CONFIGURATION"
+echo "============================================================"
+
+if [[ ! -f "$COUNTS" ]]; then
+    echo "ERROR: counts file missing: $COUNTS (rerun build_mutant_mapping.py with --counts-only)" >&2
+    exit 1
+fi
+
+python3 "$SCRIPT_DIR/plot_reachability.py" "$COUNTS" \
+    ${TOTAL_MUTANTS:+--total-mutants "$TOTAL_MUTANTS"} \
+    ${TOTAL_TESTS:+--total-tests "$TOTAL_TESTS"}
+
+echo "Summary:   ${COUNTS%.csv}_summary.txt"
+echo "Histogram: ${COUNTS%.csv}_hist.png"
+
 if [[ "$MAPPING_ONLY" == "--mapping-only" ]]; then
     echo
     echo "Mapping: $MAPPING"
