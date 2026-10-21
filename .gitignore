@@ -3,6 +3,7 @@
 *.swp
 *~
 *.bak
+tmp*
 records.md
 todo.md
 
