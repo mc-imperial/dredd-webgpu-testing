@@ -247,11 +247,6 @@ def run_reducer(name: str, work: Path, jobs: int, timeout: int, perses_jar: Path
             log.flush()
             print(msg, flush=True)
         return reduce_dir(work, emit)
-    elif name == "input":
-        from .input_pass import reduce_input_dir
-        def emit(msg):
-            log.write(msg + "\n"); log.flush(); print(msg, flush=True)
-        return reduce_input_dir(work, emit)
     else:
         raise SystemExit(f"unknown reducer {name}")
 
@@ -396,12 +391,12 @@ def main(argv=None):
     for name in args.reducer.split(","):
         if name == "perses":
             if shutil.which("java") is None or not args.perses_jar.exists():
-                raise SystemExit(f"perses needs java and {args.perses_jar}: rebuild the wgslsmith image "
-                                 "(Dockerfile.wgslsmith) or pass --perses-jar")
+                raise SystemExit(f"perses needs java and {args.perses_jar}: build the reduce image "
+                                 "(Dockerfile.reduce) or pass --perses-jar")
         elif name == "wgsl":
             continue
         elif shutil.which(name) is None:
-            raise SystemExit(f"{name} not found: rebuild the wgslsmith image (Dockerfile.wgslsmith)")
+            raise SystemExit(f"{name} not found: use the reduce image (Dockerfile.reduce)")
     targets = load_targets(args.survivors) if args.survivors else None
     kills = _kill_records(args.run_dir)
     args.outdir.mkdir(parents=True, exist_ok=True)

@@ -1,0 +1,22 @@
+# Fuzzing image: Dredd-mutated Mesa + Dawn (from :mutants) + wgslsmith.
+# Build: docker build -f Dockerfile.wgslsmith -t dredd-webgpu-testing:wgslsmith .
+FROM dredd-webgpu-testing:mutants
+
+#TODO: Env vars to be removed once we rebuild the base image
+ENV WGSLSMITH="${BASE}/wgslsmith"
+ENV WGSLSMITH_COMMIT=cb4d9a80551445f6e9a15d12437de2a1dfc41a8d
+
+# WGSLsmith prerequisites that are not already in the base image.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libxtst-dev git curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# Use the current setup scripts from the checkout rather than
+# the version baked into the base image.
+COPY setup/ /workspace/dredd-webgpu-testing/setup/
+
+RUN chmod +x $PROJECT_ROOT/setup/build_wgslsmith.sh \
+    && $PROJECT_ROOT/setup/build_wgslsmith.sh

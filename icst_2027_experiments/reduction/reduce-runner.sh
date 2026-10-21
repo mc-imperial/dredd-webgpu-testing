@@ -11,7 +11,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
 CONTAINER_PROJECT_ROOT=/workspace/dredd-webgpu-testing
-IMAGE="${IMAGE:-dredd-webgpu-testing:wgslsmith}"   # image with wgslsmith, C-Vise and Perses
+IMAGE="${IMAGE:-dredd-webgpu-testing:reduce}"   # wgslsmith + C-Vise + Perses (Dockerfile.reduce)
 
 mkdir -p "$PROJECT_ROOT/results/reduce"
 chmod 777 "$PROJECT_ROOT/results/reduce"
