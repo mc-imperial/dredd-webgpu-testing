@@ -25,7 +25,9 @@ Output, in ``outdir`` (rerunning the same command resumes):
 
 import json
 import os
+import random
 import re
+import secrets
 import shutil
 import signal
 import subprocess
@@ -297,9 +299,48 @@ def _read_jsonl(path: Path) -> list[dict]:
     return [json.loads(l) for l in path.read_text().splitlines() if l.strip()]
 
 
+def _seed_source(outdir: Path, master_seed: int | None, first_seed: int, has_programs: bool):
+    """Iterator of program seeds for this run, plus a description of where they come from.
+
+    New runs draw 63-bit seeds from random.Random(master_seed); the master seed
+    (given, or picked at random) is saved in run_info.json, so a rerun regenerates
+    the same sequence and resumes. Runs made before this (programs.jsonl but no
+    run_info.json) keep counting up from first_seed, as they did then.
+    """
+    info_file = outdir / "run_info.json"
+    if info_file.exists():
+        info = json.loads(info_file.read_text())
+        saved = info.get("master_seed")
+        if saved is None:
+            raise SystemExit(f"{info_file} has no master_seed")
+        if master_seed is not None and master_seed != saved:
+            raise SystemExit(f"{outdir} was started with master seed {saved}, not {master_seed}: "
+                             f"use a new run name for a different master seed")
+        master_seed = saved
+        how = f"master seed {master_seed} (from {info_file.name})"
+    elif has_programs:
+        def counting():
+            seed = first_seed
+            while True:
+                yield seed
+                seed += 1
+        return counting(), f"consecutive seeds from {first_seed} (run started before master seeds)"
+    else:
+        if master_seed is None:
+            master_seed = secrets.randbits(63)
+        info_file.write_text(json.dumps({"master_seed": master_seed,
+                                         "started": time.strftime("%Y-%m-%d %H:%M:%S")}, indent=2) + "\n")
+        how = f"master seed {master_seed} (saved to {info_file.name})"
+
+    def drawn(rng=random.Random(master_seed)):
+        while True:
+            yield rng.getrandbits(63)
+    return drawn(), how
+
+
 def fuzz(s: FuzzSettings, survivors_files: list[Path], outdir: Path,
          max_programs: int | None = None, hours: float | None = None,
-         first_seed: int = 0) -> None:
+         first_seed: int = 0, master_seed: int | None = None) -> None:
     outdir = Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
     programs_file = outdir / "programs.jsonl"
@@ -312,6 +353,8 @@ def fuzz(s: FuzzSettings, survivors_files: list[Path], outdir: Path,
     done_seeds = {p["seed"] for p in _read_jsonl(programs_file)}
     print(f"{len(targets):,} target mutants, {len(killed & targets):,} already killed, "
           f"{len(done_seeds):,} seeds already tried", flush=True)
+    seeds, how = _seed_source(outdir, master_seed, first_seed, bool(done_seeds))
+    print(f"Seeds: {how}", flush=True)
 
     def on_kill(k: dict):
         killed.add(k["mutant_id"])
@@ -326,10 +369,10 @@ def fuzz(s: FuzzSettings, survivors_files: list[Path], outdir: Path,
             print(f"      -> {note.strip(' ()')}", flush=True)
 
     deadline = time.time() + hours * 3600 if hours else None
-    seed, n = first_seed, 0
+    n = 0
     while (max_programs is None or n < max_programs) and (deadline is None or time.time() < deadline):
+        seed = next(seeds)
         if seed in done_seeds:
-            seed += 1
             continue
         if not (targets - killed):
             print("All targets killed.", flush=True)
@@ -355,4 +398,3 @@ def fuzz(s: FuzzSettings, survivors_files: list[Path], outdir: Path,
                  if rec["outcome"] == "ok" else rec["outcome"])
         print(f"[{n}] seed {seed}: {extra} ({rec['seconds']}s) "
               f"| killed {len(killed & targets):,}/{len(targets):,}", flush=True)
-        seed += 1

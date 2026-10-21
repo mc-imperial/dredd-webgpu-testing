@@ -49,6 +49,8 @@ def main() -> int:
                             help="don't stop at the first kill (full kill matrix)")
     kill_parser.add_argument("--order", choices=["fewest-tests", "file"], default="fewest-tests")
     kill_parser.add_argument("--limit", type=int, help="run at most N more mutants")
+    kill_parser.add_argument("--hours", type=float, default=None,
+                         help="stop starting new mutants after this many hours (rerun to resume)")   
 
     fuzz_parser = subparsers.add_parser("fuzz", help="Kill CTS survivors with wgslsmith programs")
     fuzz_parser.add_argument("--wgslsmith", type=Path, required=True)
@@ -60,8 +62,8 @@ def main() -> int:
     fuzz_parser.add_argument("--hours", type=float, help="stop after this many hours")
     fuzz_parser.add_argument("--first-seed", type=int, default=0)
     fuzz_parser.add_argument("--min-timeout", type=float, default=10.0) 
-    kill_parser.add_argument("--hours", type=float, default=None,
-                         help="stop starting new mutants after this many hours (rerun to resume)")   
+    fuzz_parser.add_argument("--master-seed", type=int, default=None,
+                         help="seed for the program-seed sequence (default: random, saved in run_info.json)")
 
     args = parser.parse_args()
 
@@ -75,7 +77,7 @@ def main() -> int:
         s = FuzzSettings(wgslsmith=args.wgslsmith, mutated_icd=args.mutated_icd,
                         tracked_icd=args.tracked_icd, min_timeout=args.min_timeout)
         fuzz(s, args.survivors, args.outdir, max_programs=args.programs,
-            hours=args.hours, first_seed=args.first_seed)
+            hours=args.hours, first_seed=args.first_seed, , master_seed=args.master_seed)
             
     return 0
 
