@@ -77,7 +77,7 @@ def main() -> int:
         s = FuzzSettings(wgslsmith=args.wgslsmith, mutated_icd=args.mutated_icd,
                         tracked_icd=args.tracked_icd, min_timeout=args.min_timeout)
         fuzz(s, args.survivors, args.outdir, max_programs=args.programs,
-            hours=args.hours, first_seed=args.first_seed, , master_seed=args.master_seed)
+            hours=args.hours, first_seed=args.first_seed, master_seed=args.master_seed)
             
     return 0
 
