@@ -247,6 +247,11 @@ def run_reducer(name: str, work: Path, jobs: int, timeout: int, perses_jar: Path
             log.flush()
             print(msg, flush=True)
         return reduce_dir(work, emit)
+    elif name == "input":
+        from .input_pass import reduce_input_dir
+        def emit(msg):
+            log.write(msg + "\n"); log.flush(); print(msg, flush=True)
+        return reduce_input_dir(work, emit)
     else:
         raise SystemExit(f"unknown reducer {name}")
 
