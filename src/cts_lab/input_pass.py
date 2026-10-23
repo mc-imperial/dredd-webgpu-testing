@@ -1,16 +1,19 @@
 """Reduce a kill's input buffers (input.json), keeping the program fixed.
 
 input.json maps "group:binding" to the bytes `wgslsmith run` puts in that buffer, e.g.
-{"0:0": [167, 210, ...]}. This pass makes the input as simple as it can while the
-interestingness test still passes (the mutant is still killed):
+{"0:0": [167, 210, ...]}. Each step is kept only if the interestingness test still
+passes (the mutant is still killed):
 
   drop-unused   remove entries for bindings the program doesn't declare
+  trim          cut each buffer to the size of its binding: wgslsmith only binds that
+                many bytes (it reports them on the "inputs:" line of `wgslsmith run`),
+                so the rest is never read. The values themselves are kept.
+  with --zero, also make the values as simple as possible:
   zero-all      set a whole buffer to zero bytes
   zero-words    otherwise, zero as much as possible: halves, then quarters, ...,
                 down to single 4-byte words (delta debugging, "set to 0")
 
-Then it prints the remaining non-zero words as i32 / u32 / f32 so you can see what
-the program depends on.
+Then it prints the remaining non-zero words as i32 / u32 / f32.
 
 It runs the program with the given test script (test.sh, or test_raw.sh for a
 reconditioned program checked as is), pointing REDUCE_INPUT at each candidate.
@@ -18,6 +21,7 @@ reconditioned program checked as is), pointing REDUCE_INPUT at each candidate.
 Usage (inside the container):
   python3 -m cts_lab.input_pass results/polish/297811 --file raw.wgsl --test test_raw.sh
   python3 -m cts_lab.input_pass results/reduce/reduce-batch/297811      # prog.wgsl, test.sh
+  python3 -m cts_lab.input_pass <dir> --file raw.wgsl --test test_raw.sh --zero
 Updates input.json in place; keeps input.before-input.json.
 """
 
@@ -43,6 +47,54 @@ def declared_bindings(src: str) -> set[str]:
         g, b = (m.group(1), m.group(2)) if m.group(1) is not None else (m.group(4), m.group(3))
         out.add(f"{int(g)}:{int(b)}")
     return out
+
+
+ANSI = re.compile(r"\x1b\[[0-9;]*m")
+BOUND_LINE = re.compile(r"^\s*(\d+:\d+)\s*:\s*\[([^\]]*)\]", re.M)
+
+
+def parse_bound_inputs(text: str) -> dict[str, list[int]]:
+    """The "inputs:" section of `wgslsmith run` output: the bytes it bound to each binding."""
+    text = ANSI.sub("", text)
+    part = text.split("inputs:", 1)[1] if "inputs:" in text else ""
+    part = part.split("outputs:", 1)[0]
+    return {k: [int(x) for x in v.split(",") if x.strip()] for k, v in BOUND_LINE.findall(part)}
+
+
+def _test_env(work: Path, test: str) -> dict[str, str]:
+    env = {}
+    for line in (work / test).read_text().splitlines():
+        m = re.match(r"export (\w+)=(.*)", line)
+        if m:
+            env[m.group(1)] = m.group(2).strip("'")
+    return env
+
+
+def bound_sizes(work: Path, src: str, test: str, inputs: dict[str, list[int]], log=print):
+    """{"group:binding": bytes wgslsmith binds}, from one unmutated run, or None if it fails."""
+    from .kill_fuzz import FuzzSettings, run_program
+    from .reduce import recondition_file
+
+    e = _test_env(work, test)
+    s = FuzzSettings(wgslsmith=Path(e["REDUCE_WGSLSMITH"]), mutated_icd=Path(e["REDUCE_ICD"]),
+                     tracked_icd=Path(e["REDUCE_ICD"]), config=e["REDUCE_CONFIG"],
+                     baseline_timeout=float(e["REDUCE_CLEAN_TIMEOUT"]),
+                     min_timeout=float(e["REDUCE_MIN_TIMEOUT"]))
+    with tempfile.TemporaryDirectory() as tmp:
+        prog = Path(tmp) / "prog.wgsl"
+        prog.write_text(src)
+        if e.get("REDUCE_RECONDITION") == "1":
+            rec = Path(tmp) / "reconditioned.wgsl"
+            if not recondition_file(s, prog, rec):
+                log("    trim: could not recondition the program; not trimming")
+                return None
+            prog = rec
+        r = run_program(s, prog, json.dumps(inputs, separators=(",", ":")), s.mutated_icd,
+                        s.baseline_timeout)
+    if r.kind != "ok":
+        log(f"    trim: the unmutated run failed ({r.kind}); not trimming")
+        return None
+    return {k: len(v) for k, v in parse_bound_inputs(r.text).items()}
 
 
 class InputOracle:
@@ -75,7 +127,8 @@ def _zero(data: list[int], lo: int, hi: int) -> list[int]:
     return data[:lo] + [0] * (hi - lo) + data[hi:]
 
 
-def reduce_inputs(inputs: dict[str, list[int]], declared: set[str], oracle, log=print):
+def reduce_inputs(inputs: dict[str, list[int]], declared: set[str], oracle, log=print,
+                  sizes: dict[str, int] | None = None, zero: bool = True):
     inputs = dict(inputs)
 
     for key in [k for k in inputs if k not in declared]:
@@ -86,6 +139,17 @@ def reduce_inputs(inputs: dict[str, list[int]], declared: set[str], oracle, log=
         else:
             log(f"    drop-unused {key}: needed after all (kept)")
 
+    for key, size in (sizes or {}).items():
+        if key in inputs and 0 < size < len(inputs[key]):
+            cand = {**inputs, key: inputs[key][:size]}
+            if oracle(cand):
+                log(f"    trim {key}: {len(inputs[key])} -> {size} bytes (the size of the binding)")
+                inputs = cand
+            else:
+                log(f"    trim {key}: to {size} bytes no longer kills (kept {len(inputs[key])})")
+
+    if not zero:
+        return inputs
     for key in list(inputs):
         data = inputs[key]
         if not any(data):
@@ -132,7 +196,8 @@ def describe(inputs: dict[str, list[int]]) -> list[str]:
     return lines
 
 
-def reduce_input_dir(work: Path, log=print, *, test: str = "test.sh", file: str = "prog.wgsl") -> int:
+def reduce_input_dir(work: Path, log=print, *, test: str = "test.sh", file: str = "prog.wgsl",
+                     zero: bool = False) -> int:
     """Reduce work/input.json for work/<file>. Returns 0 on success (a reducer exit code)."""
     work = Path(work)
     path = work / "input.json"
@@ -142,7 +207,8 @@ def reduce_input_dir(work: Path, log=print, *, test: str = "test.sh", file: str 
     if not oracle(inputs):
         log(f"    input pass: {file} with input.json does not pass {test}; nothing done")
         return 1
-    new = reduce_inputs(inputs, declared_bindings(src), oracle, log)
+    sizes = bound_sizes(work, src, test, inputs, log)
+    new = reduce_inputs(inputs, declared_bindings(src), oracle, log, sizes=sizes, zero=zero)
     log(f"    input pass: {oracle.calls} tests")
     for line in describe(new):
         log(line)
@@ -158,8 +224,10 @@ def main():
     p.add_argument("--test", default="test.sh",
                    help="interestingness script in the folder (default test.sh; e.g. test_raw.sh)")
     p.add_argument("--file", default="prog.wgsl", help="the program to keep fixed (default prog.wgsl)")
+    p.add_argument("--zero", action="store_true",
+                   help="also replace input values with zeros where the mutant is still killed")
     args = p.parse_args()
-    sys.exit(reduce_input_dir(args.work, test=args.test, file=args.file))
+    sys.exit(reduce_input_dir(args.work, test=args.test, file=args.file, zero=args.zero))
 
 
 if __name__ == "__main__":
