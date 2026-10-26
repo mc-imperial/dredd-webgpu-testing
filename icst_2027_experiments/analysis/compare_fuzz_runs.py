@@ -6,6 +6,9 @@ run_info.json). Reports:
   - per run: programs, hours, kills by type, % of survivors killed, kills per hour
     (plus mean / median / range across runs)
   - kills over time: cumulative kills against elapsed fuzzing hours, per run
+  - with --split-hours (default 24,48; 0 turns it off): programs and kills in each
+    period between those points, e.g. the first 24 h session and each resumed one
+    (split points beyond a run's length are ignored)
   - variation across runs: union and intersection of killed mutants
 
 Output in --outdir:
@@ -60,8 +63,11 @@ def load_run(d: Path) -> dict:
     # written (run stopped mid-program) is placed at the end.
     kill_times = sorted(end_time.get(k["seed"], t) / 3600 for k in kills)
     status = {k["mutant_id"]: k["status"] for k in kills}
+    program_times = sorted(end_time.values())
     return {"name": d.name, "programs": programs, "kills": kills, "status": status,
-            "hours": total_h, "kill_times": kill_times, "master_seed": info.get("master_seed")}
+            "hours": total_h, "kill_times": kill_times, "program_times": [x / 3600 for x in program_times],
+            "kill_hour": {k["mutant_id"]: end_time.get(k["seed"], t) / 3600 for k in kills},
+            "master_seed": info.get("master_seed")}
 
 
 def main():
@@ -70,6 +76,9 @@ def main():
     p.add_argument("--survivors", type=Path, help="the CTS survivors the runs targeted (for % killed)")
     p.add_argument("--outdir", type=Path, required=True)
     p.add_argument("--labels", help="comma-separated run labels (default: folder names)")
+    p.add_argument("--split-hours", default="24,48",
+                   help="comma-separated fuzzing hours to split the run at, e.g. where it was "
+                        "resumed (default 24,48; 0 = off)")
     args = p.parse_args()
 
     runs = [load_run(d) for d in args.runs]
@@ -130,11 +139,45 @@ def main():
         for i, h in enumerate(steps):
             cw.writerow([h] + [curves[name][i] for name in curves])
     w("KILLS OVER TIME (cumulative)")
-    marks = [h for h in (1, 3, 6, 12, 18, 24) if h <= max_h + 0.01]
+    marks = [h for h in (1, 3, 6, 12, 24, 36, 48, 60, 72, 96) if h <= max_h + 0.01]
     w(f"  {'run':<14}" + "".join(f"{str(h) + ' h':>8}" for h in marks))
     for r in runs:
         w(f"  {r['name']:<14}" + "".join(f"{sum(1 for t in r['kill_times'] if t <= h):>8,}" for h in marks))
     w("")
+
+    # ---- periods between split points (e.g. each 24 h session) ---------------
+    splits = sorted(float(x) for x in str(args.split_hours).split(",") if x.strip() and float(x) > 0)
+    splits = [s for s in splits if max_h > s + 2]          # ignore points past the end of the runs
+    if splits:
+        bounds = [0.0] + splits + [float("inf")]
+        names = [f"{a:g}-{b:g} h" if b != float("inf") else f"{a:g} h-end"
+                 for a, b in zip(bounds, bounds[1:])]
+        w(f"PER PERIOD (split at {', '.join(f'{s:g}' for s in splits)} h of fuzzing time, "
+          f"by when each program finished)")
+        w("  kills (kills per hour)")
+        w(f"  {'run':<14}" + "".join(f"{n:>18}" for n in names))
+        period_tot = [0] * len(names)
+        for r in runs:
+            cells = []
+            for i, (a, b) in enumerate(zip(bounds, bounds[1:])):
+                k = sum(1 for x in r["kill_times"] if a < x <= b or (a == 0 and x == 0))
+                length = (min(b, r["hours"]) - a)
+                period_tot[i] += k
+                cells.append(f"{k:,} ({k / length:.1f}/h)" if length > 0 else "-")
+            w(f"  {r['name']:<14}" + "".join(f"{c:>18}" for c in cells))
+        w(f"  {'all runs':<14}" + "".join(f"{k:>18,}" for k in period_tot))
+        w("  programs")
+        w(f"  {'run':<14}" + "".join(f"{n:>18}" for n in names))
+        for r in runs:
+            w(f"  {r['name']:<14}" + "".join(
+                f"{sum(1 for x in r['program_times'] if a < x <= b):>18,}" for a, b in zip(bounds, bounds[1:])))
+        unions = []
+        for s in splits:
+            unions.append((f"{s:g} h", len(set.union(*({m for m, h in r["kill_hour"].items() if h <= s}
+                                                        for r in runs)))))
+        unions.append(("end", len(set.union(*(set(r["status"]) for r in runs)))))
+        w("  union across runs: " + " -> ".join(f"{n:,} at {label}" for label, n in unions))
+        w("")
 
     # ---- variation across runs ----------------------------------------------
     sets = [set(r["status"]) for r in runs]
@@ -177,12 +220,21 @@ def main():
     # Direct labels at the line ends, in ink, nudged apart so they never overlap.
     top = max(max(c) for c in curves.values()) or 1
     gap = 0.045 * top
+    ytop = top * 1.08
     ends.sort()
-    for i in range(1, len(ends)):
+    for i in range(1, len(ends)):                      # push up to make room ...
         ends[i][1] = max(ends[i][1], ends[i - 1][1] + gap)
+    if ends and ends[-1][1] > ytop - gap / 2:         # ... but stay inside the plot
+        ends[-1][1] = ytop - gap / 2
+        for i in range(len(ends) - 2, -1, -1):
+            ends[i][1] = min(ends[i][1], ends[i + 1][1] - gap)
     for y, label_y, name in ends:
         ax.annotate(f"{name}  {y:,}", xy=(steps[-1], y), xytext=(steps[-1] + 0.3, label_y),
                     textcoords="data", va="center", fontsize=8, color=INK_2, annotation_clip=False)
+    for s in splits:
+        ax.axvline(s, color=AXIS, linewidth=1, linestyle=(0, (4, 3)), zorder=0)
+        ax.annotate(f"resumed at {s:g} h", xy=(s, 0), xytext=(4, 4), textcoords="offset points",
+                    fontsize=8, color=MUTED)
     ax.set_xlabel("Fuzzing time (hours)", color=INK_2)
     ax.set_ylabel("CTS survivors killed (cumulative)", color=INK_2)
     ax.set_title("Kills over time, per fuzzing run", color=INK, loc="left", fontsize=11)
@@ -194,7 +246,7 @@ def main():
         ax.spines[side].set_color(AXIS)
     ax.tick_params(colors=MUTED, labelsize=8)
     ax.set_xlim(0, steps[-1])
-    ax.set_ylim(0, None)
+    ax.set_ylim(0, ytop)
     ax.legend(frameon=False, fontsize=8, labelcolor=INK_2, loc="upper left")
     fig.tight_layout(rect=(0, 0, 0.9, 1))   # room on the right for the end labels
     fig.savefig(args.outdir / "kills_over_time.png", facecolor=SURFACE)
