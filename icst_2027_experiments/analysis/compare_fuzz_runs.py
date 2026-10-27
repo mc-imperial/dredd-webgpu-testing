@@ -73,7 +73,7 @@ def load_run(d: Path) -> dict:
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("runs", type=Path, nargs="+")
-    p.add_argument("--survivors", type=Path, help="the CTS survivors the runs targeted (for % killed)")
+    p.add_argument("--survivors", type=Path, help="the CTS survivors the runs targeted (for %% killed)")
     p.add_argument("--outdir", type=Path, required=True)
     p.add_argument("--labels", help="comma-separated run labels (default: folder names)")
     p.add_argument("--split-hours", default="24,48",
