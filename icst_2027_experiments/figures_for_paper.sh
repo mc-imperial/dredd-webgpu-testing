@@ -7,7 +7,7 @@
 #   ./icst_2027_experiments/figures_for_paper.sh --list       list the steps
 #
 # Data sources not produced by this script:
-#   results/webgpu-shader-run/full-runs/non-isolated/run-*   extracted from
+#   results/reachability/raw/shared/run-*   extracted from
 #     webgpu-shader-run-non-isolated-1-run.tar.gz (as run-single) and
 #     webgpu-shader-run-non-isolated-4-runs.zip (the four run-<timestamp> folders)
 set -euo pipefail
@@ -17,10 +17,11 @@ cd "$(dirname "$0")/.."
 
 # ---- paths ------------------------------------------------------------------
 GEN=icst_2027_experiments/generated
-RUNS=results/mutant-test-mapping/individual-runs
-MERGED=results/mutant-test-mapping/merged/mutant_to_tests_union5_isolated-no-cache_max100.json
-FULL=results/webgpu-shader-run/full-runs
-CFG_OUT=results/mutant-test-mapping/configurations
+REACH=results/reachability
+ISO=$REACH/processed/isolated          # run-<timestamp>/, one per isolated run
+SHARED_RAW=$REACH/raw/shared           # run-<timestamp>/<configuration>/, one per shared run
+CFG_OUT=$REACH/processed/shared
+MERGED=$REACH/merged/mutant_to_tests_union5_isolated-no-cache_max100.json
 BUILD=REPLACE_ME/build_mutant_mapping.py   # TODO: set to the real path
 SURV=results/cts-survival
 
@@ -28,7 +29,7 @@ SURV=results/cts-survival
 
 # RQ1(a): distribution of reaching tests, one summary per isolated repeat.
 reach_summaries() {
-    for counts in "$RUNS"/mutant_to_tests_*/processed/mutant_to_tests_isolated-no-cache_counts.csv; do
+    for counts in "$ISO"/run-*/mutant_to_tests_isolated-no-cache_counts.csv; do
         echo "== $counts"
         python3 src/cts_lab/analyse/plot_reachability.py "$counts"
     done
@@ -37,14 +38,14 @@ reach_summaries() {
 # RQ1(a): LaTeX macros, table and figure from the five summaries.
 reach_latex() {
     python3 icst_2027_experiments/gen_rq1a_reachability.py \
-        "$RUNS"/mutant_to_tests_*/processed/mutant_to_tests_isolated-no-cache_counts_summary.txt \
+        "$ISO"/run-*/mutant_to_tests_isolated-no-cache_counts_summary.txt \
         --out-dir "$GEN"
 }
 
 # RQ1(a): merge the five isolated repeats by union.
 merge() {
     local merge_args=()
-    for d in "$RUNS"/mutant_to_tests_*/processed; do
+    for d in "$ISO"/run-*; do
         merge_args+=(--run "$d/mutant_to_tests_isolated-no-cache_max100.json"
                            "$d/mutant_to_tests_isolated-no-cache_per_mutant.csv")
     done
@@ -56,13 +57,13 @@ merge() {
 stability_latex() {
     python3 icst_2027_experiments/gen_rq1a_stability.py \
         --merged-summary "${MERGED%.json}_summary.txt" \
-        "$RUNS"/mutant_to_tests_*/processed/mutant_to_tests_isolated-no-cache_counts_summary.txt \
+        "$ISO"/run-*/mutant_to_tests_isolated-no-cache_counts_summary.txt \
         --out-dir "$GEN"
 }
 
 # RQ1(a): per-mutant counts for the cheaper configurations (pass 1 only).
 config_counts() {
-    for root in "$FULL"/non-isolated/run-*; do
+    for root in "$SHARED_RAW"/run-*; do
         local name
         name=$(basename "$root")
         for cfg in subtree-no-cache subtree-cache file-subtrees-no-cache; do
