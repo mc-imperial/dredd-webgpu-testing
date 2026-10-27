@@ -71,10 +71,7 @@ echo
 echo "Using test manifest:"
 echo "$INDIVIDUAL_TEST_JSON"
 
-# 2. subtree-cache
-run_experiment subtree-cache.sh "$SERVERS" "$REPEAT"
-
-# 3. file-subtrees-no-cache
+# 2. file-subtrees-no-cache
 run_experiment file-subtrees-no-cache.sh \
     "$SERVERS" \
     "$REPEAT" \
