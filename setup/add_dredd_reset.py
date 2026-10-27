@@ -6,7 +6,9 @@ before Mesa is compiled. It:
   1. finds every `atomic_bool __dredd_already_recorded_<N>[<SIZE>]` definition in
      the mutated sources, and checks the indices run 0..K-1 with no gaps or clashes;
   2. inserts, into lvp_pipeline.c, matching extern declarations and a
-     __dredd_reset_tracking() function that clears all of them;
+     __dredd_reset_tracking() function that clears all of them, but only when
+     the current test (DREDD_MUTANT_TRACKING_FILE) has changed since the last
+     reset, so a test that creates many pipelines records each mutant once;
   3. inserts a call to __dredd_reset_tracking() at the start of
      lvp_CreateGraphicsPipelines and lvp_CreateComputePipelines.
 
@@ -80,11 +82,26 @@ def main():
         "",
         MARKER,
         "#include <stdatomic.h>",
+        "#include <stdlib.h>",
         "#include <string.h>",
         "",
         *[f"extern atomic_bool __dredd_already_recorded_{i}[{n}];" for i, n in arrays.items()],
         "",
+        "/* Clear the 'already recorded' flags only when the current test changes.",
+        "   Dredd names the current test's tracking file in DREDD_MUTANT_TRACKING_FILE;",
+        "   resetting at every pipeline creation would re-record the same mutants for",
+        "   each pipeline a test creates. */",
+        "static char __dredd_last_tracking_file[4096];",
+        "",
         "static void __dredd_reset_tracking(void) {",
+        '  const char* current = getenv("DREDD_MUTANT_TRACKING_FILE");',
+        "  if (current != NULL &&",
+        "      strncmp(current, __dredd_last_tracking_file, sizeof(__dredd_last_tracking_file)) == 0) {",
+        "    return;",
+        "  }",
+        "  if (current != NULL) {",
+        "    strncpy(__dredd_last_tracking_file, current, sizeof(__dredd_last_tracking_file) - 1);",
+        "  }",
         *[f"  memset(__dredd_already_recorded_{i}, 0, sizeof(__dredd_already_recorded_{i}));"
           for i in arrays],
         "}",
