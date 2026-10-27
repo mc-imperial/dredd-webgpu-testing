@@ -79,6 +79,11 @@ prepare_mesa() {
     echo "==> Patching Dredd prelude"
     patch_dredd_prelude "${mesa_dir}" "${builddir}" 
 
+    if [[ " ${mutation_args[*]} " == *" --allow-reset-of-tracking-counters "* ]]; then
+        echo "==> Adding Dredd tracking reset to lavapipe"
+        python3 "$(dirname "${BASH_SOURCE[0]}")/add_dredd_reset.py" "${mesa_dir}"
+    fi
+
     echo "==> Disabling -Werror"
     turn_off_werror "${mesa_dir}"
 
