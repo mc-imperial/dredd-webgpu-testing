@@ -18,8 +18,11 @@ REACH_IMAGE="${REACH_IMAGE:-dredd-webgpu-testing:reachability-stability}"
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 
 # Prints "<first mutant ID> <file path relative to Mesa>" for every Dredd-mutated NIR file.
+# Tracking builds write the file's first ID as "<N> + local_mutation_id";
+# mutation builds convert an enabled ID with "local_value = value - <N>".
 OFFSETS='for f in $(grep -rl "DREDD PRELUDE START" $M/src/compiler/nir $M/build/src/compiler/nir 2>/dev/null); do
-  echo "$(grep -o -m1 "[0-9]* + local_mutation_id" "$f" | cut -d" " -f1) ${f#$M/}"; done | sort -n'
+  n=$(grep -o -m1 -E "[0-9]+ \+ local_mutation_id|value - [0-9]+" "$f" | grep -o -E "[0-9]+" | head -1)
+  echo "${n:-NONE} ${f#$M/}"; done | sort -n'
 
 echo "== 1. which cts_lab the fuzzing container uses"
 docker run --rm --mount "type=bind,source=$REPO,target=/workspace/dredd-webgpu-testing" \
