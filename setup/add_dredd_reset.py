@@ -29,9 +29,10 @@ ANCHOR_INCLUDE = '#include "gallivm/lp_bld_debug.h"'
 FUNCTIONS = ("lvp_CreateGraphicsPipelines", "lvp_CreateComputePipelines")
 
 
-def find_arrays(mutated_dir):
+def find_arrays(mutated_dirs):
     arrays = {}
-    for path in sorted(mutated_dir.rglob("*")):
+    paths = sorted(p for d in mutated_dirs if d.is_dir() for p in d.rglob("*"))
+    for path in paths:
         if path.suffix not in (".c", ".cc", ".cpp") or not path.is_file():
             continue
         text = path.read_text(errors="replace")
@@ -44,7 +45,7 @@ def find_arrays(mutated_dir):
                          f"{arrays[idx][0]} ({arrays[idx][1]}) and {size} ({path})")
             arrays.setdefault(idx, (size, path))
     if not arrays:
-        sys.exit(f"error: no __dredd_already_recorded_* definitions found under {mutated_dir}; "
+        sys.exit(f"error: no __dredd_already_recorded_* definitions found under {mutated_dirs}; "
                  "was Dredd run with --allow-reset-of-tracking-counters?")
     expected = set(range(len(arrays)))
     if set(arrays) != expected:
@@ -66,7 +67,11 @@ def insert_call(text, func):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("mesa_dir", type=Path)
-    ap.add_argument("--mutated-dir", default="src/compiler/nir")
+    # Hand-written NIR sources, and the NIR sources Mesa generates at build time
+    # (e.g. nir_opt_algebraic.c, nir_constant_expressions.c, nir_opcodes.c).
+    ap.add_argument("--mutated-dir", action="append",
+                    help="folder(s) of mutated sources, relative to mesa_dir "
+                         "(default: src/compiler/nir and build/src/compiler/nir)")
     args = ap.parse_args()
 
     target = args.mesa_dir / "src/gallium/frontends/lavapipe/lvp_pipeline.c"
@@ -76,7 +81,8 @@ def main():
     if ANCHOR_INCLUDE not in text:
         sys.exit(f"error: anchor line not found in {target}: {ANCHOR_INCLUDE}")
 
-    arrays = find_arrays(args.mesa_dir / args.mutated_dir)
+    dirs = args.mutated_dir or ["src/compiler/nir", "build/src/compiler/nir"]
+    arrays = find_arrays([args.mesa_dir / d for d in dirs])
 
     block = [
         "",

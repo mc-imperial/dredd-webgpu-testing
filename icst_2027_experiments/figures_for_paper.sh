@@ -74,6 +74,15 @@ config_counts() {
     done
 }
 
+# RQ1(a): IDs of the isolated <=100-test mapping mutants, for processing shared runs on the instances.
+mapping_ids() {
+    mkdir -p icst_2027_experiments/data
+    python3 -c "
+import json
+print('\n'.join(json.load(open('$MERGED'))))" > icst_2027_experiments/data/isolated_max100_mutant_ids.txt
+    wc -l icst_2027_experiments/data/isolated_max100_mutant_ids.txt
+}
+
 # RQ1(b): combine the five 24-hour CTS kill runs.
 survival_combine() {
     python3 icst_2027_experiments/analysis/combine_survivors.py \
@@ -107,8 +116,8 @@ fuzz_latex() {
    }
 
 # Steps in the order they run when no step is named.
-STEPS=(reach_summaries reach_latex merge stability_latex config_counts
-       survival_combine survival_latex fuzz_compare fuzz_latex macros_index)
+STEPS=(reach_summaries reach_latex merge mapping_ids stability_latex config_counts
+       survival_combine survival_latex fuzz_compare fuzz_latex)
 
 # ---- dispatch ---------------------------------------------------------------
 if [[ $# -eq 0 ]]; then
