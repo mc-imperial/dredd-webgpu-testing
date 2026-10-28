@@ -76,11 +76,10 @@ config_counts() {
 
 # RQ1(a): IDs of the isolated <=100-test mapping mutants, for processing shared runs on the instances.
 mapping_ids() {
-    mkdir -p icst_2027_experiments/data
     python3 -c "
 import json
-print('\n'.join(json.load(open('$MERGED'))))" > icst_2027_experiments/data/isolated_max100_mutant_ids.txt
-    wc -l icst_2027_experiments/data/isolated_max100_mutant_ids.txt
+print('\n'.join(json.load(open('$MERGED'))))" > "$GEN/isolated_max100_mutant_ids.txt"
+    wc -l "$GEN/isolated_max100_mutant_ids.txt"
 }
 
 # RQ1(b): combine the five 24-hour CTS kill runs.

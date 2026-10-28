@@ -14,7 +14,7 @@ set -euo pipefail
 
 REPO="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 RUNS="$REPO/results/webgpu-shader-run"
-IDS="$REPO/icst_2027_experiments/data/isolated_max100_mutant_ids.txt"
+IDS="$REPO/icst_2027_experiments/generated/isolated_max100_mutant_ids.txt"
 SCRIPT="$REPO/icst_2027_experiments/analysis/process_shared_tracking.py"
 
 [ -f "$IDS" ] || { echo "missing $IDS (create it with figures_for_paper.sh mapping_ids)"; exit 1; }
