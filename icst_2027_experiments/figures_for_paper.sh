@@ -114,9 +114,22 @@ fuzz_latex() {
            results/fuzz/run_72h/comparison --out-dir "$GEN"
    }
 
+# RQ2: mutants reached by no isolated repeat (targets for the unreached-mutant fuzzing).
+unreached_ids() {
+    python3 -c "
+import csv, glob
+reached = set()
+for f in glob.glob('$ISO/run-*/mutant_to_tests_isolated-no-cache_per_mutant.csv'):
+    reached |= {int(r['mutant_id']) for r in csv.DictReader(open(f)) if int(r['n_tests']) > 0}
+total = 837386
+with open('$GEN/unreached_mutant_ids.txt', 'w') as out:
+    out.writelines(f'{m}\n' for m in range(total) if m not in reached)
+print(f'reached: {len(reached):,}   unreached: {total - len(reached):,}')"
+}
+
 # Steps in the order they run when no step is named.
 STEPS=(reach_summaries reach_latex merge mapping_ids stability_latex config_counts
-       survival_combine survival_latex fuzz_compare fuzz_latex)
+       survival_combine survival_latex fuzz_compare fuzz_latex unreached_ids)
 
 # ---- dispatch ---------------------------------------------------------------
 if [[ $# -eq 0 ]]; then

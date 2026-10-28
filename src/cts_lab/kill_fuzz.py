@@ -249,6 +249,7 @@ def try_seed(s: FuzzSettings, seed: int, targets: set[int], killed: set[int],
 
         candidates = sorted((reached & targets) - killed)
         rec.update(reached=len(reached), candidates=len(candidates),
+                   reached_targets=sorted(reached & targets),
                    baseline_seconds=round(base.seconds, 2))
         timeout = mutant_timeout(base.seconds, s.timeout_factor, s.min_timeout)
 
