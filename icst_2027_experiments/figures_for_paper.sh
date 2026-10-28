@@ -82,6 +82,13 @@ print('\n'.join(json.load(open('$MERGED'))))" > "$GEN/isolated_max100_mutant_ids
     wc -l "$GEN/isolated_max100_mutant_ids.txt"
 }
 
+# RQ1(a): shared execution against the isolated reference.
+shared_compare() {
+    python3 icst_2027_experiments/gen_rq1a_shared.py results/reachability/processed/shared-v2 \
+        --isolated "$ISO"/run-*/mutant_to_tests_isolated-no-cache_per_mutant.csv \
+        --mapping "$MERGED" --out-dir "$GEN"
+}
+
 # RQ1(b): combine the five 24-hour CTS kill runs.
 survival_combine() {
     python3 icst_2027_experiments/analysis/combine_survivors.py \
@@ -129,7 +136,8 @@ print(f'reached: {len(reached):,}   unreached: {total - len(reached):,}')"
 
 # Steps in the order they run when no step is named.
 STEPS=(reach_summaries reach_latex merge mapping_ids stability_latex config_counts
-       survival_combine survival_latex fuzz_compare fuzz_latex unreached_ids)
+       survival_combine survival_latex fuzz_compare fuzz_latex unreached_ids
+       shared_compare)
 
 # ---- dispatch ---------------------------------------------------------------
 if [[ $# -eq 0 ]]; then

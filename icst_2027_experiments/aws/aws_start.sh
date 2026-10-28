@@ -18,7 +18,7 @@
 set -euo pipefail
 
 KEY="${AWS_KEY:-$HOME/.ssh/amber-aws.pem}"
-DEFAULT_IPS=(16.16.219.2 16.16.170.119 16.16.251.113 16.16.219.147)
+DEFAULT_IPS=(16.16.219.2 16.16.170.119 16.16.251.113 16.16.219.147 16.192.199.63)
 
 [ $# -ge 2 ] || { sed -n '2,18p' "$0"; exit 1; }
 NAME="$1"; CMD="$2"; shift 2
