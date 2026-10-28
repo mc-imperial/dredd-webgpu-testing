@@ -19,7 +19,7 @@ cd "$(dirname "$0")/.."
 GEN=icst_2027_experiments/generated
 REACH=results/reachability
 ISO=$REACH/processed/isolated          # run-<timestamp>/, one per isolated run
-SHARED_RAW=$REACH/raw/shared           # run-<timestamp>/<configuration>/, one per shared run
+SHARED_RAW=$REACH/raw/shared-v2           # run-<timestamp>/<configuration>/, one per shared run
 CFG_OUT=$REACH/processed/shared
 MERGED=$REACH/merged/mutant_to_tests_union5_isolated-no-cache_max100.json
 BUILD=REPLACE_ME/build_mutant_mapping.py   # TODO: set to the real path
@@ -89,6 +89,14 @@ shared_compare() {
         --mapping "$MERGED" --out-dir "$GEN"
 }
 
+# RQ1(a): isolated and shared runtimes.
+runtimes() {
+python3 icst_2027_experiments/gen_rq1a_runtime.py \
+  --isolated results/reachability/runtimes/isolated_runtimes.csv \
+  --shared-raw results/reachability/raw/shared-v2 \
+  --out "$GEN/rq1a_runtime_macros.tex"
+}
+
 # RQ1(b): combine the five 24-hour CTS kill runs.
 survival_combine() {
     python3 icst_2027_experiments/analysis/combine_survivors.py \
@@ -136,7 +144,7 @@ print(f'reached: {len(reached):,}   unreached: {total - len(reached):,}')"
 
 # Steps in the order they run when no step is named.
 STEPS=(reach_summaries reach_latex merge mapping_ids stability_latex config_counts
-       survival_combine survival_latex fuzz_compare fuzz_latex unreached_ids
+       survival_combine runtimes survival_latex fuzz_compare fuzz_latex unreached_ids
        shared_compare)
 
 # ---- dispatch ---------------------------------------------------------------
