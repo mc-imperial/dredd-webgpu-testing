@@ -4,7 +4,9 @@ inside the Docker image (no Dredd query tool needed, works for generated files).
 
 In Dredd's output each mutation site is a call such as
     __dredd_replace_expr_unsigned_short_zero(0, 243164)
-whose last argument is the site's first mutant number, local to the file; the
+whose last argument is the site's first mutant number, local to the file (for
+statement removal it is __dredd_record_covered_mutants(243155, 1), where the
+number is the first argument and the second is a count); the
 global mutant ID is the file's offset (first_id in the ranges CSV, from
 gen_setup_generated.py --ranges-out) plus that number. Mutant IDs run through a
 file in order, so each function owns the IDs from its first site up to the next
@@ -64,6 +66,14 @@ def strip(text):
             i += 1
     return "".join(out)
 
+def site_id(s, open_paren, name):
+    # __dredd_record_covered_mutants(<id>, <count>): the id is the first argument;
+    # every __dredd_replace_*(..., <id>) call: the id is the last argument
+    if name.startswith("__dredd_record_covered_mutants"):
+        m = re.match(r"\(\s*(\d+)\s*,", s[open_paren:])
+        return int(m.group(1)) if m else None
+    return last_int_arg(s, open_paren)
+
 def last_int_arg(s, open_paren):
     depth, i = 0, open_paren
     while i < len(s):
@@ -109,7 +119,7 @@ for path in paths:
         elif depth > 0 and c == "_" and current:
             m = call.match(text, i)
             if m:
-                v = last_int_arg(text, m.end() - 1)
+                v = site_id(text, m.end() - 1, m.group(0))
                 if v is not None and (funcs[current] is None or v < funcs[current]):
                     funcs[current] = v
                 i = m.end()
