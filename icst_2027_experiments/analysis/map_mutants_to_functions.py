@@ -33,6 +33,8 @@ import sys
 INNER = r'''
 import json, os, re, sys
 mesa = sys.argv[1]
+debug = sys.argv[2] if len(sys.argv) > 2 else ""
+around = sys.argv[3] if len(sys.argv) > 3 else ""
 paths = json.loads(sys.stdin.readline())
 ident = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 call = re.compile(r"__dredd_[A-Za-z0-9_]+\s*\(")
@@ -75,9 +77,10 @@ def last_int_arg(s, open_paren):
     return None
 
 for path in paths:
-    text = strip(open(os.path.join(mesa, path), errors="replace").read())
-    # skip the prelude (helper definitions)
-    end = text.find("DREDD PRELUDE END")
+    raw = open(os.path.join(mesa, path), errors="replace").read()
+    text = strip(raw)
+    # skip the prelude (helper definitions); the marker is in a comment, so look in the raw text
+    end = raw.find("DREDD PRELUDE END")
     start_at = 0 if end < 0 else end
     depth, candidate, current, funcs = 0, None, None, {}
     i, n = start_at, len(text)
@@ -112,6 +115,18 @@ for path in paths:
                 i = m.end()
                 continue
         i += 1
+    if debug and path.endswith(debug):
+        print("DEBUG prelude end marker found:", end >= 0, "at char", end, "of", len(text), file=sys.stderr)
+        print("DEBUG functions in order found (name: smallest local mutant number):", file=sys.stderr)
+        for f, v in list(funcs.items())[:40]:
+            print(f"DEBUG   {f}: {v}", file=sys.stderr)
+        print(f"DEBUG ({len(funcs)} functions in total)", file=sys.stderr)
+        ids = [int(m.group(1)) for m in re.finditer(r"__dredd_[A-Za-z0-9_]+\s*\([^;]*?(\d+)\s*\)", raw)][:5]
+        print("DEBUG first call-like matches in the raw file:", ids, file=sys.stderr)
+        k = text.find(around, start_at) if around else -1
+        if k >= 0:
+            print(f"DEBUG stripped text around the first '{around}' after the prelude:", file=sys.stderr)
+            print(text[max(0, k - 300):k + 700], file=sys.stderr)
     print(json.dumps({"path": path, "funcs": {f: v for f, v in funcs.items() if v is not None}}))
 '''
 
@@ -122,6 +137,8 @@ def main():
     ap.add_argument("--image", default="dredd-webgpu-testing:reachability-stability")
     ap.add_argument("--mesa", default="/data/mesa_tracked")
     ap.add_argument("--out", required=True)
+    ap.add_argument("--debug", default="", help="print what the scan finds in this file (e.g. nir_split_vars.c)")
+    ap.add_argument("--debug-around", default="", help="with --debug: also print the stripped text around this string")
     args = ap.parse_args()
 
     files = []
@@ -129,10 +146,12 @@ def main():
         for r in csv.DictReader(line for line in f if not line.startswith("#")):
             files.append((int(r["first_id"]), int(r["mutants"]), r["path"]))
 
-    res = subprocess.run(["docker", "run", "--rm", "-i", args.image, "python3", "-c", INNER, args.mesa],
+    res = subprocess.run(["docker", "run", "--rm", "-i", args.image, "python3", "-c", INNER, args.mesa, args.debug, args.debug_around],
                          input=json.dumps([p for _, _, p in files]) + "\n", capture_output=True, text=True)
     if res.returncode != 0:
         sys.exit(f"docker run failed:\n{res.stderr}")
+    if args.debug:
+        print(res.stderr)
     found = {d["path"]: d["funcs"] for d in map(json.loads, res.stdout.splitlines()) if d}
 
     rows, empty, n_funcs = [], [], 0
