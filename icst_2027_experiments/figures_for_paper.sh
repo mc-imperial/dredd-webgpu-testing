@@ -139,11 +139,11 @@ print(f'reached: {len(reached):,}   unreached: {total - len(reached):,}')"
 }
 
 # RQ2: compare the 72-hour fuzzing trials against the reached-but-surviving mutants
-# (picks up however many trials exist).
+# (picks up however many trials exist). Trials are labelled R1, R2, ... (reached).
 fuzz_compare() {
     local trials=( "$FUZZ_SURV"/cts5x72h-random-seed-*/cts5x72h-random-seed )
     local labels
-    labels=$(seq -s, -f "T%g" 1 "${#trials[@]}")
+    labels=$(seq -s, -f "R%g" 1 "${#trials[@]}")
     python3 icst_2027_experiments/analysis/compare_fuzz_runs.py "${trials[@]}" \
         --survivors "$SURV/combined/survivors.txt" \
         --labels "$labels" \
@@ -152,10 +152,11 @@ fuzz_compare() {
 }
 
 # RQ2: compare the fuzzing trials against the unreached mutants (picks up however many exist).
+# Trials are labelled U1, U2, ... (unreached).
 fuzz_compare_unreached() {
     local trials=( "$FUZZ_UNR"-ip-* )
     local labels
-    labels=$(seq -s, -f "T%g" 1 "${#trials[@]}")
+    labels=$(seq -s, -f "U%g" 1 "${#trials[@]}")
     python3 icst_2027_experiments/analysis/compare_fuzz_runs.py "${trials[@]}" \
         --survivors "$GEN/unreached_mutant_ids.txt" \
         --labels "$labels" \
@@ -166,8 +167,10 @@ fuzz_compare_unreached() {
 # RQ2: macros and figure, reached-but-surviving mutants (\Fuzz..., rq2_...), with each
 # trial's kills at 24 h to compare with the unreached runs.
 fuzz_latex() {
+    local trials=( "$FUZZ_SURV"/cts5x72h-random-seed-*/cts5x72h-random-seed )
     python3 icst_2027_experiments/gen_rq2_fuzz.py "$FUZZ_SURV/comparison" \
         --kills-at-hours 24 \
+        --runs "${trials[@]}" \
         --out-dir "$GEN"
 }
 

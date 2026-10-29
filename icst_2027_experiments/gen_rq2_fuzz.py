@@ -12,8 +12,13 @@ Run it once per target set. --prefix and --tag keep the two sets apart, e.g.
   survivors:  (defaults)                       macros \\Fuzz...,    files rq2_fuzz_...
   unreached:  --prefix FuzzUnr --tag unreached_ macros \\FuzzUnr..., files rq2_unreached_fuzz_...
 
-With --runs (the trials' kill_fuzz.py folders), it also reports reach, from the
-reached_targets recorded in each programs.jsonl:
+Always: \\<prefix>ProgramsPerHour, programs per hour of fuzzing over all trials.
+
+With --runs (the trials' kill_fuzz.py folders), medians over all programs:
+  \\<prefix>MedianTargetsPerProgram   targets a program reached (candidates)
+  \\<prefix>MedianMinutesPerProgram   minutes per program
+  \\<prefix>MedianMutantsPerProgram   mutants of any kind a program reached
+and, if every program records reached_targets, reach across trials:
   \\<prefix>Reached           targets reached per trial (range)
   \\<prefix>ReachedUnion, ...UnionPct   reached by any trial (and % of the targets)
   \\<prefix>ReachedAll        reached by every trial
@@ -93,22 +98,36 @@ def section(text, start, end, path):
     return text[i:j]
 
 
-def reach(run_dirs):
-    """Targets reached per trial, from reached_targets in each programs.jsonl."""
-    sets = []
+def read_programs(run_dirs):
+    """Per trial: the set of targets reached (None if any program lacks
+    reached_targets), and the program records."""
+    sets, records = [], []
     for d in run_dirs:
-        s, missing = set(), 0
+        s, missing, recs = set(), 0, []
         for line in open(d / "programs.jsonl"):
             if line.strip():
                 rec = json.loads(line)
+                recs.append(rec)
                 if "reached_targets" in rec:
                     s.update(rec["reached_targets"])
                 else:
                     missing += 1
-        if missing:
-            sys.exit(f"{d}: {missing} programs without reached_targets -- reach cannot be computed for this run")
-        sets.append(s)
-    return sets
+        sets.append(None if missing else s)
+        records.append(recs)
+    if any(x is None for x in sets):
+        print("note: some programs have no reached_targets, so reach across trials is not reported")
+        sets = []
+    return sets, records
+
+
+def program_stats(records):
+    """Medians over all programs of all trials."""
+    recs = [r for rs in records for r in rs]
+
+    def med(key):
+        vals = [r[key] for r in recs if isinstance(r.get(key), (int, float))]
+        return statistics.median(vals) if vals else None
+    return {"targets": med("candidates"), "seconds": med("seconds"), "mutants": med("reached"), "n": len(recs)}
 
 
 def kills_at(csv_path, hours):
@@ -122,7 +141,7 @@ def kills_at(csv_path, hours):
     return [int(float(x)) for x in last[1:] if x != ""]
 
 
-def write_macros(d, out, prefix, reach_sets, at_hours=None):
+def write_macros(d, out, prefix, reach_sets, at_hours=None, stats=None):
     runs = d["runs"]
     kills = [r["kills"] for r in runs]
     programs = [r["programs"] for r in runs]
@@ -151,6 +170,19 @@ def write_macros(d, out, prefix, reach_sets, at_hours=None):
         lines.append(f"\\newcommand{{\\{prefix}KillsAtHours}}{{{at_hours[0]:g}}}")
         lines.append(f"\\newcommand{{\\{prefix}KillsAt}}{{{fmt_int_range(at_hours[1])}}}")
         print(f"kills per trial at {at_hours[0]:g} h: {min(at_hours[1]):,}-{max(at_hours[1]):,}")
+    # programs per hour of fuzzing (all trials), comparable across sets fuzzed for different lengths
+    total_h = sum(r["hours"] for r in runs)
+    lines.append(f"\\newcommand{{\\{prefix}ProgramsPerHour}}{{{sum(programs) / total_h:.1f}}}")
+    if stats:
+        if stats["targets"] is not None:
+            lines.append(f"\\newcommand{{\\{prefix}MedianTargetsPerProgram}}{{{fmt_int(round(stats['targets']))}}}")
+        if stats["seconds"] is not None:
+            lines.append(f"\\newcommand{{\\{prefix}MedianMinutesPerProgram}}{{{stats['seconds'] / 60:.0f}}}")
+        if stats["mutants"] is not None:
+            lines.append(f"\\newcommand{{\\{prefix}MedianMutantsPerProgram}}{{{fmt_int(round(stats['mutants']))}}}")
+        print(f"programs: {stats['n']:,} ({sum(programs) / total_h:.1f} per trial-hour); median per program: "
+              f"targets reached {stats['targets']}, minutes {stats['seconds'] / 60 if stats['seconds'] else None}, "
+              f"mutants reached {stats['mutants']}")
     if reach_sets:
         union = set().union(*reach_sets)
         every = set.intersection(*reach_sets)
@@ -234,18 +266,19 @@ def main():
                     help="also give each trial's cumulative kills at this many hours (\\<prefix>KillsAt), "
                          "to compare sets fuzzed for different lengths")
     ap.add_argument("--runs", nargs="*", type=Path, default=[],
-                    help="the trials' kill_fuzz.py folders, for reach (needs reached_targets in programs.jsonl)")
+                    help="the trials' kill_fuzz.py folders: program statistics, and reach if recorded")
     args = ap.parse_args()
 
     d = parse_summary(args.comparison_dir / "summary.txt")
     if args.runs and len(args.runs) != d["n_runs"]:
         sys.exit(f"--runs gives {len(args.runs)} folders but the summary has {d['n_runs']} trials")
-    reach_sets = reach(args.runs) if args.runs else []
+    reach_sets, records = read_programs(args.runs) if args.runs else ([], [])
+    stats = program_stats(records) if records else None
     args.out_dir.mkdir(parents=True, exist_ok=True)
     at = None
     if args.kills_at_hours:
         at = (args.kills_at_hours, kills_at(args.comparison_dir / "kills_over_time.csv", args.kills_at_hours))
-    write_macros(d, args.out_dir / f"rq2_{args.tag}fuzz_macros.tex", args.prefix, reach_sets, at)
+    write_macros(d, args.out_dir / f"rq2_{args.tag}fuzz_macros.tex", args.prefix, reach_sets, at, stats)
     write_table(d, args.out_dir / f"rq2_{args.tag}fuzz_table.tex")
     write_figure(args.comparison_dir / "kills_over_time.csv", args.out_dir / f"rq2_{args.tag}kills_over_time.pdf")
     print(f"Parsed {d['n_runs']} trials; wrote macros, table and figure to {args.out_dir}")
