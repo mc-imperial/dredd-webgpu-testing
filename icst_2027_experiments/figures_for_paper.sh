@@ -6,10 +6,18 @@
 #   ./icst_2027_experiments/figures_for_paper.sh STEP [...]   run only the named steps
 #   ./icst_2027_experiments/figures_for_paper.sh --list       list the steps
 #
-# Data sources not produced by this script:
-#   results/reachability/raw/shared/run-*   extracted from
-#     webgpu-shader-run-non-isolated-1-run.tar.gz (as run-single) and
-#     webgpu-shader-run-non-isolated-4-runs.zip (the four run-<timestamp> folders)
+# Inputs not produced by this script (made once, then committed or copied here):
+#   results/reachability/raw/shared-v2/run-*          shared runs from the instances
+#                                                     (aws/copy_shared_runs.sh)
+#   results/reachability/runtimes/isolated_runtimes.csv
+#                                                     analysis/check_isolated_runtime.sh --csv
+#   $GEN/mutant_file_ranges.csv, $GEN/setup_generated_macros.tex
+#                                                     gen_setup_generated.py --ranges-out
+#                                                     (needs Docker and the reachability image)
+#   $GEN/mutant_function_ranges.csv                   analysis/map_mutants_to_functions.py
+#                                                     (needs Docker and the reachability image)
+#   results/fuzz/run_72h/..., results/fuzz/unreached-24h-ip-*
+#                                                     fuzzing trials copied from the instances
 set -euo pipefail
 
 # Always run from the repository root, wherever the script is called from.
@@ -19,11 +27,12 @@ cd "$(dirname "$0")/.."
 GEN=icst_2027_experiments/generated
 REACH=results/reachability
 ISO=$REACH/processed/isolated          # run-<timestamp>/, one per isolated run
-SHARED_RAW=$REACH/raw/shared-v2           # run-<timestamp>/<configuration>/, one per shared run
-CFG_OUT=$REACH/processed/shared
+SHARED_RAW=$REACH/raw/shared-v2        # run-<timestamp>/<configuration>/, one per shared run
+SHARED=$REACH/processed/shared-v2      # the same runs, processed (process_shared_tracking.py)
 MERGED=$REACH/merged/mutant_to_tests_union5_isolated-no-cache_max100.json
-BUILD=REPLACE_ME/build_mutant_mapping.py   # TODO: set to the real path
 SURV=results/cts-survival
+FUZZ_SURV=results/fuzz/run_72h                 # fuzzing against the reached-but-surviving mutants
+FUZZ_UNR=results/fuzz/unreached-24h            # fuzzing against the unreached mutants (prefix)
 
 # ---- steps ------------------------------------------------------------------
 
@@ -53,27 +62,6 @@ merge() {
         --max-tests 100 --output "$MERGED" "${merge_args[@]}"
 }
 
-# RQ1(a): stability macros and table from the merge summary.
-stability_latex() {
-    python3 icst_2027_experiments/gen_rq1a_stability.py \
-        --merged-summary "${MERGED%.json}_summary.txt" \
-        "$ISO"/run-*/mutant_to_tests_isolated-no-cache_counts_summary.txt \
-        --out-dir "$GEN"
-}
-
-# RQ1(a): per-mutant counts for the cheaper configurations (pass 1 only).
-config_counts() {
-    for root in "$SHARED_RAW"/run-*; do
-        local name
-        name=$(basename "$root")
-        for cfg in subtree-no-cache subtree-cache file-subtrees-no-cache; do
-            echo "== $name / $cfg"
-            python3 "$BUILD" "$root" --configuration "$cfg" --counts-only \
-                --output "$CFG_OUT/$name/mutant_to_tests_${cfg}.json"
-        done
-    done
-}
-
 # RQ1(a): IDs of the isolated <=100-test mapping mutants, for processing shared runs on the instances.
 mapping_ids() {
     python3 -c "
@@ -82,9 +70,17 @@ print('\n'.join(json.load(open('$MERGED'))))" > "$GEN/isolated_max100_mutant_ids
     wc -l "$GEN/isolated_max100_mutant_ids.txt"
 }
 
+# RQ1(a): stability macros and table from the merge summary.
+stability_latex() {
+    python3 icst_2027_experiments/gen_rq1a_stability.py \
+        --merged-summary "${MERGED%.json}_summary.txt" \
+        "$ISO"/run-*/mutant_to_tests_isolated-no-cache_counts_summary.txt \
+        --out-dir "$GEN"
+}
+
 # RQ1(a): shared execution against the isolated reference.
 shared_compare() {
-    python3 icst_2027_experiments/gen_rq1a_shared.py results/reachability/processed/shared-v2 \
+    python3 icst_2027_experiments/gen_rq1a_shared.py "$SHARED" \
         --isolated "$ISO"/run-*/mutant_to_tests_isolated-no-cache_per_mutant.csv \
         --mapping "$MERGED" --out-dir "$GEN"
 }
@@ -92,9 +88,9 @@ shared_compare() {
 # RQ1(a): isolated and shared runtimes.
 runtimes() {
     python3 icst_2027_experiments/gen_rq1a_runtime.py \
-    --isolated results/reachability/runtimes/isolated_runtimes.csv \
-    --shared-raw results/reachability/raw/shared-v2 \
-    --out "$GEN/rq1a_runtime_macros.tex"
+        --isolated "$REACH/runtimes/isolated_runtimes.csv" \
+        --shared-raw "$SHARED_RAW" \
+        --out "$GEN/rq1a_runtime_macros.tex"
 }
 
 # RQ1(b): combine the five 24-hour CTS kill runs.
@@ -112,30 +108,22 @@ survival_latex() {
         --out-dir "$GEN"
 }
 
-# RQ1(b): kill rate chart
+# RQ1(b): kill rate and time per mutant (macros; the chart is not used in the paper).
 cts_kill_rate() {
     python3 icst_2027_experiments/gen_rq1b_killrate.py \
         "$SURV"/twenty-four-hours/run*_24h \
         --out-dir "$GEN"
 }
 
-# RQ2: compare the 72-hour fuzzing trials (picks up however many exist).
-fuzz_compare() {
-    local trials=( results/fuzz/run_72h/cts5x72h-random-seed-*/cts5x72h-random-seed )
-    local labels
-    labels=$(seq -s, -f "T%g" 1 "${#trials[@]}")
-    python3 icst_2027_experiments/analysis/compare_fuzz_runs.py "${trials[@]}" \
-        --survivors results/cts-survival/combined/survivors.txt \
-        --labels "$labels" \
-        --split-hours 0 \
-        --outdir results/fuzz/run_72h/comparison
+# RQ1(b): where the unreached and the surviving mutants are (tables and macros).
+survivor_analysis() {
+    python3 icst_2027_experiments/gen_rq1b_survivor_analysis.py \
+        "$GEN/mutant_file_ranges.csv" \
+        --functions "$GEN/mutant_function_ranges.csv" \
+        --isolated "$ISO"/run-*/mutant_to_tests_isolated-no-cache_per_mutant.csv \
+        --runs "$SURV"/twenty-four-hours/run*_24h \
+        --out-dir "$GEN"
 }
-
-# RQ2: fuzzing macros, table and figure.
-fuzz_latex() {
-       python3 icst_2027_experiments/gen_rq2_fuzz.py \
-           results/fuzz/run_72h/comparison --out-dir "$GEN"
-   }
 
 # RQ2: mutants reached by no isolated repeat (targets for the unreached-mutant fuzzing).
 unreached_ids() {
@@ -150,10 +138,54 @@ with open('$GEN/unreached_mutant_ids.txt', 'w') as out:
 print(f'reached: {len(reached):,}   unreached: {total - len(reached):,}')"
 }
 
-# Steps in the order they run when no step is named.
-STEPS=(reach_summaries reach_latex merge mapping_ids stability_latex config_counts
-       survival_combine runtimes cts_kill_rate survival_latex fuzz_compare fuzz_latex 
-       unreached_ids shared_compare)
+# RQ2: compare the 72-hour fuzzing trials against the reached-but-surviving mutants
+# (picks up however many trials exist).
+fuzz_compare() {
+    local trials=( "$FUZZ_SURV"/cts5x72h-random-seed-*/cts5x72h-random-seed )
+    local labels
+    labels=$(seq -s, -f "T%g" 1 "${#trials[@]}")
+    python3 icst_2027_experiments/analysis/compare_fuzz_runs.py "${trials[@]}" \
+        --survivors "$SURV/combined/survivors.txt" \
+        --labels "$labels" \
+        --split-hours 0 \
+        --outdir "$FUZZ_SURV/comparison"
+}
+
+# RQ2: compare the fuzzing trials against the unreached mutants (picks up however many exist).
+fuzz_compare_unreached() {
+    local trials=( "$FUZZ_UNR"-ip-* )
+    local labels
+    labels=$(seq -s, -f "T%g" 1 "${#trials[@]}")
+    python3 icst_2027_experiments/analysis/compare_fuzz_runs.py "${trials[@]}" \
+        --survivors "$GEN/unreached_mutant_ids.txt" \
+        --labels "$labels" \
+        --split-hours 0 \
+        --outdir "$FUZZ_UNR-comparison"
+}
+
+# RQ2: macros and figure, reached-but-surviving mutants (\Fuzz..., rq2_...), with each
+# trial's kills at 24 h to compare with the unreached runs.
+fuzz_latex() {
+    python3 icst_2027_experiments/gen_rq2_fuzz.py "$FUZZ_SURV/comparison" \
+        --kills-at-hours 24 \
+        --out-dir "$GEN"
+}
+
+# RQ2: macros and figure, unreached mutants (\FuzzUnr..., rq2_unreached_...), with reach
+# from the trials' programs.jsonl.
+fuzz_latex_unreached() {
+    local trials=( "$FUZZ_UNR"-ip-* )
+    python3 icst_2027_experiments/gen_rq2_fuzz.py "$FUZZ_UNR-comparison" \
+        --prefix FuzzUnr --tag unreached_ \
+        --kills-at-hours 24 \
+        --runs "${trials[@]}" \
+        --out-dir "$GEN"
+}
+
+# Steps in the order they run when no step is named (each step after the ones it reads from).
+STEPS=(reach_summaries reach_latex merge mapping_ids stability_latex shared_compare runtimes
+       survival_combine survival_latex cts_kill_rate survivor_analysis
+       unreached_ids fuzz_compare fuzz_compare_unreached fuzz_latex fuzz_latex_unreached)
 
 # ---- dispatch ---------------------------------------------------------------
 if [[ $# -eq 0 ]]; then
