@@ -23,6 +23,11 @@ Macros:
   \\ShSubHoursMin, \\ShSubHoursMax      one decimal place
   \\ShFileHoursMin, \\ShFileHoursMax    one decimal place
   \\ShSubRuntimeRuns, \\ShFileRuntimeRuns
+  \\ShSubSpeedup, \\ShFileSpeedup      mean isolated hours / mean shared hours,
+                                      wall-clock, whole number (e.g. 37)
+  \\ShSubSpeedupPerServer, ...File...  the same divided by the ratio of Dawn
+                                      servers (shared / isolated), i.e. per
+                                      server-hour; one decimal place below 10
 """
 import argparse
 import csv
@@ -47,6 +52,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--isolated", required=True)
     ap.add_argument("--shared-raw", required=True, help="folder holding the raw shared runs (run-*/...)")
+    ap.add_argument("--isolated-servers", type=int, default=1, help="Dawn servers in isolated runs (default 1)")
+    ap.add_argument("--shared-servers", type=int, default=4, help="Dawn servers in shared runs (default 4)")
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
 
@@ -63,6 +70,7 @@ def main():
         tag = "used" if r in complete else f"skipped ({int(r['tests']):,} of {full:,} tests)"
         print(f"  {r['host']} {r['run']}: {float(r['hours']):.1f} h  {tag}")
     hours = [float(r["hours"]) for r in complete]
+    iso_mean = sum(hours) / len(hours)
     lo, hi = round(min(hours)), round(max(hours))
     print(f"  -> {lo}--{hi} h over {len(complete)} complete runs of {full:,} tests")
     macros += [f"\\newcommand{{\\IsoHoursMin}}{{{lo}}}",
@@ -87,10 +95,16 @@ def main():
             print(f"  {os.path.relpath(d, args.shared_raw)}: {h:.2f} h, {len(loaded)} invocation(s), "
                   f"{nonzero} non-zero exit, {timed_out} timed out")
             hours.append(h)
-        print(f"  -> {min(hours):.1f}--{max(hours):.1f} h over {len(hours)} runs")
+        speedup = iso_mean / (sum(hours) / len(hours))
+        per_server = speedup / (args.shared_servers / args.isolated_servers)
+        print(f"  -> {min(hours):.1f}--{max(hours):.1f} h over {len(hours)} runs; "
+              f"speed-up over isolated {speedup:.1f}x wall-clock, {per_server:.1f}x per server")
         macros += [f"\\newcommand{{\\Sh{tag}HoursMin}}{{{min(hours):.1f}}}",
                    f"\\newcommand{{\\Sh{tag}HoursMax}}{{{max(hours):.1f}}}",
-                   f"\\newcommand{{\\Sh{tag}RuntimeRuns}}{{{word(len(hours))}}}"]
+                   f"\\newcommand{{\\Sh{tag}RuntimeRuns}}{{{word(len(hours))}}}",
+                   f"\\newcommand{{\\Sh{tag}Speedup}}{{{round(speedup)}}}",
+                   f"\\newcommand{{\\Sh{tag}SpeedupPerServer}}"
+                   f"{{{f'{per_server:.1f}' if per_server < 10 else round(per_server)}}}"]
 
     with open(args.out, "w") as f:
         f.write("\n".join(macros) + "\n")
