@@ -8,14 +8,28 @@ Reads the summary.txt that combine_survivors.py writes and produces, in --out-di
 
 With --merged-summary (merge_mappings.py's *_summary.txt), it also reports what
 share of the merged mapping every run evaluated.
+
+With --mapping (the merged mutant-to-tests JSON the runs used), it also reports
+the most reaching tests of any mutant each run evaluated. Runs evaluate mutants
+in order of fewest reaching tests first, so a run that evaluated N mutants
+reached as far as the N-th mutant in that order; the script derives the
+count from that, assuming the runs evaluated the mapping in this order.
+
+Per-run values are written as ranges (min--max), since the runs genuinely
+differ in how far they got.
 """
 import argparse
+import json
 import re
 import sys
 from pathlib import Path
 
+import gen_rq1a_reachability
 from gen_rq1a_reachability import fmt_int, fmt_int_range
 from gen_rq1a_stability import parse_merged
+
+# Per-run values here are ranges across runs, not means across repeats.
+gen_rq1a_reachability.SPREAD = "range"
 
 
 def num(s):
@@ -68,6 +82,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("summary", type=Path, help="combine_survivors.py summary.txt")
     ap.add_argument("--merged-summary", type=Path, help="merge_mappings.py *_summary.txt, for mapping coverage")
+    ap.add_argument("--mapping", type=Path, help="merged mutant-to-tests JSON, for the most reaching tests evaluated")
     ap.add_argument("--out-dir", type=Path, required=True)
     args = ap.parse_args()
 
@@ -90,7 +105,22 @@ def main():
         f"\\newcommand{{\\SurvKilledAll}}{{{fmt_int(d['killed_all'])}}}",
         f"\\newcommand{{\\SurvKilledAllPct}}{{{pct(d['killed_all'], ev):.1f}\\%}}",
         f"\\newcommand{{\\SurvInconsistent}}{{{fmt_int(d['inconsistent'])}}}",
+        f"\\newcommand{{\\SurvNoValidSome}}{{{fmt_int(d['no_valid_some'])}}}",
+        f"\\newcommand{{\\SurvNoValidPerRun}}{{{fmt_int_range([r['no_valid'] for r in runs])}}}",
     ]
+    print(f"evaluated in only some runs (excluded): {d['eval_some']:,}; "
+          f"no valid tests in some run: {d['no_valid_some']:,}")
+    if args.mapping:
+        counts = sorted(len(t) for t in json.load(open(args.mapping)).values())
+        reach = []
+        for i, r in enumerate(runs, 1):
+            if r["evaluated"] > len(counts):
+                sys.exit(f"run {i} evaluated {r['evaluated']:,} mutants, more than the {len(counts):,} in {args.mapping}")
+            reach.append(counts[r["evaluated"] - 1])
+            print(f"run {i}: {r['evaluated']:,} evaluated -> mutants reached by up to {reach[-1]} tests")
+        macros += [f"\\newcommand{{\\SurvMaxTestsPerRun}}{{{fmt_int_range(reach)}}}",
+                   f"\\newcommand{{\\SurvMaxTestsMin}}{{{fmt_int(min(reach))}}}",
+                   f"\\newcommand{{\\SurvMaxTestsMax}}{{{fmt_int(max(reach))}}}"]
     if args.merged_summary:
         kept = parse_merged(args.merged_summary)["kept"]
         macros.append(f"\\newcommand{{\\SurvMappingSize}}{{{fmt_int(kept)}}}")

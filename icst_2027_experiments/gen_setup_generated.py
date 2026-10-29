@@ -14,7 +14,9 @@ Usage (from the repository root, on a machine with the image):
   python3 icst_2027_experiments/gen_setup_generated.py \
       --out icst_2027_experiments/generated/setup_generated_macros.tex
 Options: --image (default dredd-webgpu-testing:reachability-stability),
-         --mesa (default /data/mesa_tracked)
+         --mesa (default /data/mesa_tracked),
+         --ranges-out FILE  also save each file's mutant ID range as CSV
+                            (first_id,mutants,path) for per-file analyses
 """
 import argparse
 import json
@@ -54,6 +56,8 @@ def main():
     ap.add_argument("--image", default="dredd-webgpu-testing:reachability-stability")
     ap.add_argument("--mesa", default="/data/mesa_tracked")
     ap.add_argument("--out", required=True)
+    ap.add_argument("--ranges-out", help="also write each mutated file's mutant ID range to this CSV "
+                                         "(first_id,mutants,path), for per-file analyses")
     args = ap.parse_args()
 
     res = subprocess.run(["docker", "run", "--rm", "-i", args.image, "python3", "-", args.mesa],
@@ -99,6 +103,13 @@ def main():
     with open(args.out, "w") as fh:
         fh.write("\n".join(macros) + "\n")
     print(f"wrote {args.out}")
+    if args.ranges_out:
+        with open(args.ranges_out, "w") as fh:
+            fh.write(f"# from {args.image}, {args.mesa}, by gen_setup_generated.py\n")
+            fh.write("first_id,mutants,path\n")
+            for f in files:
+                fh.write(f"{f['first']},{f['size']},{f['path']}\n")
+        print(f"wrote {args.ranges_out} ({len(files)} files)")
 
 
 if __name__ == "__main__":
