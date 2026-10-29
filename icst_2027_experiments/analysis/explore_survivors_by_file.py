@@ -21,6 +21,9 @@ Prints (no output files):
   4. top files by killed mutants, and 5. by surviving mutants
   6. how the lists compare: how concentrated each kind is (share held by the
      top files) and how many files the lists have in common
+  7. with --functions (CSV from map_mutants_to_functions.py): the same counts per
+     function -- the top functions by surviving mutants overall, then inside each
+     of the --detail-files files with the most survivors
 
 Inputs:
   ranges      CSV from gen_setup_generated.py --ranges-out (first_id,mutants,path)
@@ -56,6 +59,9 @@ def main():
     ap.add_argument("--isolated", nargs="+", required=True)
     ap.add_argument("--runs", nargs="+", type=Path, required=True)
     ap.add_argument("--top", type=int, default=10)
+    ap.add_argument("--functions", type=Path, help="mutant_function_ranges.csv, for section 7")
+    ap.add_argument("--detail-files", type=int, default=3,
+                    help="section 7: list functions inside this many files with the most survivors")
     args = ap.parse_args()
 
     # ---- files ----
@@ -146,6 +152,55 @@ def main():
         common = set(tops[a_]) & set(tops[b_])
         print(f"   top-{args.top} {a_} and {b_} lists share {len(common)} file(s)"
               + (f": {', '.join(name(p) for p in sorted(common))}" if common else ""))
+
+
+    if not args.functions:
+        return
+    # ---- 7. per function ----
+    franges = []
+    with open(args.functions) as f:
+        for r in csv.DictReader(line for line in f if not line.startswith("#")):
+            franges.append((int(r["first_id"]), int(r["mutants"]), r["path"], r["function"]))
+    franges.sort()
+    fstarts = [x[0] for x in franges]
+
+    def func_of(m):
+        i = bisect.bisect_right(fstarts, m) - 1
+        return (franges[i][2], franges[i][3]) if i >= 0 and m < franges[i][0] + franges[i][1] else None
+
+    fst = {(p_, fn): collections.Counter(mutants=n) for _, n, p_, fn in franges}
+    for m in reached:
+        k = func_of(m)
+        if k:
+            fst[k]["reached"] += 1
+    for m, o in out.items():
+        k = func_of(m)
+        if k:
+            fst[k]["evaluated"] += 1
+            fst[k][o] += 1
+    for c in fst.values():
+        c["unreached"] = c["mutants"] - c["reached"]
+    ftotal = {k: sum(c[k] for c in fst.values()) for k in kinds}
+
+    def fshow(title, keys):
+        print(f"\n{title}")
+        print(f"   {'function':52} {'mutants':>8} " + " ".join(f"{k:>16}" for k in kinds))
+        for key in keys:
+            c = fst[key]
+            label = f"{key[1]} ({os.path.basename(key[0])})"
+            print(f"   {label[:52]:52} {c['mutants']:>8,} " + " ".join(
+                f"{c[k]:>7,} ({100 * c[k] / max(1, ftotal[k]):4.1f}%)" for k in kinds))
+
+    n_with = sum(1 for c in fst.values() if c["survived"])
+    top_f = sorted(fst, key=lambda k: -fst[k]["survived"])[:args.top]
+    held = 100 * sum(fst[k]["survived"] for k in top_f) / max(1, ftotal["survived"])
+    print(f"\n7. Functions: surviving mutants are in {n_with:,} of {len(fst):,} functions; "
+          f"the top {args.top} hold {held:.1f}%")
+    fshow(f"   Top {args.top} functions by surviving mutants", top_f)
+    for path in sorted(st, key=lambda p_: -st[p_]["survived"])[:args.detail_files]:
+        keys = sorted((k for k in fst if k[0] == path), key=lambda k: -fst[k]["survived"])[:args.top]
+        n_f = sum(1 for k in fst if k[0] == path and fst[k]["survived"])
+        fshow(f"   {name(path)}: survivors in {n_f} function(s); top {len(keys)}", keys)
 
 
 if __name__ == "__main__":
