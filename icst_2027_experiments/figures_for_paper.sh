@@ -91,10 +91,10 @@ shared_compare() {
 
 # RQ1(a): isolated and shared runtimes.
 runtimes() {
-python3 icst_2027_experiments/gen_rq1a_runtime.py \
-  --isolated results/reachability/runtimes/isolated_runtimes.csv \
-  --shared-raw results/reachability/raw/shared-v2 \
-  --out "$GEN/rq1a_runtime_macros.tex"
+    python3 icst_2027_experiments/gen_rq1a_runtime.py \
+    --isolated results/reachability/runtimes/isolated_runtimes.csv \
+    --shared-raw results/reachability/raw/shared-v2 \
+    --out "$GEN/rq1a_runtime_macros.tex"
 }
 
 # RQ1(b): combine the five 24-hour CTS kill runs.
@@ -108,6 +108,14 @@ survival_latex() {
     python3 icst_2027_experiments/gen_rq1b_survival.py \
         "$SURV/combined/summary.txt" \
         --merged-summary "${MERGED%.json}_summary.txt" \
+        --mapping "$MERGED" \
+        --out-dir "$GEN"
+}
+
+# RQ1(b): kill rate chart
+cts_kill_rate() {
+    python3 icst_2027_experiments/gen_rq1b_killrate.py \
+        "$SURV"/twenty-four-hours/run*_24h \
         --out-dir "$GEN"
 }
 
@@ -144,8 +152,8 @@ print(f'reached: {len(reached):,}   unreached: {total - len(reached):,}')"
 
 # Steps in the order they run when no step is named.
 STEPS=(reach_summaries reach_latex merge mapping_ids stability_latex config_counts
-       survival_combine runtimes survival_latex fuzz_compare fuzz_latex unreached_ids
-       shared_compare)
+       survival_combine runtimes cts_kill_rate survival_latex fuzz_compare fuzz_latex 
+       unreached_ids shared_compare)
 
 # ---- dispatch ---------------------------------------------------------------
 if [[ $# -eq 0 ]]; then
