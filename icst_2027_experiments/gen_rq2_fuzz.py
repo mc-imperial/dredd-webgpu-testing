@@ -12,7 +12,9 @@ Run it once per target set. --prefix and --tag keep the two sets apart, e.g.
   survivors:  (defaults)                       macros \\Fuzz...,    files rq2_fuzz_...
   unreached:  --prefix FuzzUnr --tag unreached_ macros \\FuzzUnr..., files rq2_unreached_fuzz_...
 
-Always: \\<prefix>ProgramsPerHour, programs per hour of fuzzing over all trials.
+Always: \\<prefix>ProgramsPerHour, programs per hour of fuzzing over all trials, and
+\\<prefix>{Mismatch,Crash,Timeout}Share, each kill type's share of all kills (summed
+over trials, whole percent).
 
 With --runs (the trials' kill_fuzz.py folders), medians over all programs:
   \\<prefix>MedianTargetsPerProgram   targets a program reached (candidates)
@@ -170,6 +172,11 @@ def write_macros(d, out, prefix, reach_sets, at_hours=None, stats=None):
         lines.append(f"\\newcommand{{\\{prefix}KillsAtHours}}{{{at_hours[0]:g}}}")
         lines.append(f"\\newcommand{{\\{prefix}KillsAt}}{{{fmt_int_range(at_hours[1])}}}")
         print(f"kills per trial at {at_hours[0]:g} h: {min(at_hours[1]):,}-{max(at_hours[1]):,}")
+    # share of each kill type among all kills (summed over trials)
+    total_k = max(1, sum(kills))
+    for kind, name in (("mismatch", "Mismatch"), ("crash", "Crash"), ("timeout", "Timeout")):
+        lines.append(f"\\newcommand{{\\{prefix}{name}Share}}"
+                     f"{{{100 * sum(r[kind] for r in runs) / total_k:.0f}\\%}}")
     # programs per hour of fuzzing (all trials), comparable across sets fuzzed for different lengths
     total_h = sum(r["hours"] for r in runs)
     lines.append(f"\\newcommand{{\\{prefix}ProgramsPerHour}}{{{sum(programs) / total_h:.1f}}}")
