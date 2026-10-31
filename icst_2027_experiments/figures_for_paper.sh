@@ -16,6 +16,8 @@
 #                                                     (needs Docker and the reachability image)
 #   $GEN/mutant_function_ranges.csv                   analysis/map_mutants_to_functions.py
 #                                                     (needs Docker and the reachability image)
+#   $REACH/matrix/isolated-*.npz, shared-*.npz       analysis/build_isolated_matrices.sh and
+#                                                     analysis/build_shared_matrices.sh (long)
 #   results/fuzz/run_72h/..., results/fuzz/unreached-24h-ip-*
 #                                                     fuzzing trials copied from the instances
 #   results/fuzz/run_72h/replayed-reach/              mutant-killing/replay-reach.sh
@@ -31,6 +33,7 @@ REACH=results/reachability
 ISO=$REACH/processed/isolated          # run-<timestamp>/, one per isolated run
 SHARED_RAW=$REACH/raw/shared-v2        # run-<timestamp>/<configuration>/, one per shared run
 SHARED=$REACH/processed/shared-v2      # the same runs, processed (process_shared_tracking.py)
+MATRIX=$REACH/matrix                   # mutant-by-test matrices (analysis/build_*_matrices.sh)
 MERGED=$REACH/merged/mutant_to_tests_union5_isolated-no-cache_max100.json
 SURV=results/cts-survival
 FUZZ_SURV=results/fuzz/run_72h                 # fuzzing against the reached-but-surviving mutants
@@ -85,6 +88,21 @@ shared_compare() {
     python3 icst_2027_experiments/gen_rq1a_shared.py "$SHARED" \
         --isolated "$ISO"/run-*/mutant_to_tests_isolated-no-cache_per_mutant.csv \
         --mapping "$MERGED" --out-dir "$GEN"
+}
+
+# RQ1(a): compare reaching-test sets mutant by mutant (isolated repeats against each other,
+# shared runs against isolated), from the matrices of build_isolated_matrices.sh and
+# build_shared_matrices.sh. Needs ~30 GB of memory; about 5 minutes.
+matrix_compare() {
+    python3 icst_2027_experiments/analysis/compare_reach_matrices.py --matrix-dir "$MATRIX" \
+        --per-mutant "$MATRIX/compare_per_mutant.csv.gz" 2>&1 | tee "$MATRIX/compare.log"
+}
+
+# RQ1(a): LaTeX macros from that comparison (stability of test sets; strict subset; selection).
+matrix_latex() {
+    python3 icst_2027_experiments/gen_rq1a_matrix.py \
+        --per-mutant "$MATRIX/compare_per_mutant.csv.gz" \
+        --out "$GEN/rq1a_matrix_macros.tex"
 }
 
 # RQ1(a): isolated and shared runtimes.
@@ -188,7 +206,7 @@ fuzz_latex_unreached() {
 }
 
 # Steps in the order they run when no step is named (each step after the ones it reads from).
-STEPS=(reach_summaries reach_latex merge mapping_ids stability_latex shared_compare runtimes
+STEPS=(reach_summaries reach_latex merge mapping_ids stability_latex shared_compare matrix_compare matrix_latex runtimes
        survival_combine survival_latex cts_kill_rate survivor_analysis
        unreached_ids fuzz_compare fuzz_compare_unreached fuzz_latex fuzz_latex_unreached)
 

@@ -30,7 +30,7 @@ IPS=("$@"); [ ${#IPS[@]} -gt 0 ] || IPS=("${DEFAULT_IPS[@]}")
 JOB=$(cat <<EOF
 #!/usr/bin/env bash
 cd ~/dredd-webgpu-testing
-echo "== \$(date '+%F %T') starting on \$(hostname): $NAME"
+echo "== \$(date '+%F %T') starting on \$(hostname): $NAME" | tee -a ~/$NAME.log
 { $CMD ; } 2>&1 | tee -a ~/$NAME.log
 echo "== \$(date '+%F %T') finished, exit code \${PIPESTATUS[0]}" | tee -a ~/$NAME.log
 exec bash

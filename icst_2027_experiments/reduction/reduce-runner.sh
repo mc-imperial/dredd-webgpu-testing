@@ -18,6 +18,7 @@ chmod 777 "$PROJECT_ROOT/results/reduce"
 
 time docker run --rm --init ${DOCKER_NAME:+--name "$DOCKER_NAME"} \
     --ulimit core=0 \
+    --env MESA_SHADER_CACHE_DISABLE=true \
     --mount "type=bind,source=$PROJECT_ROOT,target=$CONTAINER_PROJECT_ROOT" \
     --workdir "$CONTAINER_PROJECT_ROOT" \
     "$IMAGE" \
