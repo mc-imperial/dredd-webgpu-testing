@@ -18,6 +18,8 @@
 #                                                     (needs Docker and the reachability image)
 #   results/fuzz/run_72h/..., results/fuzz/unreached-24h-ip-*
 #                                                     fuzzing trials copied from the instances
+#   results/fuzz/run_72h/replayed-reach/              mutant-killing/replay-reach.sh
+#                                                     (needs Docker and the wgslsmith image)
 set -euo pipefail
 
 # Always run from the repository root, wherever the script is called from.
@@ -164,13 +166,14 @@ fuzz_compare_unreached() {
         --outdir "$FUZZ_UNR-comparison"
 }
 
-# RQ2: macros and figure, reached-but-surviving mutants (\Fuzz..., rq2_...), with each
-# trial's kills at 24 h to compare with the unreached runs.
+# RQ2: macros and figure, reached-but-surviving mutants (\Fuzz..., rq2_...). These trials
+# did not record which targets each program reached, so reach comes from the replay
+# (mutant-killing/replay-reach.sh, in the same trial order).
 fuzz_latex() {
     local trials=( "$FUZZ_SURV"/cts5x72h-random-seed-*/cts5x72h-random-seed )
     python3 icst_2027_experiments/gen_rq2_fuzz.py "$FUZZ_SURV/comparison" \
-        --kills-at-hours 24 \
         --runs "${trials[@]}" \
+        --replayed "$FUZZ_SURV/replayed-reach" \
         --out-dir "$GEN"
 }
 
@@ -180,7 +183,6 @@ fuzz_latex_unreached() {
     local trials=( "$FUZZ_UNR"-ip-* )
     python3 icst_2027_experiments/gen_rq2_fuzz.py "$FUZZ_UNR-comparison" \
         --prefix FuzzUnr --tag unreached_ \
-        --kills-at-hours 24 \
         --runs "${trials[@]}" \
         --out-dir "$GEN"
 }

@@ -20,11 +20,14 @@ With --runs (the trials' kill_fuzz.py folders), medians over all programs:
   \\<prefix>MedianTargetsPerProgram   targets a program reached (candidates)
   \\<prefix>MedianMinutesPerProgram   minutes per program
   \\<prefix>MedianMutantsPerProgram   mutants of any kind a program reached
-and, if every program records reached_targets, reach across trials:
+and, if every program records reached_targets (or --replayed gives the reach
+replayed by replay_fuzz_reach.py), reach across trials:
   \\<prefix>Reached           targets reached per trial (range)
   \\<prefix>ReachedUnion, ...UnionPct   reached by any trial (and % of the targets)
   \\<prefix>ReachedAll        reached by every trial
   \\<prefix>KilledOfReachedPct  mutants killed by any trial, as % of those reached by any
+With --reach-hours H, reach and the kills behind KilledOfReachedPct count only programs
+that ended within H hours of their trial (\\<prefix>ReachHours, \\<prefix>KilledWithinReachHours).
 
 With --kills-at-hours H: \\<prefix>KillsAt, each trial's cumulative kills at H hours
 (range), and \\<prefix>KillsAtHours, so sets fuzzed for different lengths can be
@@ -117,9 +120,52 @@ def read_programs(run_dirs):
         sets.append(None if missing else s)
         records.append(recs)
     if any(x is None for x in sets):
-        print("note: some programs have no reached_targets, so reach across trials is not reported")
+        print("note: programs.jsonl has no reached_targets for some programs (pass --replayed for reach)")
         sets = []
     return sets, records
+
+
+def reach_within(run_dirs, records, replayed, hours):
+    """Per-trial sets of targets reached, and the union of mutants killed, counting only
+    programs that ended within `hours` of their trial's fuzzing time (all if None).
+
+    Reach comes from the replayed files (replay_fuzz_reach.py) if given, else from
+    reached_targets in programs.jsonl. Program end times are the cumulative `seconds`
+    of the trial's programs.jsonl. Kills come from each trial's kills.jsonl, dated by
+    the program (seed) that found them."""
+    sets, killed = [], set()
+    rep_files = sorted(replayed.glob("*.jsonl.gz")) if replayed else []
+    if replayed and len(rep_files) != len(run_dirs):
+        sys.exit(f"{replayed}: {len(rep_files)} replayed files for {len(run_dirs)} trials")
+    for i, (d, recs) in enumerate(zip(run_dirs, records)):
+        ends, t = {}, 0.0
+        for r in recs:
+            t += r.get("seconds", 0.0)
+            ends[r["seed"]] = t / 3600
+        inside = lambda seed: hours is None or ends.get(seed, float("inf")) <= hours + 1e-9
+        reached = set()
+        if replayed:
+            import gzip
+            with gzip.open(rep_files[i], "rt") as f:
+                for line in f:
+                    x = json.loads(line)
+                    if "reached_targets" in x and inside(x["seed"]):
+                        reached.update(x["reached_targets"])
+        else:
+            if any("reached_targets" not in r for r in recs if r.get("outcome") == "ok"):
+                return [], None
+            for r in recs:
+                if r.get("outcome") == "ok" and inside(r["seed"]):
+                    reached.update(r["reached_targets"])
+        sets.append(reached)
+        kf = d / "kills.jsonl"
+        if kf.exists():
+            for line in open(kf):
+                if line.strip():
+                    k = json.loads(line)
+                    if inside(k["seed"]):
+                        killed.add(k["mutant_id"])
+    return sets, killed
 
 
 def program_stats(records):
@@ -143,7 +189,7 @@ def kills_at(csv_path, hours):
     return [int(float(x)) for x in last[1:] if x != ""]
 
 
-def write_macros(d, out, prefix, reach_sets, at_hours=None, stats=None):
+def write_macros(d, out, prefix, reach_sets, at_hours=None, stats=None, reach_killed=None, reach_hours=None):
     runs = d["runs"]
     kills = [r["kills"] for r in runs]
     programs = [r["programs"] for r in runs]
@@ -193,16 +239,21 @@ def write_macros(d, out, prefix, reach_sets, at_hours=None, stats=None):
     if reach_sets:
         union = set().union(*reach_sets)
         every = set.intersection(*reach_sets)
+        n_killed = len(reach_killed) if reach_killed is not None else d["union"]
+        if reach_hours is not None:
+            lines.append(f"\\newcommand{{\\{prefix}ReachHours}}{{{reach_hours:g}}}")
+            lines.append(f"\\newcommand{{\\{prefix}KilledWithinReachHours}}{{{fmt_int(n_killed)}}}")
         lines += [
             f"\\newcommand{{\\{prefix}Reached}}{{{fmt_int_range([len(x) for x in reach_sets])}}}",
             f"\\newcommand{{\\{prefix}ReachedUnion}}{{{fmt_int(len(union))}}}",
             f"\\newcommand{{\\{prefix}ReachedUnionPct}}{{{100 * len(union) / d['survivors']:.1f}\\%}}",
             f"\\newcommand{{\\{prefix}ReachedAll}}{{{fmt_int(len(every))}}}",
-            f"\\newcommand{{\\{prefix}KilledOfReachedPct}}{{{100 * d['union'] / max(1, len(union)):.1f}\\%}}",
+            f"\\newcommand{{\\{prefix}KilledOfReachedPct}}{{{100 * n_killed / max(1, len(union)):.1f}\\%}}",
         ]
         print(f"reach: per trial {min(map(len, reach_sets)):,}-{max(map(len, reach_sets)):,}; "
               f"any trial {len(union):,} ({100 * len(union) / d['survivors']:.2f}%); every trial {len(every):,}; "
-              f"killed by any trial = {100 * d['union'] / max(1, len(union)):.1f}% of reached")
+              f"killed by any trial {n_killed:,} = {100 * n_killed / max(1, len(union)):.1f}% of reached"
+              + (f" (programs within {reach_hours:g} h)" if reach_hours is not None else ""))
     out.write_text("\n".join(lines) + "\n")
 
 
@@ -274,6 +325,12 @@ def main():
                          "to compare sets fuzzed for different lengths")
     ap.add_argument("--runs", nargs="*", type=Path, default=[],
                     help="the trials' kill_fuzz.py folders: program statistics, and reach if recorded")
+    ap.add_argument("--replayed", type=Path,
+                    help="replay_fuzz_reach.py --out-dir: reach for trials that did not record it "
+                         "(one *.jsonl.gz per trial, in the same order as --runs)")
+    ap.add_argument("--reach-hours", type=float,
+                    help="count reach (and the kills used for killed-of-reached) only for programs "
+                         "within this many hours of each trial, e.g. 24 to compare with shorter runs")
     args = ap.parse_args()
 
     d = parse_summary(args.comparison_dir / "summary.txt")
@@ -281,11 +338,18 @@ def main():
         sys.exit(f"--runs gives {len(args.runs)} folders but the summary has {d['n_runs']} trials")
     reach_sets, records = read_programs(args.runs) if args.runs else ([], [])
     stats = program_stats(records) if records else None
+    reach_killed = None
+    if args.runs and (args.replayed or args.reach_hours is not None):
+        reach_sets, reach_killed = reach_within(args.runs, records, args.replayed, args.reach_hours)
+        if reach_killed is None:
+            print("note: no reach recorded for these trials; pass --replayed for reach")
+            reach_sets = []
     args.out_dir.mkdir(parents=True, exist_ok=True)
     at = None
     if args.kills_at_hours:
         at = (args.kills_at_hours, kills_at(args.comparison_dir / "kills_over_time.csv", args.kills_at_hours))
-    write_macros(d, args.out_dir / f"rq2_{args.tag}fuzz_macros.tex", args.prefix, reach_sets, at, stats)
+    write_macros(d, args.out_dir / f"rq2_{args.tag}fuzz_macros.tex", args.prefix, reach_sets, at, stats,
+                 reach_killed, args.reach_hours)
     write_table(d, args.out_dir / f"rq2_{args.tag}fuzz_table.tex")
     write_figure(args.comparison_dir / "kills_over_time.csv", args.out_dir / f"rq2_{args.tag}kills_over_time.pdf")
     print(f"Parsed {d['n_runs']} trials; wrote macros, table and figure to {args.out_dir}")
