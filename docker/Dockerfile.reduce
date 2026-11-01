@@ -34,3 +34,7 @@ RUN curl -fsSL -o /usr/local/bin/bazel \
     && bazel clean --expunge
 
 ENV PERSES_JAR=/data/perses_deploy.jar
+
+# Perses runs `rustfmt +1.56.1 --help` (and +1.57.0) at startup; without these, rustup
+# downloads both toolchains inside every reduction container (several GB each time).
+RUN rustup toolchain install 1.56.1 1.57.0 --profile minimal --component rustfmt
