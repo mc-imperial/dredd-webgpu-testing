@@ -10,7 +10,9 @@
 #   results/reachability/raw/shared-v2/run-*          shared runs from the instances
 #                                                     (aws/copy_shared_runs.sh)
 #   results/reachability/runtimes/isolated_runtimes.csv
-#                                                     analysis/check_isolated_runtime.sh --csv
+#                                                     analysis/check_isolated_runtime.sh --csv, plus
+#                                                     analysis/isolated_runtime_from_archive.py
+#                                                     for the two repeats kept in the archive
 #   $GEN/mutant_file_ranges.csv, $GEN/setup_generated_macros.tex
 #                                                     gen_setup_generated.py --ranges-out
 #                                                     (needs Docker and the reachability image)
@@ -98,11 +100,22 @@ matrix_compare() {
         --per-mutant "$MATRIX/compare_per_mutant.csv.gz" 2>&1 | tee "$MATRIX/compare.log"
 }
 
-# RQ1(a): LaTeX macros from that comparison (stability of test sets; strict subset; selection).
+# RQ1(a): LaTeX macros from that comparison (stability of test sets; strict subset; selection;
+# undercounting by bands of isolated reach), and the bands table.
 matrix_latex() {
     python3 icst_2027_experiments/gen_rq1a_matrix.py \
+        --per-mutant "$MATRIX/compare_per_mutant.csv.gz" --tests "$MATRIX/tests.txt" \
+        --out "$GEN/rq1a_matrix_macros.tex" \
+        --ranges "$GEN/mutant_file_ranges.csv" \
+        --reach-table-out "$GEN/rq1a_reach_bands.tex" --undercount-table-out "$GEN/rq1a_undercount_bands.tex" \
+        --selection-table-out "$GEN/rq1a_selection_bands.tex"
+}
+
+# RQ1(a): figure: share of mutants undercounted by shared execution, against isolated reach.
+undercount_fig() {
+    python3 icst_2027_experiments/gen_rq1a_undercount_fig.py \
         --per-mutant "$MATRIX/compare_per_mutant.csv.gz" \
-        --out "$GEN/rq1a_matrix_macros.tex"
+        --out "$GEN/rq1a_undercount.pdf"
 }
 
 # RQ1(a): isolated and shared runtimes.
@@ -206,7 +219,7 @@ fuzz_latex_unreached() {
 }
 
 # Steps in the order they run when no step is named (each step after the ones it reads from).
-STEPS=(reach_summaries reach_latex merge mapping_ids stability_latex shared_compare matrix_compare matrix_latex runtimes
+STEPS=(reach_summaries reach_latex merge mapping_ids stability_latex shared_compare matrix_compare matrix_latex undercount_fig runtimes
        survival_combine survival_latex cts_kill_rate survivor_analysis
        unreached_ids fuzz_compare fuzz_compare_unreached fuzz_latex fuzz_latex_unreached)
 
