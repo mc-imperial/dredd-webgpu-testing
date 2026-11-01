@@ -231,10 +231,19 @@ fuzz_latex_unreached() {
         --out-dir "$GEN"
 }
 
+# RQ3: reduction and polishing of the selected fuzzer kills (reduction/select_reductions.py,
+# run_selected_reductions.sh, polish.sh): stage table and macros.
+rq3_reduction() {
+    python3 icst_2027_experiments/gen_rq3_reduction.py \
+        --reduce-dir results/reduce/survivors-72h --polish-dir results/reduce/survivors-72h-polish \
+        --csv results/reduce/survivors-72h/rq3_per_mutant.csv \
+        --out "$GEN/rq3_reduction_macros.tex" --table-out "$GEN/rq3_reduction_table.tex"
+}
+
 # Steps in the order they run when no step is named (each step after the ones it reads from).
 STEPS=(reach_summaries reach_latex merge mapping_ids stability_latex shared_compare matrix_compare matrix_latex undercount_fig cache_latex runtimes
        survival_combine survival_latex cts_kill_rate survivor_analysis
-       unreached_ids fuzz_compare fuzz_compare_unreached fuzz_latex fuzz_latex_unreached)
+       unreached_ids fuzz_compare fuzz_compare_unreached fuzz_latex fuzz_latex_unreached rq3_reduction)
 
 # ---- dispatch ---------------------------------------------------------------
 if [[ $# -eq 0 ]]; then

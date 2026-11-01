@@ -598,7 +598,9 @@ def rename_plan(src: str) -> list[tuple[str, str, int, int]]:
             if ENTRY.search(src[a:b]):
                 entries.add(kind[1])
     plan = []
-    for name, kind in globals_.items():
+    # sorted by original name, not source order, so the same declarations get the same
+    # short names whatever order they appear in (neighbouring mutants' tests then match)
+    for name, kind in sorted(globals_.items()):
         if GENERATED.match(name) and not FRESH.match(name) and name not in entries:
             new = _fresh(kind, taken)
             taken.add(new)
