@@ -580,6 +580,11 @@ def _fresh(kind: str, taken: set[str]) -> str:
     return f"{pool[0]}{i}"
 
 
+# Names that _fresh() produces (a letter, optionally digits): never rename them again,
+# or two of them can swap back and forth forever (f1->f2, f2->f1, ...).
+FRESH = re.compile(r"^[A-Za-z][0-9]*$")
+
+
 def rename_plan(src: str) -> list[tuple[str, str, int, int]]:
     """(old, new, scope_start, scope_end) for every generated-looking declared name."""
     members = member_decl_positions(src)
@@ -594,7 +599,7 @@ def rename_plan(src: str) -> list[tuple[str, str, int, int]]:
                 entries.add(kind[1])
     plan = []
     for name, kind in globals_.items():
-        if GENERATED.match(name) and name not in entries:
+        if GENERATED.match(name) and not FRESH.match(name) and name not in entries:
             new = _fresh(kind, taken)
             taken.add(new)
             plan.append((name, new, 0, len(src)))
@@ -605,7 +610,7 @@ def rename_plan(src: str) -> list[tuple[str, str, int, int]]:
         decls = [(p, "param") for p, _ in fn_params(src, po, pc)]
         decls += [(n, "local") for n in LOCAL_DECL.findall(src[bo:bc])]
         for old, kind in decls:
-            if old in seen or old in globals_ or not GENERATED.match(old):
+            if old in seen or old in globals_ or not GENERATED.match(old) or FRESH.match(old):
                 continue
             seen.add(old)
             new = _fresh(kind, scope_taken)
