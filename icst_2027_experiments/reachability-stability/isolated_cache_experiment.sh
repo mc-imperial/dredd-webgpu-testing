@@ -15,32 +15,36 @@
 # Run inside the reachability-stability container, from the project root (see
 # run-isolated-cache.sh, which starts the container):
 #   bash icst_2027_experiments/reachability-stability/isolated_cache_experiment.sh
-# A subtree with a .done marker is skipped, so rerunning resumes after an interruption.
+# A subtree with an .isolated-done marker is skipped, so rerunning resumes after an
+# interruption. Results go next to the shared experiment's runs of the same subtree; a
+# rerun only ever removes this experiment's own isolated-* folders, never the shared runs.
 #
-# Results: $CACHE_EXPERIMENT_OUT (default results/cache-experiment-isolated)/<subtree>/
+# Results: $CACHE_EXPERIMENT_OUT (default results/cache-experiment-3)/<subtree>/
 #          {isolated-no-cache,isolated-cache}/servers-1/repeat-N
 # Summarise: python3 icst_2027_experiments/reachability-stability/cache_effect.py \
-#                results/cache-experiment-isolated --mode isolated --prefix IsoCache
+#                results/cache-experiment-3 --mode isolated --prefix IsoCache
 set -euo pipefail
 
 S=icst_2027_experiments/reachability-stability
 SRC="${CACHE_EXPERIMENT_SRC:-results/cache-experiment-3}"
-OUT="${CACHE_EXPERIMENT_OUT:-results/cache-experiment-isolated}"
+OUT="${CACHE_EXPERIMENT_OUT:-results/cache-experiment-3}"
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/mesa_shader_cache"
 
 for d in "$SRC"/*/; do
   name=$(basename "$d")
   json="$d/subtree-no-cache/servers-1/repeat-1/individual_test_results.json"
   if [[ ! -f "$json" ]]; then echo "==== $name: no $json, skipped"; continue; fi
-  if [[ -f "$OUT/$name/.done" ]]; then echo "==== $name: done, skipped"; continue; fi
+  if [[ -f "$OUT/$name/.isolated-done" ]]; then echo "==== $name: done, skipped"; continue; fi
   echo "==== $name ($(date '+%F %T'))"
-  rm -rf "${OUT:?}/$name"                 # partial results from an interrupted run
+  # partial results from an interrupted run: only this experiment's own folders
+  rm -rf "${OUT:?}/$name/isolated-no-cache" "${OUT:?}/$name/isolated-cache"
+  mkdir -p "$OUT/$name"
   rm -rf "$CACHE_DIR"
   export RESULTS_ROOT="$OUT/$name"
   bash "$S/isolated-no-cache.sh" 1 1 "$json"   # off
   bash "$S/isolated-cache.sh" 1 1 "$json"      # cold
   echo "   cache after cold pass: $(du -sh "$CACHE_DIR" 2>/dev/null | cut -f1 || echo none)"
   bash "$S/isolated-cache.sh" 1 2 "$json"      # warm
-  touch "$OUT/$name/.done"
+  touch "$OUT/$name/.isolated-done"
 done
 echo "Done ($(date '+%F %T')). Summarise with: python3 $S/cache_effect.py $OUT --mode isolated --prefix IsoCache"

@@ -20,6 +20,8 @@
 #                                                     (needs Docker and the reachability image)
 #   $REACH/matrix/isolated-*.npz, shared-*.npz       analysis/build_isolated_matrices.sh and
 #                                                     analysis/build_shared_matrices.sh (long)
+#   results/cache-experiment-3/                       cache_experiment.sh (on an instance) and
+#                                                     run-isolated-cache.sh (moray)
 #   results/fuzz/run_72h/..., results/fuzz/unreached-24h-ip-*
 #                                                     fuzzing trials copied from the instances
 #   results/fuzz/run_72h/replayed-reach/              mutant-killing/replay-reach.sh
@@ -35,6 +37,7 @@ REACH=results/reachability
 ISO=$REACH/processed/isolated          # run-<timestamp>/, one per isolated run
 SHARED_RAW=$REACH/raw/shared-v2        # run-<timestamp>/<configuration>/, one per shared run
 SHARED=$REACH/processed/shared-v2      # the same runs, processed (process_shared_tracking.py)
+CACHE=results/cache-experiment-3            # cache experiment (shared and isolated runs per subtree)
 MATRIX=$REACH/matrix                   # mutant-by-test matrices (analysis/build_*_matrices.sh)
 MERGED=$REACH/merged/mutant_to_tests_union5_isolated-no-cache_max100.json
 SURV=results/cts-survival
@@ -116,6 +119,16 @@ undercount_fig() {
     python3 icst_2027_experiments/gen_rq1a_undercount_fig.py \
         --per-mutant "$MATRIX/compare_per_mutant.csv.gz" \
         --out "$GEN/rq1a_undercount.pdf"
+}
+
+# RQ1(a): shader-cache effect, from the cache experiment (results/cache-experiment-3: per
+# subtree, cache off / cold / warm, under shared execution (cache_experiment.sh) and isolated
+# execution (run-isolated-cache.sh)). Macros \\Cache... (shared) and \\IsoCache... (isolated).
+cache_latex() {
+    python3 icst_2027_experiments/reachability-stability/cache_effect.py "$CACHE" \
+        --csv "$CACHE/cache_effect_shared.csv" --macros "$GEN/rq1a_cache_macros.tex"
+    python3 icst_2027_experiments/reachability-stability/cache_effect.py "$CACHE" --mode isolated \
+        --prefix IsoCache --csv "$CACHE/cache_effect_isolated.csv" --macros "$GEN/rq1a_isocache_macros.tex"
 }
 
 # RQ1(a): isolated and shared runtimes.
@@ -219,7 +232,7 @@ fuzz_latex_unreached() {
 }
 
 # Steps in the order they run when no step is named (each step after the ones it reads from).
-STEPS=(reach_summaries reach_latex merge mapping_ids stability_latex shared_compare matrix_compare matrix_latex undercount_fig runtimes
+STEPS=(reach_summaries reach_latex merge mapping_ids stability_latex shared_compare matrix_compare matrix_latex undercount_fig cache_latex runtimes
        survival_combine survival_latex cts_kill_rate survivor_analysis
        unreached_ids fuzz_compare fuzz_compare_unreached fuzz_latex fuzz_latex_unreached)
 
