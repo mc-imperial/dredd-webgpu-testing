@@ -62,7 +62,9 @@ configuration, <Cfg> = Sub (whole subtree) or File (file subtrees)):
     --selection-table-out   per band of SHARED reach (subtree): selected (count); undercounted
                             (count, % of selected, and how many reached by every test in
                             isolation); macros \\MatSh<Cfg>Row<B>{Selected,SelectedPct,Under,
-                            UnderPct,IsoMedian,IsoMax,Every}[Mean] for both configurations
+                            UnderPct,IsoMedian,IsoMax,Every,EveryOfUnderPct}[Mean] for both configurations
+                            (EveryOfUnderPct: of the undercounted mutants, % reached by every
+                            test in isolation)
     --undercount-table-out  per band of isolated reach: mutants, and the number and % (no
                             decimals) undercounted under subtree | file subtrees
 """
@@ -341,7 +343,8 @@ def main():
             continue
         stats = {}
         for cfg in cfgs:
-            acc = {k: [] for k in ("sel", "sel_pct", "under", "under_pct", "med", "max", "every")}
+            acc = {k: [] for k in ("sel", "sel_pct", "under", "under_pct", "med", "max", "every",
+                                  "every_of_under_pct")}
             for run in runs[cfg]:
                 got = [r for r in reached if r[run + "_n"] > 0]
                 sel = [r for r in got if lo * N <= r[run + "_n"] < hi * N]
@@ -356,14 +359,21 @@ def main():
                 acc["med"].append(statistics.median(us))
                 acc["max"].append(max(us))
                 acc["every"].append(sum(1 for u in us if u == N))
+                # of the undercounted mutants, the share reached by every test in isolation
+                if under:
+                    acc["every_of_under_pct"].append(
+                        pct(sum(1 for r in sel if r[run + "_missing"] > 0 and r["n_union"] == N), under))
             stats[cfg] = acc
             if acc["sel"]:
                 p_ = f"MatSh{cfg}Row{name}"
                 for key, mac, kind in (("sel", "Selected", "int"), ("sel_pct", "SelectedPct", "pct"),
                                        ("under", "Under", "int"), ("under_pct", "UnderPct", "pct"),
                                        ("med", "IsoMedian", "int"), ("max", "IsoMax", "int"),
-                                       ("every", "Every", "int")):
+                                       ("every", "Every", "int"),
+                                       ("every_of_under_pct", "EveryOfUnderPct", "pct")):
                     v = acc[key]
+                    if not v:
+                        continue
                     if kind == "int":
                         m[p_ + mac] = rng_int([round(x) for x in v])
                         m[p_ + mac + "Mean"] = fmt_int(round(statistics.mean(v)))
