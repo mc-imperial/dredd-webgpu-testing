@@ -45,6 +45,8 @@ Macros:
       among those, helper order ignored), \\RedNeighbourDistinctPolished (distinct polished
       tests, helper order ignored; polishing is checked per mutant, so it can name or inline
       helpers differently), \\RedNeighbourDistinctPolishedExact (byte for byte)
+  \\RedDistinctTests, \\RedDistinctTestsExact  distinct polished tests over all selected mutants
+                                            (helper order ignored / byte for byte)
   \\RedDispersed, \\RedDispersedFunctions, \\RedDispersedFiles   group B: mutants, functions, files
   \\RedInput{None,Zero,Values}             polished tests by input needed
   \\RedConstFold, \\RedConstFoldInputNone    mutants in constant folding (nir_constant_expressions.c),
@@ -217,6 +219,11 @@ def main():
     mac["RedNeighbourDistinct"] = fmt_int(distinct_red)            # reduced tests, helper order ignored
     mac["RedNeighbourDistinctPolished"] = fmt_int(distinct)        # polished, helper order ignored
     mac["RedNeighbourDistinctPolishedExact"] = fmt_int(distinct_exact)
+    # distinct tests over all selected mutants (polished; helper order ignored, and byte for byte)
+    mac["RedDistinctTests"] = fmt_int(len({x["norm"] for x in rows}))
+    mac["RedDistinctTestsExact"] = fmt_int(len({x["exact"] for x in rows}))
+    print(f"distinct polished tests over all {n}: {mac['RedDistinctTests']} (helper order ignored), "
+          f"{mac['RedDistinctTestsExact']} byte for byte")
     # dispersed: group B, one kill per function
     disp = [x for x in rows if x["group"] == "B"]
     mac["RedDispersed"] = fmt_int(len(disp))

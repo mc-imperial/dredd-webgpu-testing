@@ -17,7 +17,9 @@ Lines of code: cloc (its "code" count: no blank or comment lines) over the same 
 the UNMUTATED Mesa (--mesa-src, default /data/mesa), split into hand-written source and
 files generated during the build; cloc is installed in the (throwaway) container if the
 image lacks it. Macros \\NirLines, \\NirLinesSource, \\NirLinesGenerated,
-\\NirLinesGeneratedPct, \\ClocVersion. --no-cloc skips this.
+\\NirLinesGeneratedPct, \\ClocVersion; and the file with the most lines of code:
+\\NirLargestFile, \\NirLargestFileLines, \\NirLargestFileLinesPct (of all NIR lines),
+\\NirLargestFileMutants, \\NirLargestFileMutantsPct (of all mutants). --no-cloc skips this.
 
 Options: --image (default dredd-webgpu-testing:reachability-stability),
          --mesa (default /data/mesa_tracked), --mesa-src (default /data/mesa),
@@ -62,7 +64,8 @@ grep -v '^build/' /tmp/all.txt > /tmp/src.txt || true
 grep '^build/' /tmp/all.txt > /tmp/gen.txt || true
 echo "{\"version\": \"$(cloc --version)\","
 echo "\"source\": $(cloc --quiet --json --list-file=/tmp/src.txt),"
-echo "\"generated\": $(cloc --quiet --json --list-file=/tmp/gen.txt)}"
+echo "\"generated\": $(cloc --quiet --json --list-file=/tmp/gen.txt),"
+echo "\"by_file\": $(cloc --quiet --json --by-file --list-file=/tmp/all.txt)}"
 '''
 
 
@@ -74,7 +77,8 @@ def cloc_counts(image, mesa_src, paths):
     d = json.loads(res.stdout)
     code = {k: d[k]["SUM"]["code"] for k in ("source", "generated")}
     files = {k: d[k]["SUM"]["nFiles"] for k in ("source", "generated")}
-    return d["version"], code, files
+    by_file = {k: v["code"] for k, v in d["by_file"].items() if k not in ("header", "SUM")}
+    return d["version"], code, files, by_file
 
 
 WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"]
@@ -136,7 +140,7 @@ def main():
               f"\\newcommand{{\\GenMutants}}{{{fmt_int(gen_mutants)}}}",
               f"\\newcommand{{\\GenMutantsPct}}{{{100 * gen_mutants / total:.1f}\\%}}"]
     if not args.no_cloc:
-        version, code, nfiles = cloc_counts(args.image, args.mesa_src, [f["path"] for f in files])
+        version, code, nfiles, by_file = cloc_counts(args.image, args.mesa_src, [f["path"] for f in files])
         all_code = code["source"] + code["generated"]
         print(f"cloc {version} on {args.mesa_src}: {all_code:,} lines of code; hand-written "
               f"{code['source']:,} ({nfiles['source']} files), generated {code['generated']:,} "
@@ -151,6 +155,22 @@ def main():
                    f"\\newcommand{{\\NirLinesGenerated}}{{{fmt_int(code['generated'])}}}",
                    f"\\newcommand{{\\NirLinesGeneratedPct}}{{{100 * code['generated'] / all_code:.1f}\\%}}",
                    f"\\newcommand{{\\ClocVersion}}{{{version}}}"]
+        # the file with the most lines of code, and its mutants
+        big_path, big_lines = max(by_file.items(), key=lambda kv: kv[1])
+        big_path = big_path[2:] if big_path.startswith("./") else big_path
+        big_mut = next((f["size"] for f in files if f["path"] == big_path), None)
+        if big_mut is None:
+            sys.exit(f"cloc's largest file {big_path} is not among the mutated files")
+        name = big_path.rsplit("/", 1)[-1].replace("_", "\\_")
+        print(f"largest file: {big_path}: {big_lines:,} lines of code ({100 * big_lines / all_code:.1f}%), "
+              f"{big_mut:,} mutants ({100 * big_mut / total:.2f}%)")
+        for pth, n in sorted(by_file.items(), key=lambda kv: -kv[1])[:5]:
+            print(f"  {n:>10,}  {pth}")
+        macros += [f"\\newcommand{{\\NirLargestFile}}{{\\texttt{{{name}}}}}",
+                   f"\\newcommand{{\\NirLargestFileLines}}{{{fmt_int(big_lines)}}}",
+                   f"\\newcommand{{\\NirLargestFileLinesPct}}{{{100 * big_lines / all_code:.0f}\\%}}",
+                   f"\\newcommand{{\\NirLargestFileMutants}}{{{fmt_int(big_mut)}}}",
+                   f"\\newcommand{{\\NirLargestFileMutantsPct}}{{{100 * big_mut / total:.1f}\\%}}"]
     with open(args.out, "w") as fh:
         fh.write("\n".join(macros) + "\n")
     print(f"wrote {args.out}")
