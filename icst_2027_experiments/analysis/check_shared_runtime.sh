@@ -15,7 +15,7 @@
 # runner also exits non-zero when tests fail, so this is not by itself an error).
 set -uo pipefail
 
-KEY="${AWS_KEY:-$HOME/.ssh/amber-aws.pem}"
+KEY="${AWS_KEY}"
 DEFAULT_IPS=(16.16.219.2 16.192.199.63 16.16.170.119 16.16.251.113 16.16.219.147)
 CSV=""
 if [ "${1:-}" = "--csv" ]; then CSV="$2"; shift 2; fi
