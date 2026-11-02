@@ -1,50 +1,51 @@
 #!/usr/bin/env python3
-"""RQ1(b): where the unreached and the surviving mutants are, for the paper.
+"""Explore which constant-folding code (nir_constant_expressions.c) the CTS reaches.
 
-Inputs
-  ranges       mutant_file_ranges.csv      (gen_setup_generated.py --ranges-out)
-  --functions  mutant_function_ranges.csv  (analysis/map_mutants_to_functions.py)
-  --isolated   the isolated repeats' *_per_mutant.csv (mutant_id,n_tests)
-  --runs       survival run folders containing results.jsonl
+Each NIR opcode has its own constant-folding function, evaluate_<opcode>. The
+opcodes are put into rough groups by name:
+  hardware-specific  name ends in a GPU back end's suffix (_amd, _ir3, _v3d, ...),
+                     opcodes lavapipe never produces
+  not in WebGPU      an 8-, 16- or 64-bit form (f2f16, i2i64, b16..., u2u8, ...) or a
+                     vector wider than vec4 (ball_fequal5/8/16, vec8, vec16): sizes WebGPU
+                     shaders cannot express, except 16-bit floats with the optional
+                     shader-f16 feature (packing shapes such as 4x8 or 2x16 do not
+                     count: those are 32-bit operations)
+  generic            everything else
+The rest of the file (the dispatcher nir_eval_const_opcode and helpers) is
+reported separately. The groups are heuristics on names, so the script also
+lists the most common name endings among unreached generic opcodes, to spot
+back-end suffixes the list misses.
 
-Evaluated / killed / survived use the survival table's set: mutants evaluated by
-every run with the same outcome in every run. Unreached: reached by no test in
-any isolated repeat.
+Also reports nir_opt_algebraic.c (the generated algebraic rewrite rules).
 
-Outputs, in --out-dir
-  rq1b_unreached_files.tex      the --top-files files with the most unreached
-                                mutants (generated ones marked "(gen)"): file,
-                                mutants, unreached, and the function in the file
-                                with the most unreached mutants
-  rq1b_survived_files.tex       the files with the most reached-but-surviving
-                                mutants: file, mutants, unreached, evaluated,
-                                killed, survived
-  rq1b_killed_files.tex         the same columns, files with the most killed
-  rq1b_outcome_files.tex        the previous two as one table in two parts
-  rq1b_survivors_macros.tex     macros:
-    \\SurvFuncsWithSurvivors, \\SurvFuncsTotal     functions holding survivors, of all
-    \\SurvTopFuncsN, \\SurvTopFuncsPct            the table's functions' share of survivors
-    \\SurvFilesWithSurvivors                      files holding survivors
-    \\SurvGenSurvivedPct, \\UnreachedGenPct        share held by the generated files
-    \\UnreachedWholeFiles                         hand-written files with every mutant unreached
-    \\UnreachedWholeFilesMutants, ...Pct          their mutants, and share of the
-                                                 hand-written unreached mutants
+Prints its report; with --macros, also writes LaTeX macros for the groups, as shares
+of the unreached mutants in nir_constant_expressions.c:
+  \\CfUnreached                       unreached mutants in the file
+  \\CfUnreached{Hw,NotWebGPU,Generic,Other}, ...Pct   per group (Hw: hardware-specific;
+                                     NotWebGPU: sizes WebGPU cannot express; Other: code
+                                     outside the evaluate_<opcode> functions)
 
 Usage:
-  python3 icst_2027_experiments/gen_rq1b_survivors.py \\
-      icst_2027_experiments/generated/mutant_file_ranges.csv \\
-      --functions icst_2027_experiments/generated/mutant_function_ranges.csv \\
+  python3 icst_2027_experiments/analysis/explore_const_folding.py \\
+      icst_2027_experiments/generated/mutant_function_ranges.csv \\
       --isolated results/reachability/processed/isolated/run-*/mutant_to_tests_isolated-no-cache_per_mutant.csv \\
-      --runs results/cts-survival/twenty-four-hours/run*_24h \\
-      --out-dir icst_2027_experiments/generated
+      --runs results/cts-survival/twenty-four-hours/run*_24h
 """
 import argparse
 import bisect
 import collections
 import csv
 import json
-import os
+import re
 from pathlib import Path
+
+VENDOR = ("amd", "ir3", "v3d", "vc4", "intel", "nv", "agx", "pco", "mali", "bifrost", "etna", "lima",
+          "r600", "dxil", "kk", "imm", "ac", "brw", "gfx", "panfrost", "freedreno", "asahi", "nak")
+# 8/16/64 as a bit size (f2f16, i2i64, u2u8, b16all_...), but not packing shapes
+# such as 4x8 or 2x16 (pack_unorm_4x8, sdot_2x16_iadd), which are 32-bit operations
+SIZED = re.compile(r"(?<![x\d])(8|16|64)(?![x\d])")
+# vector widths beyond WebGPU's vec4 (NIR has vec5, vec8, vec16 forms, e.g. ball_fequal5)
+WIDE = re.compile(r"(equal|vec|dot)(5|8|16)$")
 
 
 def outcome(rec):
@@ -55,54 +56,40 @@ def outcome(rec):
     return "other"
 
 
-def read_ranges(path, with_function):
-    rows = []
-    with open(path) as f:
-        for r in csv.DictReader(line for line in f if not line.startswith("#")):
-            key = (r["path"], r["function"]) if with_function else r["path"]
-            rows.append((int(r["first_id"]), int(r["mutants"]), key))
-    rows.sort()
-    return rows
-
-
-def lookup(rows):
-    starts = [r[0] for r in rows]
-
-    def find(m):
-        i = bisect.bisect_right(starts, m) - 1
-        return rows[i][2] if i >= 0 and m < rows[i][0] + rows[i][1] else None
-    return find
-
-
-def fmt_int(n):
-    return f"{n:,}".replace(",", "{,}")
-
-
-def tt(name):
-    return "\\texttt{" + name.replace("_", "\\_") + "}"
+def group(fn):
+    if not fn.startswith("evaluate_"):
+        return "other code"
+    op = fn[len("evaluate_"):]
+    if op.rsplit("_", 1)[-1] in VENDOR:
+        return "hardware-specific"
+    if SIZED.search(op) or WIDE.search(op):
+        return "not in WebGPU"
+    return "generic"
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("ranges", type=Path)
-    ap.add_argument("--functions", type=Path, required=True)
+    ap.add_argument("functions", type=Path)
     ap.add_argument("--isolated", nargs="+", required=True)
     ap.add_argument("--runs", nargs="+", type=Path, required=True)
-    ap.add_argument("--top", type=int, default=8,
-                    help="functions counted for \\SurvTopFuncsPct (share of survivors in the top functions)")
-    ap.add_argument("--top-files", type=int, default=5, help="rows in each of the three tables")
-    ap.add_argument("--out-dir", type=Path, required=True)
+    ap.add_argument("--macros", type=Path, help="also write LaTeX macros for the groups to this file")
     args = ap.parse_args()
 
-    files = read_ranges(args.ranges, False)
-    funcs = read_ranges(args.functions, True)
-    file_of, func_of = lookup(files), lookup(funcs)
+    rows = []
+    with open(args.functions) as f:
+        for r in csv.DictReader(line for line in f if not line.startswith("#")):
+            rows.append((int(r["first_id"]), int(r["mutants"]), r["path"], r["function"]))
+    rows.sort()
+    starts = [r[0] for r in rows]
+
+    def where(m):
+        i = bisect.bisect_right(starts, m) - 1
+        return (rows[i][2], rows[i][3]) if i >= 0 and m < rows[i][0] + rows[i][1] else None
 
     reached = set()
     for p in args.isolated:
         with open(p, newline="") as f:
             reached.update(int(r["mutant_id"]) for r in csv.DictReader(f) if int(r["n_tests"]) > 0)
-
     per = collections.defaultdict(list)
     for d in sorted(args.runs):
         for line in open(d / "results.jsonl"):
@@ -112,110 +99,74 @@ def main():
     out = {m: o[0] for m, o in per.items()
            if len(o) == len(args.runs) and len(set(o)) == 1 and o[0] != "other"}
 
-    fst = {k: collections.Counter(mutants=n) for _, n, k in files}
-    gst = {k: collections.Counter(mutants=n) for _, n, k in funcs}
+    st = {(p, fn): collections.Counter(mutants=n) for _, n, p, fn in rows}
     for m in reached:
-        fst[file_of(m)]["reached"] += 1
-        k = func_of(m)
-        if k is not None:
-            gst[k]["reached"] += 1
+        k = where(m)
+        if k:
+            st[k]["reached"] += 1
     for m, o in out.items():
-        fst[file_of(m)][o] += 1
-        fst[file_of(m)]["evaluated"] += 1
-        k = func_of(m)
-        if k is None:
-            raise SystemExit(f"mutant {m} is in no function range -- regenerate mutant_function_ranges.csv")
-        gst[k]["evaluated"] += 1
-        gst[k][o] += 1
-    for c in list(fst.values()) + list(gst.values()):
-        c["unreached"] = c["mutants"] - c["reached"]
+        k = where(m)
+        if k:
+            st[k]["evaluated"] += 1
+            st[k][o] += 1
 
-    survived = sum(c["survived"] for c in fst.values())
-    unreached = sum(c["unreached"] for c in fst.values())
-    gen = [p for p in fst if p.startswith("build/")]
-    hand = [p for p in fst if p not in gen]
-    whole = [p for p in hand if fst[p]["unreached"] == fst[p]["mutants"]]
-    hand_unreached = sum(fst[p]["unreached"] for p in hand)
-    whole_m = sum(fst[p]["mutants"] for p in whole)
+    def summary(label, keys, total_unreached):
+        c = collections.Counter()
+        for k in keys:
+            c.update(st[k])
+        n_reached_f = sum(1 for k in keys if st[k]["reached"])
+        unreached = c["mutants"] - c["reached"]
+        print(f"   {label:>18}: {len(keys):>4} functions ({n_reached_f:>4} reached at all), "
+              f"{c['mutants']:>8,} mutants, {100 * c['reached'] / max(1, c['mutants']):5.1f}% reached, "
+              f"{unreached:>8,} unreached ({100 * unreached / max(1, total_unreached):5.1f}% of the file's unreached), "
+              f"evaluated {c['evaluated']:,}, killed {c['killed']:,}, survived {c['survived']:,}")
 
-    top = sorted(gst, key=lambda k: -gst[k]["survived"])[:args.top]
-    top_share = 100 * sum(gst[k]["survived"] for k in top) / max(1, survived)
-    with_surv = sum(1 for c in gst.values() if c["survived"])
-    files_with = sum(1 for c in fst.values() if c["survived"])
+    ce = [k for k in st if k[0].endswith("nir_constant_expressions.c")]
+    ce_unreached = sum(st[k]["mutants"] - st[k]["reached"] for k in ce)
+    groups = collections.defaultdict(list)
+    for k in ce:
+        groups[group(k[1])].append(k)
+    print("1. nir_constant_expressions.c by kind of opcode")
+    for g in ("hardware-specific", "not in WebGPU", "generic", "other code"):
+        summary(g, groups[g], ce_unreached)
+    if args.macros:
+        fmt = lambda n: f"{n:,}".replace(",", "{,}")
+        lines = ["% Generated by explore_const_folding.py --macros -- do not edit by hand.",
+                 f"\\newcommand{{\\CfUnreached}}{{{fmt(ce_unreached)}}}"]
+        for g, name in (("hardware-specific", "Hw"), ("not in WebGPU", "NotWebGPU"),
+                        ("generic", "Generic"), ("other code", "Other")):
+            u = sum(st[k]["mutants"] - st[k]["reached"] for k in groups[g])
+            lines += [f"\\newcommand{{\\CfUnreached{name}}}{{{fmt(u)}}}",
+                      f"\\newcommand{{\\CfUnreached{name}Pct}}{{{100 * u / max(1, ce_unreached):.1f}\\%}}"]
+        args.macros.parent.mkdir(parents=True, exist_ok=True)
+        args.macros.write_text("\n".join(lines) + "\n")
+        print(f"   wrote {args.macros}")
 
-    print(f"survivors: {survived:,} in {with_surv} of {len(gst):,} functions ({files_with} files); "
-          f"top {args.top} functions hold {top_share:.1f}%")
-    for k in top:
-        c = gst[k]
-        print(f"   {k[1]:36} {os.path.basename(k[0]):34} evaluated {c['evaluated']:>5,} "
-              f"killed {c['killed']:>5,} survived {c['survived']:>5,}")
-    print(f"unreached: {unreached:,}; generated files hold {100 * sum(fst[p]['unreached'] for p in gen) / unreached:.1f}%; "
-          f"{len(whole)} hand-written files are entirely unreached ({whole_m:,} mutants, "
-          f"{100 * whole_m / max(1, hand_unreached):.1f}% of hand-written unreached)")
+    print("\n2. Examples (check the grouping looks right)")
+    for g in ("hardware-specific", "not in WebGPU", "generic"):
+        names = sorted(k[1][len("evaluate_"):] for k in groups[g])
+        print(f"   {g}: {len(names)} opcodes, e.g. " + ", ".join(names[:: max(1, len(names) // 12)][:12]))
 
-    # Three small tables, counts only. File names get " (gen)" if generated.
-    def fname(p):
-        return tt(os.path.basename(p)) + (" (gen)" if p in gen else "")
+    gen_unreached = [k for k in groups["generic"] if not st[k]["reached"]]
+    endings = collections.Counter(k[1].rsplit("_", 1)[-1] for k in gen_unreached if "_" in k[1][9:])
+    print(f"\n3. Generic opcodes never reached: {len(gen_unreached)} of {len(groups['generic'])}; "
+          f"most common name endings (look for back-end suffixes missing from the list):")
+    print("   " + ", ".join(f"{e} ({n})" for e, n in endings.most_common(20)))
+    print("   e.g. " + ", ".join(sorted(k[1][9:] for k in gen_unreached)[:: max(1, len(gen_unreached) // 15)][:15]))
+    gen_reached = sorted((k for k in groups["generic"] if st[k]["reached"]),
+                         key=lambda k: -st[k]["reached"])
+    print(f"   generic opcodes reached: {len(gen_reached)}; most reached mutants: "
+          + ", ".join(f"{k[1][9:]} ({st[k]['reached']:,})" for k in gen_reached[:10]))
 
-    def header(cols):
-        return ["% Generated by gen_rq1b_survivors.py -- do not edit by hand.",
-                "\\begin{tabular}{l" + "r" * (len(cols) - 1) + "}", "\\toprule",
-                " & ".join(cols) + " \\\\", "\\midrule"]
-
-    footer = ["\\bottomrule", "\\end{tabular}"]
-
-    # 1. Where are the unreached mutants? Files with the most, and in each the
-    #    function with the most unreached mutants.
-    t_unreached = header(["File", "Mutants", "Unreached", "Function with most unreached", "Unreached"])
-    t_unreached[1] = "\\begin{tabular}{lrrlr}"
-    for p in sorted(fst, key=lambda p_: -fst[p_]["unreached"])[:args.top_files]:
-        fk = max((k for k in gst if k[0] == p), key=lambda k: gst[k]["unreached"], default=None)
-        fcell = f"{tt(fk[1])} & {fmt_int(gst[fk]['unreached'])}" if fk else "-- & --"
-        t_unreached.append(f"{fname(p)} & {fmt_int(fst[p]['mutants'])} & {fmt_int(fst[p]['unreached'])} & {fcell} \\\\")
-    t_unreached += footer
-
-    # 2./3. Where are the reached-but-surviving, and the killed, mutants?
-    cols = ["File", "Mutants", "Unreached", "Evaluated", "Killed", "Survived"]
-
-    def outcome_table(key):
-        t = header(cols)
-        for p in sorted(fst, key=lambda p_: -fst[p_][key])[:args.top_files]:
-            c = fst[p]
-            t.append(f"{fname(p)} & " + " & ".join(fmt_int(c[k]) for k in
-                     ("mutants", "unreached", "evaluated", "killed", "survived")) + " \\\\")
-        return t + footer
-
-    # Tables 2 and 3 as one table with two parts (same columns), for a single table*.
-    combined = header(cols)
-    for i, (key, title) in enumerate((("survived", "Files with the most reached-but-surviving mutants"),
-                                      ("killed", "Files with the most killed mutants"))):
-        if i:
-            combined.append("\\midrule")
-        combined.append(f"\\multicolumn{{{len(cols)}}}{{l}}{{\\emph{{({'ab'[i]}) {title}}}}} \\\\")
-        combined += outcome_table(key)[5:-2]
-
-    tables = {"rq1b_unreached_files.tex": t_unreached,
-              "rq1b_outcome_files.tex": combined + footer,
-              "rq1b_survived_files.tex": outcome_table("survived"),
-              "rq1b_killed_files.tex": outcome_table("killed")}
-
-    macros = ["% Generated by gen_rq1b_survivors.py -- do not edit by hand.",
-              f"\\newcommand{{\\SurvFuncsWithSurvivors}}{{{fmt_int(with_surv)}}}",
-              f"\\newcommand{{\\SurvFuncsTotal}}{{{fmt_int(len(gst))}}}",
-              f"\\newcommand{{\\SurvFilesWithSurvivors}}{{{files_with}}}",
-              f"\\newcommand{{\\SurvTopFuncsN}}{{{args.top}}}",
-              f"\\newcommand{{\\SurvTopFuncsPct}}{{{top_share:.1f}\\%}}",
-              f"\\newcommand{{\\SurvGenSurvivedPct}}{{{100 * sum(fst[p]['survived'] for p in gen) / max(1, survived):.1f}\\%}}",
-              f"\\newcommand{{\\UnreachedGenPct}}{{{100 * sum(fst[p]['unreached'] for p in gen) / max(1, unreached):.1f}\\%}}",
-              f"\\newcommand{{\\UnreachedWholeFiles}}{{{len(whole)}}}",
-              f"\\newcommand{{\\UnreachedWholeFilesMutants}}{{{fmt_int(whole_m)}}}",
-              f"\\newcommand{{\\UnreachedWholeFilesPct}}{{{100 * whole_m / max(1, hand_unreached):.1f}\\%}}"]
-
-    args.out_dir.mkdir(parents=True, exist_ok=True)
-    for name, lines in tables.items():
-        (args.out_dir / name).write_text("\n".join(lines) + "\n")
-    (args.out_dir / "rq1b_survivors_macros.tex").write_text("\n".join(macros) + "\n")
-    print(f"wrote {', '.join(tables)} and rq1b_survivors_macros.tex to {args.out_dir}")
+    print("\n4. Other generated files")
+    for name in ("nir_opt_algebraic.c", "nir_opcodes.c"):
+        keys = [k for k in st if k[0].endswith(name)]
+        if keys:
+            u = sum(st[k]["mutants"] - st[k]["reached"] for k in keys)
+            summary(name, keys, u)
+            top = sorted(keys, key=lambda k: -st[k]["reached"])[:5]
+            print("      most reached functions: " + ", ".join(f"{k[1]} ({st[k]['reached']:,} of {st[k]['mutants']:,})"
+                                                         for k in top if st[k]["reached"]))
 
 
 if __name__ == "__main__":

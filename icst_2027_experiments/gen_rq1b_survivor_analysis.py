@@ -28,6 +28,8 @@ Outputs, in --out-dir
     \\SurvFilesWithSurvivors                      files holding survivors
     \\SurvGenSurvivedPct, \\UnreachedGenPct        share held by the generated files
     \\UnreachedWholeFiles                         hand-written files with every mutant unreached
+    \\UnreachedHandWrittenFiles                  hand-written (not generated) mutated files
+    \\SurvExample{Function,Survived,Killed,Evaluated}   --example-function's counts
     \\UnreachedWholeFilesMutants, ...Pct          their mutants, and share of the
                                                  hand-written unreached mutants
 
@@ -94,6 +96,8 @@ def main():
     ap.add_argument("--top-files", type=int, default=5, help="files in each of the tables")
     ap.add_argument("--top-functions", type=int, default=3,
                     help="functions listed under each file in both tables")
+    ap.add_argument("--example-function", default="evaluate_vec4",
+                    help="a function named in the text: its survived and killed counts as macros")
     ap.add_argument("--out-dir", type=Path, required=True)
     args = ap.parse_args()
 
@@ -216,7 +220,18 @@ def main():
               f"\\newcommand{{\\UnreachedGenPct}}{{{100 * sum(fst[p]['unreached'] for p in gen) / max(1, unreached):.1f}\\%}}",
               f"\\newcommand{{\\UnreachedWholeFiles}}{{{len(whole)}}}",
               f"\\newcommand{{\\UnreachedWholeFilesMutants}}{{{fmt_int(whole_m)}}}",
-              f"\\newcommand{{\\UnreachedWholeFilesPct}}{{{100 * whole_m / max(1, hand_unreached):.1f}\\%}}"]
+              f"\\newcommand{{\\UnreachedWholeFilesPct}}{{{100 * whole_m / max(1, hand_unreached):.1f}\\%}}",
+              f"\\newcommand{{\\UnreachedHandWrittenFiles}}{{{len(hand)}}}"]
+    ex = [c for k, c in gst.items() if k[1] == args.example_function]
+    if ex:
+        macros += [f"\\newcommand{{\\SurvExampleFunction}}{{\\texttt{{{args.example_function.replace('_', chr(92) + '_')}}}}}",
+                   f"\\newcommand{{\\SurvExampleSurvived}}{{{fmt_int(sum(c['survived'] for c in ex))}}}",
+                   f"\\newcommand{{\\SurvExampleKilled}}{{{fmt_int(sum(c['killed'] for c in ex))}}}",
+                   f"\\newcommand{{\\SurvExampleEvaluated}}{{{fmt_int(sum(c['evaluated'] for c in ex))}}}"]
+        print(f"example function {args.example_function}: survived {sum(c['survived'] for c in ex):,}, "
+              f"killed {sum(c['killed'] for c in ex):,} (in {len(ex)} file(s))")
+    else:
+        print(f"note: no function named {args.example_function}; no \\SurvExample... macros")
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
     for name, lines in tables.items():

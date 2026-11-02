@@ -16,7 +16,10 @@
      other          S has a test that no isolated repeat found
    Broken down by |U| (the number of tests reaching the mutant under isolated).
 
-Usage (from the repository root, on moray; needs ~30 GB of memory):
+The per-mutant CSV also has shared_union_<cfg>: the number of tests reaching each mutant
+in any run of that shared configuration.
+
+Usage (from the repository root, on moray; needs ~40 GB of memory):
   python3 icst_2027_experiments/analysis/compare_reach_matrices.py \\
       [--matrix-dir results/reachability/matrix] [--per-mutant out.csv.gz]
 """
@@ -143,10 +146,17 @@ def main():
 
     # ---- 2. shared runs -----------------------------------------------------
     per_mutant_cols = []
+    shared_union = {}      # configuration -> OR of its runs' bits (tests reaching in any run)
     print(f"\n== 2. Shared runs against the isolated repeats (missed / same / fewer / other)")
     for p in sh_paths:
         lab = label(p)
         S = pad(load(p)[0], width)
+        cfg = lab.split()[0]
+        if cfg not in shared_union:
+            shared_union[cfg] = S.copy()
+        else:
+            for s in range(0, n, CHUNK):
+                shared_union[cfg][s:s + CHUNK] |= S[s:s + CHUNK]
         nS = np.empty(n, dtype=np.int64)
         missI = np.empty(n, dtype=np.int64)    # tests every isolated repeat found, not in S
         extraU = np.empty(n, dtype=np.int64)   # tests in S that no isolated repeat found
@@ -177,6 +187,14 @@ def main():
             print(f"  other: extra tests per mutant: median {int(np.median(x)):,}, max {int(x.max()):,}")
         per_mutant_cols.append((lab.replace(" ", "_"), nS, missI, extraU))
 
+    # union over each shared configuration's runs: number of tests reaching each mutant in any run
+    union_counts = {cfg: np.concatenate([pc(b[s:s + CHUNK]) for s in range(0, n, CHUNK)])
+                    for cfg, b in shared_union.items()}
+    for cfg, cnt in union_counts.items():
+        print(f"\nshared {cfg}, union of runs: {int((cnt > 0).sum()):,} mutants reached "
+              f"(of {int(reached_any.sum()):,} reached in isolation)")
+    shared_union.clear()
+
     if args.per_mutant:
         opener = gzip.open if args.per_mutant.endswith(".gz") else open
         with opener(args.per_mutant, "wt") as f:
@@ -184,11 +202,13 @@ def main():
             head = [h.replace(" ", "_") for h in head]
             for lab, *_ in per_mutant_cols:
                 head += [f"{lab}_n", f"{lab}_missing", f"{lab}_extra"]
+            head += [f"shared_union_{cfg}" for cfg in union_counts]
             f.write(",".join(head) + "\n")
             for r in range(n):
                 row = [int(mutants[r]), int(nU[r]), int(nI[r])] + [int(n_rep[k, r]) for k in range(len(iso_lab))]
                 for _, nS, missI, extraU in per_mutant_cols:
                     row += [int(nS[r]), int(missI[r]), int(extraU[r])]
+                row += [int(cnt[r]) for cnt in union_counts.values()]
                 f.write(",".join(map(str, row)) + "\n")
         print(f"\nwrote {args.per_mutant}")
     print(f"\ndone in {(time.time() - t0) / 60:.1f} min")

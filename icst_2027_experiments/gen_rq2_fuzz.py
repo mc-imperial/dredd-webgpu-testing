@@ -6,7 +6,8 @@ and produces, in --out-dir:
 
   rq2_<tag>fuzz_macros.tex      \\newcommand macros for numbers used in prose
   rq2_<tag>fuzz_table.tex       a tabular of per-trial results
-  rq2_<tag>kills_over_time.pdf  cumulative kills over fuzzing time, one line per trial
+  rq2_<tag>kills_over_time.pdf  cumulative kills over fuzzing time: each trial (thin) and, with
+                                --runs, their union (bold); also a .png for a quick look
 
 Run it once per target set. --prefix and --tag keep the two sets apart, e.g.
   survivors:  (defaults)                       macros \\Fuzz...,    files rq2_fuzz_...
@@ -284,10 +285,38 @@ def write_table(d, out):
     out.write_text("\n".join(lines) + "\n")
 
 
-def write_figure(csv_path, out):
+def union_over_time(run_dirs, records, hours):
+    """Mutants killed by any trial by each of `hours` (fuzzing time within each trial).
+
+    A kill is dated by the end of the program (seed) that found it, in its own trial's
+    time (the cumulative `seconds` of programs.jsonl); a mutant counts from its earliest kill."""
+    first = {}
+    for d, recs in zip(run_dirs, records):
+        ends, t = {}, 0.0
+        for r in recs:
+            t += r.get("seconds", 0.0)
+            ends[r["seed"]] = t / 3600
+        kf = d / "kills.jsonl"
+        if not kf.exists():
+            continue
+        for line in open(kf):
+            if line.strip():
+                k = json.loads(line)
+                h = ends.get(k["seed"], float("inf"))
+                first[k["mutant_id"]] = min(first.get(k["mutant_id"], float("inf")), h)
+    times = sorted(first.values())
+    import bisect
+    return [bisect.bisect_right(times, h + 1e-9) for h in hours], len(first)
+
+
+def write_figure(csv_path, out, colour, run_dirs=(), records=(), union_total=None):
+    """Cumulative kills over fuzzing time: each trial as a thin line, and (with --runs) the
+    union of all trials as a bold line, in one colour. LaTeX-like serif font (Computer
+    Modern, bundled with matplotlib, so no LaTeX installation is needed)."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    from matplotlib.ticker import FuncFormatter
 
     with csv_path.open() as f:
         rows = list(csv.reader(f))
@@ -296,21 +325,38 @@ def write_figure(csv_path, out):
         sys.exit(f"{csv_path}: expected a header and rows of: hour, then one column per run")
     hours = [float(r[0]) for r in data]
 
-    plt.rcParams.update({"font.size": 7, "pdf.fonttype": 42})
-    fig, ax = plt.subplots(figsize=(3.5, 2.2))
-    styles = ["-", "--", "-.", ":", (0, (5, 1))]
+    plt.rcParams.update({"font.size": 8, "pdf.fonttype": 42, "font.family": "serif",
+                         "font.serif": ["cmr10", "Computer Modern Roman", "DejaVu Serif"],
+                         "mathtext.fontset": "cm", "axes.unicode_minus": False,
+                         "axes.formatter.use_mathtext": True})
+    fig, ax = plt.subplots(figsize=(3.4, 2.0))
     for i, label in enumerate(header[1:], 1):
         ys = [float(r[i]) if r[i] != "" else float("nan") for r in data]
-        ax.plot(hours, ys, label=label, linewidth=1, color="black", linestyle=styles[(i - 1) % len(styles)])
+        ax.plot(hours, ys, color=colour, linewidth=0.6, alpha=0.5,
+                label="Each trial" if i == 1 else None)
+    if run_dirs:
+        union, n = union_over_time(run_dirs, records, hours)
+        ax.plot(hours, union, color=colour, linewidth=1.2, label="Union of trials")
+        print(f"figure: union of trials at {hours[-1]:g} h: {union[-1]:,} (all kills: {n:,}"
+              + (f"; summary says {union_total:,})" if union_total is not None else ")"))
+    else:
+        print("note: no --runs, so no union line in the figure")
+    comma = FuncFormatter(lambda v, _: f"{int(v):,}")
+    ax.xaxis.set_major_formatter(comma)
+    ax.yaxis.set_major_formatter(comma)
     ax.set_xlabel("Fuzzing time (hours)")
-    ax.set_ylabel("Cumulative mutants killed")
+    ax.set_ylabel("Mutants killed")
     ax.set_xlim(0, max(hours))
     ax.set_ylim(bottom=0)
     ax.set_xticks(range(0, int(max(hours)) + 1, 12))
     ax.spines[["top", "right"]].set_visible(False)
-    ax.legend(frameon=False, loc="lower right")
+    ax.grid(True, axis="y", color="#e4e3df", linewidth=0.5)
+    ax.set_axisbelow(True)
+    ax.legend(loc="lower right", fontsize=7, handlelength=1.5, borderaxespad=0.2,
+              frameon=True, facecolor="white", edgecolor="none", framealpha=1.0)
     fig.tight_layout()
     fig.savefig(out)
+    fig.savefig(out.with_suffix(".png"), dpi=200)
     plt.close(fig)
 
 
@@ -328,6 +374,7 @@ def main():
     ap.add_argument("--replayed", type=Path,
                     help="replay_fuzz_reach.py --out-dir: reach for trials that did not record it "
                          "(one *.jsonl.gz per trial, in the same order as --runs)")
+    ap.add_argument("--colour", help="figure colour (default: blue, or orange if --tag mentions unreached)")
     ap.add_argument("--reach-hours", type=float,
                     help="count reach (and the kills used for killed-of-reached) only for programs "
                          "within this many hours of each trial, e.g. 24 to compare with shorter runs")
@@ -351,7 +398,9 @@ def main():
     write_macros(d, args.out_dir / f"rq2_{args.tag}fuzz_macros.tex", args.prefix, reach_sets, at, stats,
                  reach_killed, args.reach_hours)
     write_table(d, args.out_dir / f"rq2_{args.tag}fuzz_table.tex")
-    write_figure(args.comparison_dir / "kills_over_time.csv", args.out_dir / f"rq2_{args.tag}kills_over_time.pdf")
+    colour = args.colour or ("#eb6834" if "unreached" in args.tag else "#2a78d6")
+    write_figure(args.comparison_dir / "kills_over_time.csv", args.out_dir / f"rq2_{args.tag}kills_over_time.pdf",
+                 colour, args.runs, records, d.get("union"))
     print(f"Parsed {d['n_runs']} trials; wrote macros, table and figure to {args.out_dir}")
 
 

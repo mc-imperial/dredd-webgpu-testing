@@ -162,6 +162,14 @@ cts_kill_rate() {
 }
 
 # RQ1(b): where the unreached and the surviving mutants are (tables and macros).
+# RQ1(b): unreached constant folding (nir_constant_expressions.c) by kind of opcode.
+const_folding_latex() {
+    python3 icst_2027_experiments/analysis/explore_const_folding.py "$GEN/mutant_function_ranges.csv" \
+        --isolated "$ISO"/run-*/mutant_to_tests_isolated-no-cache_per_mutant.csv \
+        --runs "$SURV"/twenty-four-hours/run*_24h \
+        --macros "$GEN/rq1b_const_folding_macros.tex"
+}
+
 survivor_analysis() {
     python3 icst_2027_experiments/gen_rq1b_survivor_analysis.py \
         "$GEN/mutant_file_ranges.csv" \
@@ -242,7 +250,7 @@ rq3_reduction() {
 
 # Steps in the order they run when no step is named (each step after the ones it reads from).
 STEPS=(reach_summaries reach_latex merge mapping_ids stability_latex shared_compare matrix_compare matrix_latex undercount_fig cache_latex runtimes
-       survival_combine survival_latex cts_kill_rate survivor_analysis
+       survival_combine survival_latex cts_kill_rate survivor_analysis const_folding_latex
        unreached_ids fuzz_compare fuzz_compare_unreached fuzz_latex fuzz_latex_unreached rq3_reduction)
 
 # ---- dispatch ---------------------------------------------------------------

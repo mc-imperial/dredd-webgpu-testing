@@ -1,151 +1,243 @@
 #!/usr/bin/env python3
-"""Generate the RQ1(b) CTS-survival outputs for the paper.
+"""RQ1(b): where the unreached and the surviving mutants are, for the paper.
 
-Reads the summary.txt that combine_survivors.py writes and produces, in --out-dir:
+Inputs
+  ranges       mutant_file_ranges.csv      (gen_setup_generated.py --ranges-out)
+  --functions  mutant_function_ranges.csv  (analysis/map_mutants_to_functions.py)
+  --isolated   the isolated repeats' *_per_mutant.csv (mutant_id,n_tests)
+  --runs       survival run folders containing results.jsonl
 
-  rq1b_survival_macros.tex   \\newcommand macros for numbers used in prose
-  rq1b_survival_table.tex    a tabular of per-run and combined outcomes
+Evaluated / killed / survived use the survival table's set: mutants evaluated by
+every run with the same outcome in every run. Unreached: reached by no test in
+any isolated repeat.
 
-With --merged-summary (merge_mappings.py's *_summary.txt), it also reports what
-share of the merged mapping every run evaluated.
+Outputs, in --out-dir
+  rq1b_unreached_files.tex      the --top-files files with the most unreached
+                                mutants (generated ones marked "(gen)"), each
+                                followed by its --top-functions functions with
+                                the most unreached mutants; columns: mutants,
+                                unreached, and % of the row's mutants unreached
+  rq1b_survived_files.tex       full width (table*): the --top-files files with
+                                the most surviving mutants, each followed by its
+                                --top-functions functions with the most survivors;
+                                columns: mutants, unreached, evaluated, killed,
+                                survived
+  rq1b_survivors_macros.tex     macros:
+    \\SurvFuncsWithSurvivors, \\SurvFuncsTotal     functions holding survivors, of all
+    \\SurvTopFuncsN, \\SurvTopFuncsPct            the table's functions' share of survivors
+    \\SurvFilesWithSurvivors                      files holding survivors
+    \\SurvGenSurvivedPct, \\UnreachedGenPct        share held by the generated files
+    \\UnreachedWholeFiles                         hand-written files with every mutant unreached
+    \\UnreachedHandWrittenFiles                  hand-written (not generated) mutated files
+    \\SurvExample{Function,Survived,Killed,Evaluated}   --example-function's counts
+    \\UnreachedWholeFilesMutants, ...Pct          their mutants, and share of the
+                                                 hand-written unreached mutants
 
-With --mapping (the merged mutant-to-tests JSON the runs used), it also reports
-the most reaching tests of any mutant each run evaluated. Runs evaluate mutants
-in order of fewest reaching tests first, so a run that evaluated N mutants
-reached as far as the N-th mutant in that order; the script derives the
-count from that, assuming the runs evaluated the mapping in this order.
-
-Per-run values are written as ranges (min--max), since the runs genuinely
-differ in how far they got.
+Usage:
+  python3 icst_2027_experiments/gen_rq1b_survivors.py \\
+      icst_2027_experiments/generated/mutant_file_ranges.csv \\
+      --functions icst_2027_experiments/generated/mutant_function_ranges.csv \\
+      --isolated results/reachability/processed/isolated/run-*/mutant_to_tests_isolated-no-cache_per_mutant.csv \\
+      --runs results/cts-survival/twenty-four-hours/run*_24h \\
+      --out-dir icst_2027_experiments/generated
 """
 import argparse
+import bisect
+import collections
+import csv
 import json
-import re
-import sys
+import os
 from pathlib import Path
 
-import gen_rq1a_reachability
-from gen_rq1a_reachability import fmt_int, fmt_int_range
-from gen_rq1a_stability import parse_merged
 
-# Per-run values here are ranges across runs, not means across repeats.
-gen_rq1a_reachability.SPREAD = "range"
-
-
-def num(s):
-    return int(s.replace(",", ""))
+def outcome(rec):
+    if rec.get("killed_by") or str(rec.get("status", "")).startswith("KILL"):
+        return "killed"
+    if rec.get("status") == "SURVIVED":
+        return "survived"
+    return "other"
 
 
-def need(pattern, text, path):
-    m = re.search(pattern, text, re.M)
-    if not m:
-        sys.exit(f"{path}: could not find pattern {pattern!r}")
-    return m
+def read_ranges(path, with_function):
+    rows = []
+    with open(path) as f:
+        for r in csv.DictReader(line for line in f if not line.startswith("#")):
+            key = (r["path"], r["function"]) if with_function else r["path"]
+            rows.append((int(r["first_id"]), int(r["mutants"]), key))
+    rows.sort()
+    return rows
 
 
-def parse(path):
-    text = path.read_text()
-    d = {}
-    d["n_runs"] = int(need(r"Combining (\d+) CTS kill runs", text, path).group(1))
-    d["runs"] = [
-        {"dir": rd, "evaluated": num(e), "killed": num(k), "survived": num(s), "no_valid": num(nv)}
-        for rd, e, k, s, nv in re.findall(
-            r"^\s+(\S+): ([\d,]+) evaluated, ([\d,]+) killed, ([\d,]+) survived, ([\d,]+) no valid tests",
-            text, re.M)
-    ]
-    if len(d["runs"]) != d["n_runs"]:
-        sys.exit(f"{path}: expected {d['n_runs']} run lines, found {len(d['runs'])}")
+def lookup(rows):
+    starts = [r[0] for r in rows]
 
-    m = need(r"Evaluated in every run: ([\d,]+)\s+\(in at least one run: ([\d,]+); ([\d,]+) only in some runs", text, path)
-    d["eval_all"], d["eval_any"], d["eval_some"] = num(m.group(1)), num(m.group(2)), num(m.group(3))
-    d["survived_all"] = num(need(r"survived in all runs:\s+([\d,]+)", text, path).group(1))
-    d["killed_all"] = num(need(r"killed in all runs:\s+([\d,]+)", text, path).group(1))
-    d["inconsistent"] = num(need(r"\(inconsistent\):\s+([\d,]+)", text, path).group(1))
-    d["no_valid_some"] = num(need(r"no valid tests in some run:\s+([\d,]+)", text, path).group(1))
-
-    # Consistency checks, so a format change can't silently give wrong numbers.
-    for r in d["runs"]:
-        if r["killed"] + r["survived"] + r["no_valid"] != r["evaluated"]:
-            sys.exit(f"{path}: run {r['dir']}: killed + survived + no-valid != evaluated")
-    if d["survived_all"] + d["killed_all"] + d["inconsistent"] + d["no_valid_some"] != d["eval_all"]:
-        sys.exit(f"{path}: combined outcomes don't add up to 'evaluated in every run'")
-    if d["eval_any"] - d["eval_some"] != d["eval_all"]:
-        sys.exit(f"{path}: 'at least one run' - 'only in some' != 'every run'")
-    return d
+    def find(m):
+        i = bisect.bisect_right(starts, m) - 1
+        return rows[i][2] if i >= 0 and m < rows[i][0] + rows[i][1] else None
+    return find
 
 
-def pct(a, b):
-    return 100.0 * a / b
+def fmt_int(n):
+    return f"{n:,}".replace(",", "{,}")
+
+
+def tt(name):
+    return "\\texttt{" + name.replace("_", "\\_") + "}"
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("summary", type=Path, help="combine_survivors.py summary.txt")
-    ap.add_argument("--merged-summary", type=Path, help="merge_mappings.py *_summary.txt, for mapping coverage")
-    ap.add_argument("--mapping", type=Path, help="merged mutant-to-tests JSON, for the most reaching tests evaluated")
+    ap.add_argument("ranges", type=Path)
+    ap.add_argument("--functions", type=Path, required=True)
+    ap.add_argument("--isolated", nargs="+", required=True)
+    ap.add_argument("--runs", nargs="+", type=Path, required=True)
+    ap.add_argument("--top", type=int, default=8,
+                    help="functions counted for \\SurvTopFuncsPct (share of survivors in the top functions)")
+    ap.add_argument("--top-files", type=int, default=5, help="files in each of the tables")
+    ap.add_argument("--top-functions", type=int, default=3,
+                    help="functions listed under each file in both tables")
+    ap.add_argument("--example-function", default="evaluate_vec4",
+                    help="a function named in the text: its survived and killed counts as macros")
     ap.add_argument("--out-dir", type=Path, required=True)
     args = ap.parse_args()
 
-    d = parse(args.summary)
-    runs = d["runs"]
-    ev = d["eval_all"]
+    files = read_ranges(args.ranges, False)
+    funcs = read_ranges(args.functions, True)
+    file_of, func_of = lookup(files), lookup(funcs)
 
-    macros = [
-        "% Generated by gen_rq1b_survival.py -- do not edit by hand.",
-        f"% Source: {args.summary}",
-        f"\\newcommand{{\\SurvRuns}}{{{d['n_runs']}}}",
-        f"\\newcommand{{\\SurvEvalPerRun}}{{{fmt_int_range([r['evaluated'] for r in runs])}}}",
-        f"\\newcommand{{\\SurvKilledPerRun}}{{{fmt_int_range([r['killed'] for r in runs])}}}",
-        f"\\newcommand{{\\SurvSurvivedPerRun}}{{{fmt_int_range([r['survived'] for r in runs])}}}",
-        f"\\newcommand{{\\SurvEvalAll}}{{{fmt_int(ev)}}}",
-        f"\\newcommand{{\\SurvEvalAny}}{{{fmt_int(d['eval_any'])}}}",
-        f"\\newcommand{{\\SurvEvalSome}}{{{fmt_int(d['eval_some'])}}}",
-        f"\\newcommand{{\\SurvSurvivors}}{{{fmt_int(d['survived_all'])}}}",
-        f"\\newcommand{{\\SurvSurvivorsPct}}{{{pct(d['survived_all'], ev):.1f}\\%}}",
-        f"\\newcommand{{\\SurvKilledAll}}{{{fmt_int(d['killed_all'])}}}",
-        f"\\newcommand{{\\SurvKilledAllPct}}{{{pct(d['killed_all'], ev):.1f}\\%}}",
-        f"\\newcommand{{\\SurvInconsistent}}{{{fmt_int(d['inconsistent'])}}}",
-        f"\\newcommand{{\\SurvNoValidSome}}{{{fmt_int(d['no_valid_some'])}}}",
-        f"\\newcommand{{\\SurvNoValidPerRun}}{{{fmt_int_range([r['no_valid'] for r in runs])}}}",
-    ]
-    print(f"evaluated in only some runs (excluded): {d['eval_some']:,}; "
-          f"no valid tests in some run: {d['no_valid_some']:,}")
-    if args.mapping:
-        counts = sorted(len(t) for t in json.load(open(args.mapping)).values())
-        reach = []
-        for i, r in enumerate(runs, 1):
-            if r["evaluated"] > len(counts):
-                sys.exit(f"run {i} evaluated {r['evaluated']:,} mutants, more than the {len(counts):,} in {args.mapping}")
-            reach.append(counts[r["evaluated"] - 1])
-            print(f"run {i}: {r['evaluated']:,} evaluated -> mutants reached by up to {reach[-1]} tests")
-        macros += [f"\\newcommand{{\\SurvMaxTestsPerRun}}{{{fmt_int_range(reach)}}}",
-                   f"\\newcommand{{\\SurvMaxTestsMin}}{{{fmt_int(min(reach))}}}",
-                   f"\\newcommand{{\\SurvMaxTestsMax}}{{{fmt_int(max(reach))}}}"]
-    if args.merged_summary:
-        kept = parse_merged(args.merged_summary)["kept"]
-        macros.append(f"\\newcommand{{\\SurvMappingSize}}{{{fmt_int(kept)}}}")
-        macros.append(f"\\newcommand{{\\SurvMappingCoveredPct}}{{{pct(ev, kept):.1f}\\%}}")
+    reached = set()
+    for p in args.isolated:
+        with open(p, newline="") as f:
+            reached.update(int(r["mutant_id"]) for r in csv.DictReader(f) if int(r["n_tests"]) > 0)
+
+    per = collections.defaultdict(list)
+    for d in sorted(args.runs):
+        for line in open(d / "results.jsonl"):
+            if line.strip():
+                r = json.loads(line)
+                per[r["mutant_id"]].append(outcome(r))
+    out = {m: o[0] for m, o in per.items()
+           if len(o) == len(args.runs) and len(set(o)) == 1 and o[0] != "other"}
+
+    fst = {k: collections.Counter(mutants=n) for _, n, k in files}
+    gst = {k: collections.Counter(mutants=n) for _, n, k in funcs}
+    for m in reached:
+        fst[file_of(m)]["reached"] += 1
+        k = func_of(m)
+        if k is not None:
+            gst[k]["reached"] += 1
+    for m, o in out.items():
+        fst[file_of(m)][o] += 1
+        fst[file_of(m)]["evaluated"] += 1
+        k = func_of(m)
+        if k is None:
+            raise SystemExit(f"mutant {m} is in no function range -- regenerate mutant_function_ranges.csv")
+        gst[k]["evaluated"] += 1
+        gst[k][o] += 1
+    for c in list(fst.values()) + list(gst.values()):
+        c["unreached"] = c["mutants"] - c["reached"]
+
+    survived = sum(c["survived"] for c in fst.values())
+    unreached = sum(c["unreached"] for c in fst.values())
+    gen = [p for p in fst if p.startswith("build/")]
+    hand = [p for p in fst if p not in gen]
+    whole = [p for p in hand if fst[p]["unreached"] == fst[p]["mutants"]]
+    hand_unreached = sum(fst[p]["unreached"] for p in hand)
+    whole_m = sum(fst[p]["mutants"] for p in whole)
+
+    top = sorted(gst, key=lambda k: -gst[k]["survived"])[:args.top]
+    top_share = 100 * sum(gst[k]["survived"] for k in top) / max(1, survived)
+    with_surv = sum(1 for c in gst.values() if c["survived"])
+    files_with = sum(1 for c in fst.values() if c["survived"])
+
+    print(f"survivors: {survived:,} in {with_surv} of {len(gst):,} functions ({files_with} files); "
+          f"top {args.top} functions hold {top_share:.1f}%")
+    for k in top:
+        c = gst[k]
+        print(f"   {k[1]:36} {os.path.basename(k[0]):34} evaluated {c['evaluated']:>5,} "
+              f"killed {c['killed']:>5,} survived {c['survived']:>5,}")
+    print(f"unreached: {unreached:,}; generated files hold {100 * sum(fst[p]['unreached'] for p in gen) / unreached:.1f}%; "
+          f"{len(whole)} hand-written files are entirely unreached ({whole_m:,} mutants, "
+          f"{100 * whole_m / max(1, hand_unreached):.1f}% of hand-written unreached)")
+
+    # Three small tables, counts only. File names get " (gen)" if generated.
+    def fname(p):
+        return tt(os.path.basename(p)) + (" (gen)" if p in gen else "")
+
+    def header(cols):
+        return ["% Generated by gen_rq1b_survivors.py -- do not edit by hand.",
+                "\\begin{tabular}{l" + "r" * (len(cols) - 1) + "}", "\\toprule",
+                " & ".join(cols) + " \\\\", "\\midrule"]
+
+    footer = ["\\bottomrule", "\\end{tabular}"]
+
+    # 1. Where are the unreached mutants? The files with the most, each followed
+    #    by its --top-functions functions with the most unreached mutants.
+    #    % = share of that row's own mutants that are unreached.
+    def urow(label, c):
+        return (f"{label} & {fmt_int(c['mutants'])} & {fmt_int(c['unreached'])} & "
+                f"{100 * c['unreached'] / max(1, c['mutants']):.0f} \\\\")
+
+    t_unreached = header(["File / function", "Mutants", "Unreached", "\\%"])
+    for i, p in enumerate(sorted(fst, key=lambda p_: -fst[p_]["unreached"])[:args.top_files]):
+        if i:
+            t_unreached.append("\\addlinespace")
+        t_unreached.append(urow(fname(p), fst[p]))
+        for k in sorted((k for k in gst if k[0] == p), key=lambda k: -gst[k]["unreached"])[:args.top_functions]:
+            if gst[k]["unreached"]:
+                t_unreached.append(urow(f"\\quad {tt(k[1])}", gst[k]))
+    t_unreached += footer
+
+    # 2. Where are the mutants the CTS reaches but does not kill? The files with
+    #    the most survivors, each followed by its --top-functions functions with
+    #    the most survivors (a function row identical to its file row is skipped).
+    keys = ("mutants", "unreached", "evaluated", "killed", "survived")
+
+    def srow(label, c):
+        return f"{label} & " + " & ".join(fmt_int(c[k]) for k in keys) + " \\\\"
+
+    t_survived = header(["File / function", "Mutants", "Unreached", "Evaluated", "Killed", "Survived"])
+    for i, p in enumerate(sorted(fst, key=lambda p_: -fst[p_]["survived"])[:args.top_files]):
+        if i:
+            t_survived.append("\\addlinespace")
+        t_survived.append(srow(fname(p), fst[p]))
+        for k in sorted((k for k in gst if k[0] == p), key=lambda k: -gst[k]["survived"])[:args.top_functions]:
+            same = all(gst[k][x] == fst[p][x] for x in ("evaluated", "killed", "survived"))
+            if gst[k]["survived"] and not same:
+                t_survived.append(srow(f"\\quad {tt(k[1])}", gst[k]))
+    t_survived += footer
+
+    tables = {"rq1b_unreached_files.tex": t_unreached,
+              "rq1b_survived_files.tex": t_survived}
+
+    macros = ["% Generated by gen_rq1b_survivors.py -- do not edit by hand.",
+              f"\\newcommand{{\\SurvFuncsWithSurvivors}}{{{fmt_int(with_surv)}}}",
+              f"\\newcommand{{\\SurvFuncsTotal}}{{{fmt_int(len(gst))}}}",
+              f"\\newcommand{{\\SurvFilesWithSurvivors}}{{{files_with}}}",
+              f"\\newcommand{{\\SurvTopFuncsN}}{{{args.top}}}",
+              f"\\newcommand{{\\SurvTopFuncsPct}}{{{top_share:.1f}\\%}}",
+              f"\\newcommand{{\\SurvGenSurvivedPct}}{{{100 * sum(fst[p]['survived'] for p in gen) / max(1, survived):.1f}\\%}}",
+              f"\\newcommand{{\\UnreachedGenPct}}{{{100 * sum(fst[p]['unreached'] for p in gen) / max(1, unreached):.1f}\\%}}",
+              f"\\newcommand{{\\UnreachedWholeFiles}}{{{len(whole)}}}",
+              f"\\newcommand{{\\UnreachedWholeFilesMutants}}{{{fmt_int(whole_m)}}}",
+              f"\\newcommand{{\\UnreachedWholeFilesPct}}{{{100 * whole_m / max(1, hand_unreached):.1f}\\%}}",
+              f"\\newcommand{{\\UnreachedHandWrittenFiles}}{{{len(hand)}}}"]
+    ex = [c for k, c in gst.items() if k[1] == args.example_function]
+    if ex:
+        macros += [f"\\newcommand{{\\SurvExampleFunction}}{{\\texttt{{{args.example_function.replace('_', chr(92) + '_')}}}}}",
+                   f"\\newcommand{{\\SurvExampleSurvived}}{{{fmt_int(sum(c['survived'] for c in ex))}}}",
+                   f"\\newcommand{{\\SurvExampleKilled}}{{{fmt_int(sum(c['killed'] for c in ex))}}}",
+                   f"\\newcommand{{\\SurvExampleEvaluated}}{{{fmt_int(sum(c['evaluated'] for c in ex))}}}"]
+        print(f"example function {args.example_function}: survived {sum(c['survived'] for c in ex):,}, "
+              f"killed {sum(c['killed'] for c in ex):,} (in {len(ex)} file(s))")
+    else:
+        print(f"note: no function named {args.example_function}; no \\SurvExample... macros")
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
-    (args.out_dir / "rq1b_survival_macros.tex").write_text("\n".join(macros) + "\n")
-
-    def row(label, e, k, s):
-        return f"{label} & {fmt_int(e)} & {fmt_int(k)} & {fmt_int(s)} & {pct(k, e):.1f}\\% \\\\"
-
-    lines = [
-        "% Generated by gen_rq1b_survival.py -- do not edit by hand.",
-        "\\begin{tabular}{lrrrr}",
-        "\\toprule",
-        "Run & Evaluated & Killed & Survived & Kill rate \\\\",
-        "\\midrule",
-        *[row(str(i), r["evaluated"], r["killed"], r["survived"]) for i, r in enumerate(runs, 1)],
-        "\\midrule",
-        row("All", ev, d["killed_all"], d["survived_all"]),
-        "\\bottomrule",
-        "\\end{tabular}",
-    ]
-    (args.out_dir / "rq1b_survival_table.tex").write_text("\n".join(lines) + "\n")
-    print(f"Wrote survival macros and table to {args.out_dir}")
+    for name, lines in tables.items():
+        (args.out_dir / name).write_text("\n".join(lines) + "\n")
+    (args.out_dir / "rq1b_survivors_macros.tex").write_text("\n".join(macros) + "\n")
+    print(f"wrote {', '.join(tables)} and rq1b_survivors_macros.tex to {args.out_dir}")
 
 
 if __name__ == "__main__":
