@@ -45,7 +45,8 @@ Macros:
       among those, helper order ignored), \\RedNeighbourDistinctPolished (distinct polished
       tests, helper order ignored; polishing is checked per mutant, so it can name or inline
       helpers differently), \\RedNeighbourDistinctPolishedExact (byte for byte)
-  \\RedInput{None,Zero,Values}               polished tests by input needed
+  \\RedDispersed, \\RedDispersedFunctions, \\RedDispersedFiles   group B: mutants, functions, files
+  \\RedInput{None,Zero,Values}             polished tests by input needed
   \\RedConstFold, \\RedConstFoldInputNone    mutants in constant folding (nir_constant_expressions.c),
   \\RedOther, \\RedOtherInputNone            and elsewhere; of those, tests that need no input
 """
@@ -216,6 +217,13 @@ def main():
     mac["RedNeighbourDistinct"] = fmt_int(distinct_red)            # reduced tests, helper order ignored
     mac["RedNeighbourDistinctPolished"] = fmt_int(distinct)        # polished, helper order ignored
     mac["RedNeighbourDistinctPolishedExact"] = fmt_int(distinct_exact)
+    # dispersed: group B, one kill per function
+    disp = [x for x in rows if x["group"] == "B"]
+    mac["RedDispersed"] = fmt_int(len(disp))
+    mac["RedDispersedFunctions"] = fmt_int(len({(x["path"], x["function"]) for x in disp}))
+    mac["RedDispersedFiles"] = fmt_int(len({x["path"] for x in disp}))
+    print(f"dispersed: {len(disp)} mutants, {mac['RedDispersedFunctions']} functions, "
+          f"{mac['RedDispersedFiles']} files")
 
     inp = collections.Counter(x["input"] for x in rows)
     if inp["unknown"]:
@@ -247,7 +255,7 @@ def main():
              bytes_row("After C-Vise", "bytes_cvise"),
              bytes_row("After WGSL pass", "bytes_wgsl"),
              "\\midrule",
-             bytes_row("+ safety checks", "bytes_reconditioned"),
+             bytes_row("+ safety checks (reconditioned)", "bytes_reconditioned"),
              bytes_row("Polished (with safety checks)", "bytes_polished"),
              "\\bottomrule", "\\end{tabular}"]
     for path, content in ((args.table_out, "\n".join(lines) + "\n"),

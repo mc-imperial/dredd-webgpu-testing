@@ -34,6 +34,10 @@ With --kills-at-hours H: \\<prefix>KillsAt, each trial's cumulative kills at H h
 (range), and \\<prefix>KillsAtHours, so sets fuzzed for different lengths can be
 compared at the same time (e.g. the 72-hour survivor trials at 24 hours).
 
+With --runs, also the union by kill type: \\<prefix>Union{Mismatch,Crash,Timeout}, mutants
+killed by any trial; a mutant killed in more than one way counts once (mismatch, else
+crash, else timeout), so the three add up to \\<prefix>Union.
+
 Per-trial values are written as ranges (min--max).
 """
 import argparse
@@ -169,6 +173,32 @@ def reach_within(run_dirs, records, replayed, hours):
     return sets, killed
 
 
+UNION_TYPES = ("mismatch", "crash", "timeout")   # precedence when a mutant has kills of several types
+
+
+def union_by_type(run_dirs):
+    """Mutants killed by any trial, split by kill type. A mutant killed in different ways
+    (in different trials) counts once, under its first type in UNION_TYPES order, so the
+    three counts add up to the union."""
+    types = {}
+    for d in run_dirs:
+        kf = d / "kills.jsonl"
+        if not kf.exists():
+            continue
+        for line in open(kf):
+            if line.strip():
+                k = json.loads(line)
+                st = str(k["status"]).upper()
+                kind = next((t for t in UNION_TYPES if t.upper() in st), None)
+                if kind is None:
+                    sys.exit(f"{kf}: unknown kill status {k['status']!r}")
+                types.setdefault(int(k["mutant_id"]), set()).add(kind)
+    counts = {t: 0 for t in UNION_TYPES}
+    for kinds in types.values():
+        counts[next(t for t in UNION_TYPES if t in kinds)] += 1
+    return counts, len(types)
+
+
 def program_stats(records):
     """Medians over all programs of all trials."""
     recs = [r for rs in records for r in rs]
@@ -190,7 +220,8 @@ def kills_at(csv_path, hours):
     return [int(float(x)) for x in last[1:] if x != ""]
 
 
-def write_macros(d, out, prefix, reach_sets, at_hours=None, stats=None, reach_killed=None, reach_hours=None):
+def write_macros(d, out, prefix, reach_sets, at_hours=None, stats=None, reach_killed=None, reach_hours=None,
+                 union_types=None):
     runs = d["runs"]
     kills = [r["kills"] for r in runs]
     programs = [r["programs"] for r in runs]
@@ -214,6 +245,14 @@ def write_macros(d, out, prefix, reach_sets, at_hours=None, stats=None, reach_ki
         f"\\newcommand{{\\{prefix}Crash}}{{{fmt_int_range([r['crash'] for r in runs])}}}",
         f"\\newcommand{{\\{prefix}Timeout}}{{{fmt_int_range([r['timeout'] for r in runs])}}}",
     ]
+    if union_types is not None:
+        # the union of all trials, by kill type (each mutant once: mismatch, else crash, else timeout)
+        counts, n = union_types
+        if n != d["union"]:
+            print(f"WARNING: kills.jsonl gives a union of {n:,}, the summary says {d['union']:,}")
+        for kind in UNION_TYPES:
+            lines.append(f"\\newcommand{{\\{prefix}Union{kind.capitalize()}}}{{{fmt_int(counts[kind])}}}")
+        print("union by kill type: " + ", ".join(f"{k} {counts[k]:,}" for k in UNION_TYPES) + f" (total {n:,})")
     if at_hours is not None:
         # cumulative kills per trial at a fixed time, for comparing sets fuzzed for different lengths
         lines.append(f"\\newcommand{{\\{prefix}KillsAtHours}}{{{at_hours[0]:g}}}")
@@ -396,7 +435,7 @@ def main():
     if args.kills_at_hours:
         at = (args.kills_at_hours, kills_at(args.comparison_dir / "kills_over_time.csv", args.kills_at_hours))
     write_macros(d, args.out_dir / f"rq2_{args.tag}fuzz_macros.tex", args.prefix, reach_sets, at, stats,
-                 reach_killed, args.reach_hours)
+                 reach_killed, args.reach_hours, union_by_type(args.runs) if args.runs else None)
     write_table(d, args.out_dir / f"rq2_{args.tag}fuzz_table.tex")
     colour = args.colour or ("#eb6834" if "unreached" in args.tag else "#2a78d6")
     write_figure(args.comparison_dir / "kills_over_time.csv", args.out_dir / f"rq2_{args.tag}kills_over_time.pdf",
