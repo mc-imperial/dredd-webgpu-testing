@@ -7,7 +7,7 @@ tmp*
 records.md
 todo.md
 
-aws/*
+/icst_2027_experiments/aws/
 
 # Data
 results/
