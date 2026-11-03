@@ -50,7 +50,7 @@ FUZZ_UNR=results/fuzz/unreached-24h            # fuzzing against the unreached m
 # reachability image (/data/cts). Needs Docker. Also checks the shader listing against
 # the reachability runs' tests.txt.
 cts_counts() {
-    GEN="$GEN" TESTS_TXT="$REACH/matrix/tests.txt" bash icst_2027_experiments/count_cts_tests.sh
+    GEN="$GEN" TESTS_TXT="$REACH/matrix/tests.txt" bash icst_2027_experiments/analysis/count_cts_tests.sh
 }
 
 # RQ1(a): distribution of reaching tests, one summary per isolated repeat.
