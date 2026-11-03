@@ -253,7 +253,12 @@ def main():
     for name, text, lo, hi in BANDS:
         cells = []
         for mode, cols_ in modes:
-            mean = statistics.mean(sum(1 for r in reached if in_band(r[c], lo, hi)) for c in cols_)
+            if mode == "Isolated":
+                # every row is reached per the per-mutant summaries (as in the text and the
+                # unreached set); the couple with no reaching test in the matrix count as 1 test
+                mean = sum(1 for r in rows if in_band(max(r["n_union"], 1), lo, hi))
+            else:
+                mean = statistics.mean(sum(1 for r in reached if in_band(r[c], lo, hi)) for c in cols_)
             cells.append(fmt_int(round(mean)) if mean else "--")
             if name:
                 tag = "Iso" if mode == "Isolated" else ("Sub" if mode == "Subtree" else "File")
@@ -261,7 +266,13 @@ def main():
         t1.append(f"{text} & " + " & ".join(cells) + " \\\\")
     cells = []
     for mode, cols_ in modes:
-        reached_mean = statistics.mean(sum(1 for r in reached if r[c] > 0) for c in cols_)
+        if mode == "Isolated":
+            # the matrix's rows are the mutants the isolated per-mutant summaries count as reached,
+            # the definition used everywhere else (e.g. the unreached set); a couple of rows have
+            # no reaching test in the matrix itself
+            reached_mean = len(rows)
+        else:
+            reached_mean = statistics.mean(sum(1 for r in reached if r[c] > 0) for c in cols_)
         cells.append(fmt_int(round(total - reached_mean)))
         tag = "Iso" if mode == "Isolated" else ("Sub" if mode == "Subtree" else "File")
         m[f"MatReach{tag}NotReached"] = fmt_int(round(total - reached_mean))
