@@ -46,6 +46,13 @@ FUZZ_UNR=results/fuzz/unreached-24h            # fuzzing against the unreached m
 
 # ---- steps ------------------------------------------------------------------
 
+# Setup: number of CTS test cases (all, and the shader subtree), listed by the CTS in the
+# reachability image (/data/cts). Needs Docker. Also checks the shader listing against
+# the reachability runs' tests.txt.
+cts_counts() {
+    GEN="$GEN" TESTS_TXT="$REACH/matrix/tests.txt" bash icst_2027_experiments/count_cts_tests.sh
+}
+
 # RQ1(a): distribution of reaching tests, one summary per isolated repeat.
 reach_summaries() {
     for counts in "$ISO"/run-*/mutant_to_tests_isolated-no-cache_counts.csv; do
@@ -239,6 +246,17 @@ fuzz_latex_unreached() {
         --out-dir "$GEN"
 }
 
+# RQ2: one figure with both sets (survivors and unreached), shared y-axis: each trial and
+# the union of each set's trials (rq2_kills_over_time_combined.pdf).
+fuzz_combined_fig() {
+    local surv=( "$FUZZ_SURV"/cts5x72h-random-seed-*/cts5x72h-random-seed )
+    local unr=( "$FUZZ_UNR"-ip-* )
+    python3 icst_2027_experiments/gen_rq2_fuzz_combined.py \
+        --surv-comparison "$FUZZ_SURV/comparison" --surv-runs "${surv[@]}" \
+        --unr-comparison "$FUZZ_UNR-comparison" --unr-runs "${unr[@]}" \
+        --out "$GEN/rq2_kills_over_time_combined.pdf"
+}
+
 # RQ3: reduction and polishing of the selected fuzzer kills (reduction/select_reductions.py,
 # run_selected_reductions.sh, polish.sh): stage table and macros.
 rq3_reduction() {
@@ -249,9 +267,9 @@ rq3_reduction() {
 }
 
 # Steps in the order they run when no step is named (each step after the ones it reads from).
-STEPS=(reach_summaries reach_latex merge mapping_ids stability_latex shared_compare matrix_compare matrix_latex undercount_fig cache_latex runtimes
+STEPS=(cts_counts reach_summaries reach_latex merge mapping_ids stability_latex shared_compare matrix_compare matrix_latex undercount_fig cache_latex runtimes
        survival_combine survival_latex cts_kill_rate survivor_analysis const_folding_latex
-       unreached_ids fuzz_compare fuzz_compare_unreached fuzz_latex fuzz_latex_unreached rq3_reduction)
+       unreached_ids fuzz_compare fuzz_compare_unreached fuzz_latex fuzz_latex_unreached fuzz_combined_fig rq3_reduction)
 
 # ---- dispatch ---------------------------------------------------------------
 if [[ $# -eq 0 ]]; then
